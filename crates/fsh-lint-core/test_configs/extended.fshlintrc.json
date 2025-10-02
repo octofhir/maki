@@ -1,0 +1,15 @@
+{
+  "extends": ["./base.fshlintrc.toml"],
+  "include": ["src/**/*.fsh"],
+  "formatter": {
+    "indent_size": 4
+  },
+  "rules": {
+    "naming-convention": {
+      "severity": "Error"
+    },
+    "require-title": {
+      "severity": "Warning"
+    }
+  }
+}

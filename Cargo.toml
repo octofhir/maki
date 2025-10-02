@@ -1,0 +1,60 @@
+[workspace]
+members = [
+    "crates/fsh-lint-core",
+    "crates/fsh-lint-cli",
+    "crates/fsh-lint-rules",
+]
+resolver = "3"
+
+[workspace.package]
+authors = ["OctoFHIR Team <funyloony@gmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/octofhir/fsh-lint-rs"
+homepage = "https://github.com/octofhir"
+edition = "2024"
+
+[workspace.dependencies]
+# Core parsing and AST
+tree-sitter = "0.20.10"
+tree-sitter-fsh = { git = "https://github.com/mgramigna/tree-sitter-fsh" }
+
+# Serialization and configuration
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.9"
+
+# CLI and argument parsing
+clap = { version = "4.0", features = ["derive", "env"] }
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# Parallel processing
+rayon = "1.7"
+
+# Logging and tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1.0"
+
+# File system operations
+walkdir = "2.3"
+glob = "0.3"
+notify = "8"
+
+# Caching
+dashmap = "6"
+
+# Testing
+criterion = { version = "0.7", features = ["html_reports"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+debug = true

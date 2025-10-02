@@ -1,0 +1,27 @@
+{
+  "include": ["src/**/*.fsh", "test/**/*.fsh"],
+  "exclude": ["node_modules/**", "build/**"],
+  "formatter": {
+    "indent_size": 4,
+    "max_line_width": 120,
+    "align_carets": true
+  },
+  "autofix": {
+    "enable_safe": true,
+    "enable_unsafe": false
+  },
+  "env": {
+    "fhir_version": "4.0.1"
+  },
+  "rules": {
+    "no-trailing-whitespace": {
+      "severity": "Warning"
+    },
+    "require-description": {
+      "severity": "Error",
+      "options": {
+        "min_length": 10
+      }
+    }
+  }
+}

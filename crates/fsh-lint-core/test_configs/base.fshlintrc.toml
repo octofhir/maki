@@ -1,0 +1,19 @@
+include = ["**/*.fsh"]
+exclude = ["target/**"]
+
+[formatter]
+indent_size = 2
+max_line_width = 100
+
+[autofix]
+enable_safe = true
+enable_unsafe = false
+
+[env]
+fhir_version = "4.0.1"
+
+[rules.basic-syntax]
+severity = "Error"
+
+[rules.naming-convention]
+severity = "Warning"

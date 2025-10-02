@@ -1,0 +1,20 @@
+[package]
+name = "fsh-lint-rules"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Built-in rules and rule engine for FSH linter"
+
+[dependencies]
+fsh-lint-core = { path = "../fsh-lint-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
