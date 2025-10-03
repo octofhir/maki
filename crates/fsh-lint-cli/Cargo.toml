@@ -14,14 +14,19 @@ path = "src/main.rs"
 
 [dependencies]
 fsh-lint-core = { path = "../fsh-lint-core" }
-clap = { workspace = true }
+clap = { version = "4.0", features = ["derive", "env", "color", "suggestions"] }
+clap_complete = "4.0"
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
+colored = "2.0"
+rayon = { workspace = true }
+atty = "0.2"
 
 [dev-dependencies]
 assert_cmd = "2.0"

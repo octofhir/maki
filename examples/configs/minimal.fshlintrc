@@ -1,0 +1,88 @@
+# Minimal FSH Lint Configuration
+# Only essential correctness rules - suitable for rapid development
+
+extends: []
+
+# File inclusion/exclusion patterns
+include_patterns:
+  - "**/*.fsh"
+
+exclude_patterns:
+  - "node_modules/**"
+  - "target/**"
+  - "build/**"
+
+# Rule Configuration - Only critical rules enabled
+rules:
+  # === Blocking/Required Field Rules ===
+  # Must have basic required fields
+  required-field-present: error
+
+  # === Critical Correctness Rules ===
+  # Only rules that catch serious errors
+  invalid-cardinality: error
+  conflicting-constraints: error
+  binding-strength-present: error
+  extension-context-missing: error
+
+  # === All Other Rules Disabled ===
+  # Naming conventions - off
+  code-system-name-matches-filename: off
+  code-system-name-matches-id: off
+  code-system-name-matches-title: off
+  profile-name-matches-filename: off
+  profile-name-matches-id: off
+  profile-name-matches-title: off
+  value-set-name-matches-filename: off
+  value-set-name-matches-id: off
+  value-set-name-matches-title: off
+
+  # Metadata - off (can add later)
+  profile-assignment-present: off
+  missing-metadata: off
+  missing-description: off
+
+  # Optional correctness - off
+  undefined-reference: off
+  invalid-fhir-path: off
+
+  # Suspicious patterns - off
+  profile-parent-not-retired: off
+  redundant-cardinality: off
+
+  # Style - off
+  inconsistent-naming: off
+  enforce-title-case: off
+  max-line-length: off
+
+  # Complexity - off
+  excessive-cardinality: off
+  deeply-nested-extensions: off
+
+  # Info - off
+  search-parameter-notice: off
+
+# Autofix Configuration
+autofix:
+  # Enable safe fixes by default
+  enable_safe: true
+
+  # No unsafe fixes in minimal mode
+  enable_unsafe: false
+
+# Formatter Configuration
+formatter:
+  indent_size: 2
+  max_line_width: 120  # More relaxed
+  align_carets: false  # Don't enforce alignment
+
+# Environment Configuration
+env:
+  fhir_version: null  # Not specified
+  context_paths: []
+
+# No custom rules
+rules_dir: []
+
+# No overrides
+overrides: []

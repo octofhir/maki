@@ -1,10 +1,10 @@
 //! Configuration management for FSH linting
 
+use crate::error::FshLintError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::fs;
-use crate::error::FshLintError;
+use std::path::{Path, PathBuf};
 
 /// Main configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,13 +143,13 @@ impl Default for RuleConfig {
 pub trait ConfigManager {
     /// Load configuration from a specific path or discover it
     fn load_config(&self, path: Option<&Path>) -> Result<Config, FshLintError>;
-    
+
     /// Validate a configuration
     fn validate_config(&self, config: &Config) -> Result<(), FshLintError>;
-    
+
     /// Merge two configurations, with override taking precedence
     fn merge_configs(&self, base: Config, override_config: Config) -> Config;
-    
+
     /// Discover configuration file by walking up directory tree
     fn discover_config(&self, start_path: &Path) -> Option<PathBuf>;
 }
@@ -164,10 +164,11 @@ impl ConfigManager for DefaultConfigManager {
             Some(p) => p.to_path_buf(),
             None => {
                 // Try to discover config file
-                let current_dir = std::env::current_dir().map_err(|e| FshLintError::ConfigError {
-                    message: format!("Failed to get current directory: {}", e),
-                })?;
-                
+                let current_dir =
+                    std::env::current_dir().map_err(|e| FshLintError::ConfigError {
+                        message: format!("Failed to get current directory: {}", e),
+                    })?;
+
                 match self.discover_config(&current_dir) {
                     Some(path) => path,
                     None => return Ok(Config::default()),
@@ -216,7 +217,9 @@ impl ConfigManager for DefaultConfigManager {
         if override_config.env.fhir_version.is_some() {
             base.env.fhir_version = override_config.env.fhir_version;
         }
-        base.env.context_paths.extend(override_config.env.context_paths);
+        base.env
+            .context_paths
+            .extend(override_config.env.context_paths);
 
         // Merge formatter config (override takes precedence for each field)
         if override_config.formatter.indent_size != FormatterConfig::default().indent_size {
@@ -242,9 +245,9 @@ impl ConfigManager for DefaultConfigManager {
 
     fn discover_config(&self, start_path: &Path) -> Option<PathBuf> {
         let config_names = [".fshlintrc", ".fshlintrc.json", ".fshlintrc.toml"];
-        
+
         let mut current_path = start_path;
-        
+
         loop {
             for config_name in &config_names {
                 let config_path = current_path.join(config_name);
@@ -252,14 +255,14 @@ impl ConfigManager for DefaultConfigManager {
                     return Some(config_path);
                 }
             }
-            
+
             // Move up one directory
             match current_path.parent() {
                 Some(parent) => current_path = parent,
                 None => break,
             }
         }
-        
+
         None
     }
 }
@@ -290,7 +293,7 @@ impl DefaultConfigManager {
     /// Parse configuration content based on file extension
     fn parse_config_content(&self, content: &str, path: &Path) -> Result<Config, FshLintError> {
         let extension = path.extension().and_then(|ext| ext.to_str());
-        
+
         match extension {
             Some("toml") => Config::from_toml(content),
             Some("json") => Config::from_json(content),
@@ -306,10 +309,15 @@ impl DefaultConfigManager {
     }
 
     /// Resolve extends configuration inheritance
-    fn resolve_extends(&self, config: Config, extends: &[String], base_path: &Path) -> Result<Config, FshLintError> {
+    fn resolve_extends(
+        &self,
+        config: Config,
+        extends: &[String],
+        base_path: &Path,
+    ) -> Result<Config, FshLintError> {
         let base_dir = base_path.parent().unwrap_or_else(|| Path::new("."));
         let mut result_config = Config::default();
-        
+
         // First, load and merge all extended configs in order
         for extend_path in extends {
             let extended_config_path = if Path::new(extend_path).is_absolute() {
@@ -320,14 +328,17 @@ impl DefaultConfigManager {
 
             if !extended_config_path.exists() {
                 return Err(FshLintError::ConfigError {
-                    message: format!("Extended config file not found: {}", extended_config_path.display()),
+                    message: format!(
+                        "Extended config file not found: {}",
+                        extended_config_path.display()
+                    ),
                 });
             }
 
             let extended_config = self.load_config_from_path(&extended_config_path)?;
             result_config = self.merge_configs(result_config, extended_config);
         }
-        
+
         // Finally, merge the current config on top
         result_config = self.merge_configs(result_config, config);
 
@@ -595,14 +606,20 @@ impl FormatterConfig {
         // Validate indent size
         if !(1..=8).contains(&self.indent_size) {
             return Err(FshLintError::ConfigError {
-                message: format!("Indent size must be between 1 and 8, got {}", self.indent_size),
+                message: format!(
+                    "Indent size must be between 1 and 8, got {}",
+                    self.indent_size
+                ),
             });
         }
 
         // Validate max line width
         if !(40..=200).contains(&self.max_line_width) {
             return Err(FshLintError::ConfigError {
-                message: format!("Max line width must be between 40 and 200, got {}", self.max_line_width),
+                message: format!(
+                    "Max line width must be between 40 and 200, got {}",
+                    self.max_line_width
+                ),
             });
         }
 
@@ -631,7 +648,7 @@ impl Config {
         let config: Config = serde_json::from_str(json).map_err(|e| FshLintError::ConfigError {
             message: format!("Failed to parse JSON config: {}", e),
         })?;
-        
+
         config.validate()?;
         Ok(config)
     }
@@ -641,7 +658,7 @@ impl Config {
         let config: Config = toml::from_str(toml_str).map_err(|e| FshLintError::ConfigError {
             message: format!("Failed to parse TOML config: {}", e),
         })?;
-        
+
         config.validate()?;
         Ok(config)
     }
@@ -680,11 +697,11 @@ mod tests {
     // Helper function to create a temporary directory structure
     fn create_temp_dir_structure() -> TempDir {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create nested directories
         fs::create_dir_all(temp_dir.path().join("project/src")).unwrap();
         fs::create_dir_all(temp_dir.path().join("project/test")).unwrap();
-        
+
         temp_dir
     }
 
@@ -718,27 +735,45 @@ mod tests {
         config.formatter.indent_size = 4;
         config.formatter.max_line_width = 120;
         config.autofix.enable_unsafe = true;
-        config.rules.insert("test-rule".to_string(), RuleConfig {
-            severity: Some(crate::diagnostics::Severity::Warning),
-            options: {
-                let mut opts = HashMap::new();
-                opts.insert("test_option".to_string(), serde_json::Value::String("test_value".to_string()));
-                opts
+        config.rules.insert(
+            "test-rule".to_string(),
+            RuleConfig {
+                severity: Some(crate::diagnostics::Severity::Warning),
+                options: {
+                    let mut opts = HashMap::new();
+                    opts.insert(
+                        "test_option".to_string(),
+                        serde_json::Value::String("test_value".to_string()),
+                    );
+                    opts
+                },
             },
-        });
+        );
 
         // Test JSON roundtrip
         let json = config.to_json().unwrap();
         let json_deserialized = Config::from_json(&json).unwrap();
-        assert_eq!(config.formatter.indent_size, json_deserialized.formatter.indent_size);
-        assert_eq!(config.autofix.enable_unsafe, json_deserialized.autofix.enable_unsafe);
+        assert_eq!(
+            config.formatter.indent_size,
+            json_deserialized.formatter.indent_size
+        );
+        assert_eq!(
+            config.autofix.enable_unsafe,
+            json_deserialized.autofix.enable_unsafe
+        );
         assert!(json_deserialized.rules.contains_key("test-rule"));
 
         // Test TOML roundtrip
         let toml_str = config.to_toml().unwrap();
         let toml_deserialized = Config::from_toml(&toml_str).unwrap();
-        assert_eq!(config.formatter.indent_size, toml_deserialized.formatter.indent_size);
-        assert_eq!(config.autofix.enable_unsafe, toml_deserialized.autofix.enable_unsafe);
+        assert_eq!(
+            config.formatter.indent_size,
+            toml_deserialized.formatter.indent_size
+        );
+        assert_eq!(
+            config.autofix.enable_unsafe,
+            toml_deserialized.autofix.enable_unsafe
+        );
         assert!(toml_deserialized.rules.contains_key("test-rule"));
     }
 
@@ -802,7 +837,7 @@ mod tests {
         assert!(schema.is_object());
         assert!(schema["properties"].is_object());
         assert!(schema["definitions"].is_object());
-        
+
         // Verify specific schema properties
         let properties = &schema["properties"];
         assert!(properties["include_patterns"].is_object());
@@ -810,7 +845,7 @@ mod tests {
         assert!(properties["rules"].is_object());
         assert!(properties["formatter"].is_object());
         assert!(properties["autofix"].is_object());
-        
+
         // Verify definitions
         let definitions = &schema["definitions"];
         assert!(definitions["RuleConfig"].is_object());
@@ -855,7 +890,7 @@ mod tests {
             options: HashMap::new(),
         };
         assert!(rule_config.validate("test-rule").is_ok());
-        
+
         // Test empty rule ID
         let result = rule_config.validate("");
         assert!(result.is_err());
@@ -867,7 +902,7 @@ mod tests {
     #[test]
     fn test_override_validation() {
         let mut config = Config::default();
-        
+
         // Test valid override
         let override_config = Override {
             files: "src/**/*.fsh".to_string(),
@@ -908,7 +943,7 @@ mod tests {
     #[test]
     fn test_config_manager_merge_comprehensive() {
         let manager = DefaultConfigManager::new();
-        
+
         // Create base config
         let mut base = Config::default();
         base.include_patterns = vec!["**/*.fsh".to_string()];
@@ -919,11 +954,14 @@ mod tests {
         base.autofix.enable_safe = true;
         base.autofix.enable_unsafe = false;
         base.env.fhir_version = Some("4.0.1".to_string());
-        base.rules.insert("rule1".to_string(), RuleConfig {
-            severity: Some(crate::diagnostics::Severity::Warning),
-            options: HashMap::new(),
-        });
-        
+        base.rules.insert(
+            "rule1".to_string(),
+            RuleConfig {
+                severity: Some(crate::diagnostics::Severity::Warning),
+                options: HashMap::new(),
+            },
+        );
+
         // Create override config
         let mut override_config = Config::default();
         override_config.include_patterns = vec!["src/**/*.fsh".to_string()];
@@ -932,17 +970,23 @@ mod tests {
         override_config.formatter.max_line_width = 120;
         override_config.autofix.enable_unsafe = true;
         override_config.env.fhir_version = Some("5.0.0".to_string());
-        override_config.rules.insert("rule2".to_string(), RuleConfig {
-            severity: Some(crate::diagnostics::Severity::Error),
-            options: HashMap::new(),
-        });
-        override_config.rules.insert("rule1".to_string(), RuleConfig {
-            severity: Some(crate::diagnostics::Severity::Error),
-            options: HashMap::new(),
-        });
-        
+        override_config.rules.insert(
+            "rule2".to_string(),
+            RuleConfig {
+                severity: Some(crate::diagnostics::Severity::Error),
+                options: HashMap::new(),
+            },
+        );
+        override_config.rules.insert(
+            "rule1".to_string(),
+            RuleConfig {
+                severity: Some(crate::diagnostics::Severity::Error),
+                options: HashMap::new(),
+            },
+        );
+
         let merged = manager.merge_configs(base, override_config);
-        
+
         // Verify merging behavior
         assert_eq!(merged.include_patterns, vec!["src/**/*.fsh".to_string()]);
         assert_eq!(merged.exclude_patterns, vec!["build/**".to_string()]);
@@ -952,45 +996,51 @@ mod tests {
         assert!(merged.autofix.enable_safe); // Should keep base value
         assert!(merged.autofix.enable_unsafe); // Should use override value
         assert_eq!(merged.env.fhir_version, Some("5.0.0".to_string()));
-        
+
         // Verify rule merging
         assert!(merged.rules.contains_key("rule1"));
         assert!(merged.rules.contains_key("rule2"));
-        assert_eq!(merged.rules.get("rule1").unwrap().severity, Some(crate::diagnostics::Severity::Error));
-        assert_eq!(merged.rules.get("rule2").unwrap().severity, Some(crate::diagnostics::Severity::Error));
+        assert_eq!(
+            merged.rules.get("rule1").unwrap().severity,
+            Some(crate::diagnostics::Severity::Error)
+        );
+        assert_eq!(
+            merged.rules.get("rule2").unwrap().severity,
+            Some(crate::diagnostics::Severity::Error)
+        );
     }
 
     #[test]
     fn test_config_discovery_integration() {
         let temp_dir = create_temp_dir_structure();
         let manager = DefaultConfigManager::new();
-        
+
         // Test discovery when no config exists
         let project_dir = temp_dir.path().join("project");
         let discovered = manager.discover_config(&project_dir);
         assert!(discovered.is_none());
-        
+
         // Create config in project root
         let config_content = r#"{"include_patterns": ["**/*.fsh"]}"#;
         let config_path = project_dir.join(".fshlintrc.json");
         fs::write(&config_path, config_content).unwrap();
-        
+
         // Test discovery from project root
         let discovered = manager.discover_config(&project_dir);
         assert!(discovered.is_some());
         assert_eq!(discovered.unwrap(), config_path);
-        
+
         // Test discovery from subdirectory
         let src_dir = project_dir.join("src");
         let discovered = manager.discover_config(&src_dir);
         assert!(discovered.is_some());
         assert_eq!(discovered.unwrap(), config_path);
-        
+
         // Test discovery with different config file names
         fs::remove_file(&config_path).unwrap();
         let toml_config_path = project_dir.join(".fshlintrc.toml");
         fs::write(&toml_config_path, "include_patterns = [\"**/*.fsh\"]").unwrap();
-        
+
         let discovered = manager.discover_config(&src_dir);
         assert!(discovered.is_some());
         assert_eq!(discovered.unwrap(), toml_config_path);
@@ -1000,7 +1050,7 @@ mod tests {
     fn test_config_loading_with_extends() {
         let temp_dir = TempDir::new().unwrap();
         let base_dir = temp_dir.path();
-        
+
         // Create base config
         let base_config_content = r#"
         {
@@ -1016,9 +1066,10 @@ mod tests {
         "#;
         let base_config_path = base_dir.join("base.json");
         fs::write(&base_config_path, base_config_content).unwrap();
-        
+
         // Create extending config
-        let extending_config_content = format!(r#"
+        let extending_config_content = format!(
+            r#"
         {{
             "extends": ["{}"],
             "include_patterns": ["src/**/*.fsh"],
@@ -1029,13 +1080,15 @@ mod tests {
                 "rule2": {{"severity": "Error"}}
             }}
         }}
-        "#, base_config_path.display());
+        "#,
+            base_config_path.display()
+        );
         let extending_config_path = base_dir.join("extending.json");
         fs::write(&extending_config_path, extending_config_content).unwrap();
-        
+
         let manager = DefaultConfigManager::new();
         let config = manager.load_config(Some(&extending_config_path)).unwrap();
-        
+
         // Verify inheritance
         assert_eq!(config.include_patterns, vec!["src/**/*.fsh".to_string()]);
         assert_eq!(config.formatter.indent_size, 4);
@@ -1047,41 +1100,34 @@ mod tests {
     #[test]
     fn test_config_loading_error_handling() {
         let manager = DefaultConfigManager::new();
-        
+
         // Test loading non-existent file
         let result = manager.load_config(Some(Path::new("non_existent.json")));
         assert!(result.is_err());
         if let Err(FshLintError::ConfigError { message }) = result {
             assert!(message.contains("Failed to read config file"));
         }
-        
+
         // Test loading invalid JSON
-        let (_temp_dir, invalid_json_path) = create_temp_config(
-            r#"{"invalid": json}"#,
-            "invalid.json"
-        );
+        let (_temp_dir, invalid_json_path) =
+            create_temp_config(r#"{"invalid": json}"#, "invalid.json");
         let result = manager.load_config(Some(&invalid_json_path));
         assert!(result.is_err());
         if let Err(FshLintError::ConfigError { message }) = result {
             assert!(message.contains("Failed to parse JSON config"));
         }
-        
+
         // Test loading invalid TOML
-        let (_temp_dir, invalid_toml_path) = create_temp_config(
-            r#"[invalid toml"#,
-            "invalid.toml"
-        );
+        let (_temp_dir, invalid_toml_path) = create_temp_config(r#"[invalid toml"#, "invalid.toml");
         let result = manager.load_config(Some(&invalid_toml_path));
         assert!(result.is_err());
         if let Err(FshLintError::ConfigError { message }) = result {
             assert!(message.contains("Failed to parse TOML config"));
         }
-        
+
         // Test loading config with validation errors
-        let (_temp_dir, invalid_config_path) = create_temp_config(
-            r#"{"include_patterns": []}"#,
-            "invalid_config.json"
-        );
+        let (_temp_dir, invalid_config_path) =
+            create_temp_config(r#"{"include_patterns": []}"#, "invalid_config.json");
         let result = manager.load_config(Some(&invalid_config_path));
         assert!(result.is_err());
         if let Err(FshLintError::ConfigError { message }) = result {
@@ -1093,7 +1139,7 @@ mod tests {
     fn test_config_extends_error_handling() {
         let temp_dir = TempDir::new().unwrap();
         let base_dir = temp_dir.path();
-        
+
         // Test extending non-existent config
         let extending_config_content = r#"
         {
@@ -1103,7 +1149,7 @@ mod tests {
         "#;
         let extending_config_path = base_dir.join("extending.json");
         fs::write(&extending_config_path, extending_config_content).unwrap();
-        
+
         let manager = DefaultConfigManager::new();
         let result = manager.load_config(Some(&extending_config_path));
         assert!(result.is_err());
@@ -1115,7 +1161,7 @@ mod tests {
     #[test]
     fn test_parse_config_content_format_detection() {
         let manager = DefaultConfigManager::new();
-        
+
         // Test JSON detection by content
         let json_content = r#"
         {
@@ -1129,7 +1175,7 @@ mod tests {
         let config = manager.parse_config_content(json_content, path).unwrap();
         assert_eq!(config.include_patterns, vec!["test/**/*.fsh".to_string()]);
         assert_eq!(config.formatter.indent_size, 4);
-        
+
         // Test TOML detection by content
         let toml_content = r#"
         include_patterns = ["test/**/*.fsh"]
@@ -1145,41 +1191,53 @@ mod tests {
     #[test]
     fn test_config_manager_load_default() {
         let manager = DefaultConfigManager::new();
-        
+
         // Loading without a path should return default config
         let config = manager.load_config(None).unwrap();
         assert_eq!(config.include_patterns, Config::default().include_patterns);
         assert_eq!(config.exclude_patterns, Config::default().exclude_patterns);
-        assert_eq!(config.formatter.indent_size, Config::default().formatter.indent_size);
+        assert_eq!(
+            config.formatter.indent_size,
+            Config::default().formatter.indent_size
+        );
     }
 
     #[test]
     fn test_config_loading_from_existing_test_files() {
         let manager = DefaultConfigManager::new();
-        
+
         // Test loading from test.fshlintrc.json
         let config_path = Path::new("test_configs/test.fshlintrc.json");
         if config_path.exists() {
             let config = manager.load_config(Some(config_path)).unwrap();
-            
-            assert_eq!(config.include_patterns, vec!["src/**/*.fsh", "test/**/*.fsh"]);
+
+            assert_eq!(
+                config.include_patterns,
+                vec!["src/**/*.fsh", "test/**/*.fsh"]
+            );
             assert_eq!(config.exclude_patterns, vec!["node_modules/**", "build/**"]);
             assert_eq!(config.formatter.indent_size, 4);
             assert_eq!(config.formatter.max_line_width, 120);
             assert!(config.autofix.enable_safe);
             assert!(!config.autofix.enable_unsafe);
             assert_eq!(config.env.fhir_version, Some("4.0.1".to_string()));
-            
+
             // Check rules
             assert!(config.rules.contains_key("no-trailing-whitespace"));
             assert!(config.rules.contains_key("require-description"));
-            
+
             if let Some(rule_config) = config.rules.get("no-trailing-whitespace") {
-                assert_eq!(rule_config.severity, Some(crate::diagnostics::Severity::Warning));
+                assert_eq!(
+                    rule_config.severity,
+                    Some(crate::diagnostics::Severity::Warning)
+                );
             }
-            
+
             if let Some(rule_config) = config.rules.get("require-description") {
-                assert_eq!(rule_config.severity, Some(crate::diagnostics::Severity::Error));
+                assert_eq!(
+                    rule_config.severity,
+                    Some(crate::diagnostics::Severity::Error)
+                );
                 assert!(rule_config.options.contains_key("min_length"));
             }
         }
@@ -1189,28 +1247,34 @@ mod tests {
     fn test_config_extends_functionality() {
         let manager = DefaultConfigManager::new();
         let config_path = Path::new("test_configs/extended.fshlintrc.json");
-        
+
         if config_path.exists() {
             let config = manager.load_config(Some(config_path)).unwrap();
-            
+
             // Should inherit from base config
             assert_eq!(config.include_patterns, vec!["src/**/*.fsh"]); // Overridden
             assert_eq!(config.formatter.indent_size, 4); // Overridden
             assert_eq!(config.formatter.max_line_width, 100); // Inherited from base
-            
+
             // Check rule merging
             assert!(config.rules.contains_key("basic-syntax")); // Inherited
             assert!(config.rules.contains_key("naming-convention")); // Overridden
             assert!(config.rules.contains_key("require-title")); // Added
-            
+
             // Check that naming-convention severity was overridden
             if let Some(rule_config) = config.rules.get("naming-convention") {
-                assert_eq!(rule_config.severity, Some(crate::diagnostics::Severity::Error));
+                assert_eq!(
+                    rule_config.severity,
+                    Some(crate::diagnostics::Severity::Error)
+                );
             }
-            
+
             // Check that basic-syntax was inherited
             if let Some(rule_config) = config.rules.get("basic-syntax") {
-                assert_eq!(rule_config.severity, Some(crate::diagnostics::Severity::Error));
+                assert_eq!(
+                    rule_config.severity,
+                    Some(crate::diagnostics::Severity::Error)
+                );
             }
         }
     }
@@ -1218,10 +1282,10 @@ mod tests {
     #[test]
     fn test_config_schema_validation() {
         let config = Config::default();
-        
+
         // Test that validate_against_schema works
         assert!(config.validate_against_schema().is_ok());
-        
+
         // Test with invalid config
         let mut invalid_config = Config::default();
         invalid_config.include_patterns.clear();
@@ -1234,7 +1298,7 @@ mod tests {
         assert!(schema_string.contains("FSH Lint Configuration"));
         assert!(schema_string.contains("properties"));
         assert!(schema_string.contains("definitions"));
-        
+
         // Verify it's valid JSON
         let _: serde_json::Value = serde_json::from_str(&schema_string).unwrap();
     }
@@ -1242,26 +1306,26 @@ mod tests {
     #[test]
     fn test_config_merge_with_extends() {
         let manager = DefaultConfigManager::new();
-        
+
         // Test merging with extends field
         let mut base = Config::default();
         let mut override_config = Config::default();
         override_config.extends = Some(vec!["base.json".to_string()]);
-        
+
         let merged = manager.merge_configs(base, override_config);
         assert_eq!(merged.extends, Some(vec!["base.json".to_string()]));
-        
+
         // Test merging rules directories
         base = Config::default();
         base.rules_dir = vec![PathBuf::from("rules1")];
         override_config = Config::default();
         override_config.rules_dir = vec![PathBuf::from("rules2")];
-        
+
         let merged = manager.merge_configs(base, override_config);
         assert_eq!(merged.rules_dir.len(), 2);
         assert!(merged.rules_dir.contains(&PathBuf::from("rules1")));
         assert!(merged.rules_dir.contains(&PathBuf::from("rules2")));
-        
+
         // Test merging overrides
         base = Config::default();
         base.overrides = vec![Override {
@@ -1273,37 +1337,53 @@ mod tests {
             files: "test/**/*.fsh".to_string(),
             config: Config::default(),
         }];
-        
+
         let merged = manager.merge_configs(base, override_config);
         assert_eq!(merged.overrides.len(), 2);
-        
+
         // Test merging environment context paths
         base = Config::default();
         base.env.context_paths = vec![PathBuf::from("context1")];
         override_config = Config::default();
         override_config.env.context_paths = vec![PathBuf::from("context2")];
-        
+
         let merged = manager.merge_configs(base, override_config);
         assert_eq!(merged.env.context_paths.len(), 2);
-        assert!(merged.env.context_paths.contains(&PathBuf::from("context1")));
-        assert!(merged.env.context_paths.contains(&PathBuf::from("context2")));
+        assert!(
+            merged
+                .env
+                .context_paths
+                .contains(&PathBuf::from("context1"))
+        );
+        assert!(
+            merged
+                .env
+                .context_paths
+                .contains(&PathBuf::from("context2"))
+        );
     }
 
     #[test]
     fn test_config_merge_default_value_handling() {
         let manager = DefaultConfigManager::new();
-        
+
         // Test that default values are not overridden unless explicitly changed
         let mut base = Config::default();
         base.formatter.indent_size = 4; // Non-default value
-        
+
         let override_config = Config::default(); // All default values
-        
+
         let merged = manager.merge_configs(base, override_config);
-        
+
         // Should keep the base non-default value since override has default
         assert_eq!(merged.formatter.indent_size, 4);
-        assert_eq!(merged.formatter.max_line_width, FormatterConfig::default().max_line_width);
-        assert_eq!(merged.formatter.align_carets, FormatterConfig::default().align_carets);
+        assert_eq!(
+            merged.formatter.max_line_width,
+            FormatterConfig::default().max_line_width
+        );
+        assert_eq!(
+            merged.formatter.align_carets,
+            FormatterConfig::default().align_carets
+        );
     }
 }

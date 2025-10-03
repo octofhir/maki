@@ -9,7 +9,7 @@ pub type Result<T> = std::result::Result<T, FshLintError>;
 pub trait ResultExt<T> {
     /// Convert an error to a recoverable error if possible
     fn recoverable(self) -> Result<Option<T>>;
-    
+
     /// Log the error and continue with None if recoverable
     fn log_and_continue(self) -> Option<T>;
 }

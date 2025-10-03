@@ -1,40 +1,68 @@
 //! FSH Lint Core
-//! 
+//!
 //! Core linting engine for FHIR Shorthand (FSH) files.
 //! This crate provides the fundamental components for parsing, analyzing,
 //! and linting FSH files.
 
-pub mod error;
-pub mod result;
-pub mod config;
-pub mod parser;
-pub mod semantic;
-pub mod rules;
-pub mod diagnostics;
+pub mod autofix;
 pub mod cache;
+pub mod config;
+pub mod diagnostics;
 pub mod discovery;
+pub mod error;
+pub mod executor;
+pub mod formatter;
+pub mod parser;
+pub mod result;
+pub mod rules;
+pub mod semantic;
 
 // Re-export commonly used types
-pub use error::{FshLintError, ErrorKind};
-pub use result::Result;
+pub use autofix::{
+    AutofixEngine, AutofixEngineConfig, ConflictGroup, ConflictType, DefaultAutofixEngine, Fix,
+    FixConfig, FixPreview, FixResult, RollbackPlan,
+};
+pub use cache::{
+    Cache, CacheManager, CacheManagerStats, CacheStats, ContentHash, ParseResultCache,
+};
 pub use config::Config;
-pub use diagnostics::{Diagnostic, Severity, Location};
-pub use discovery::{FileDiscovery, DefaultFileDiscovery, FileWatcher, FileChangeEvent, FileChangeKind};
-pub use parser::{Parser, ParseResult, ParseError, FshParser, CachedFshParser, ParserConfig};
-pub use cache::{Cache, ContentHash, ParseResultCache, CacheStats, CacheManager, CacheManagerStats};
+pub use diagnostics::{
+    Advices, Applicability, CodeSuggestion, DefaultDiagnosticCollector, DefaultOutputFormatter,
+    Diagnostic, DiagnosticCategory, DiagnosticCollector, DiagnosticFormatter,
+    DiagnosticOutputFormatter, Label, ListAdvice, Location, LogAdvice, LogCategory, Severity,
+    Suggestion, Visit,
+};
+pub use discovery::{
+    DefaultFileDiscovery, FileChangeEvent, FileChangeKind, FileDiscovery, FileWatcher,
+};
+pub use error::{ErrorKind, FshLintError};
+pub use executor::{
+    DefaultExecutor, ExecutionContext, Executor, FileExecutionResult, ProgressCallback,
+    ProgressInfo, ResourceStats,
+};
+pub use formatter::{
+    AstFormatter, CaretAlignment, DiffChange, DiffChangeType, FormatDiff, FormatMode, FormatResult,
+    Formatter, FormatterManager, Range,
+};
+pub use parser::{CachedFshParser, FshParser, ParseError, ParseResult, Parser, ParserConfig};
+pub use result::Result;
+pub use rules::{
+    AutofixTemplate, CompiledRule, FixSafety, GritQLMatcher, Rule, RuleCategory, RuleConfig,
+    RuleEngine, RuleEngineConfig, RuleMetadata,
+};
 pub use semantic::{
-    SemanticModel, SemanticAnalyzer, DefaultSemanticAnalyzer, SemanticAnalyzerConfig,
-    FhirResource, ResourceType, Element, Cardinality, TypeInfo, Constraint, ConstraintType,
-    ElementFlag, ResourceMetadata, SymbolTable, Symbol, SymbolType, Reference, ReferenceType
+    Cardinality, Constraint, ConstraintType, DefaultSemanticAnalyzer, Element, ElementFlag,
+    FhirResource, Reference, ReferenceType, ResourceMetadata, ResourceType, SemanticAnalyzer,
+    SemanticAnalyzerConfig, SemanticModel, Symbol, SymbolTable, SymbolType, TypeInfo,
 };
 
 /// Initialize the tracing subscriber for logging
 pub fn init_tracing() {
-    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-    
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("fsh_lint=info"));
-    
+    use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("fsh_lint=info"));
+
     tracing_subscriber::registry()
         .with(filter)
         .with(
@@ -42,7 +70,7 @@ pub fn init_tracing() {
                 .with_target(false)
                 .with_thread_ids(false)
                 .with_file(true)
-                .with_line_number(true)
+                .with_line_number(true),
         )
         .init();
 }

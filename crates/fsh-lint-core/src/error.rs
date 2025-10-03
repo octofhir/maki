@@ -49,6 +49,22 @@ pub enum FshLintError {
     #[error("LSP error: {message}")]
     LspError { message: String },
 
+    /// Execution engine errors
+    #[error("Execution error: {message}")]
+    ExecutionError { message: String },
+
+    /// Autofix engine errors
+    #[error("Autofix error: {message}")]
+    AutofixError { message: String },
+
+    /// Resource limit errors (memory, CPU, etc.)
+    #[error("Resource limit exceeded for {resource}: current {current}, limit {limit}")]
+    ResourceLimit {
+        resource: String,
+        current: String,
+        limit: String,
+    },
+
     /// Generic internal errors
     #[error("Internal error: {message}")]
     InternalError { message: String },
@@ -66,6 +82,9 @@ pub enum ErrorKind {
     RuleEngine,
     Formatter,
     Lsp,
+    Execution,
+    Autofix,
+    ResourceLimit,
     Internal,
 }
 
@@ -82,6 +101,9 @@ impl FshLintError {
             FshLintError::RuleEngineError { .. } => ErrorKind::RuleEngine,
             FshLintError::FormatterError { .. } => ErrorKind::Formatter,
             FshLintError::LspError { .. } => ErrorKind::Lsp,
+            FshLintError::ExecutionError { .. } => ErrorKind::Execution,
+            FshLintError::AutofixError { .. } => ErrorKind::Autofix,
+            FshLintError::ResourceLimit { .. } => ErrorKind::ResourceLimit,
             FshLintError::InternalError { .. } => ErrorKind::Internal,
         }
     }
@@ -128,6 +150,13 @@ impl FshLintError {
     /// Create a semantic error
     pub fn semantic_error(message: impl Into<String>) -> Self {
         Self::SemanticError {
+            message: message.into(),
+        }
+    }
+
+    /// Create an autofix error
+    pub fn autofix_error(message: impl Into<String>) -> Self {
+        Self::AutofixError {
             message: message.into(),
         }
     }

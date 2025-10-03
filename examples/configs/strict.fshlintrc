@@ -1,0 +1,97 @@
+# Strict FSH Lint Configuration
+# Enforces all rules at error level for maximum conformance
+
+extends:
+  - "default"
+
+# Rule Configuration - All rules as errors
+rules:
+  # === Blocking/Required Field Rules ===
+  required-field-present: error
+
+  # === Naming Convention Rules ===
+  # All naming rules must pass
+  code-system-name-matches-filename: error
+  code-system-name-matches-id: error
+  code-system-name-matches-title: error
+
+  profile-name-matches-filename: error
+  profile-name-matches-id: error
+  profile-name-matches-title: error
+
+  value-set-name-matches-filename: error
+  value-set-name-matches-id: error
+  value-set-name-matches-title: error
+
+  # === Metadata Rules ===
+  profile-assignment-present: error
+  binding-strength-present: error
+  missing-metadata: error  # Upgraded from warn
+  missing-description: error  # Upgraded from warn
+
+  # === Correctness Rules ===
+  invalid-cardinality: error
+  conflicting-constraints: error
+  extension-context-missing: error
+  undefined-reference: error
+  invalid-fhir-path: error
+
+  # === Suspicious Patterns ===
+  profile-parent-not-retired: error  # Upgraded from warn
+  redundant-cardinality: error  # Upgraded from warn
+
+  # === Style Rules ===
+  inconsistent-naming: error  # Upgraded from warn
+  enforce-title-case: error  # Enabled
+  max-line-length:
+    level: error
+    options:
+      max: 100
+
+  # === Complexity Rules ===
+  excessive-cardinality:
+    level: warn
+    options:
+      max_upper_bound: 100
+
+  deeply-nested-extensions:
+    level: warn
+    options:
+      max_depth: 3
+
+  # === Informational Rules ===
+  search-parameter-notice: info
+
+# Autofix Configuration
+autofix:
+  # Enable safe fixes
+  enable_safe: true
+
+  # Still require explicit --unsafe flag for semantic changes
+  enable_unsafe: false
+
+# Formatter Configuration
+formatter:
+  indent_size: 2
+  max_line_width: 100
+  align_carets: true
+
+# Environment Configuration
+env:
+  fhir_version: "4.0.1"
+  context_paths: []
+
+# Overrides for specific file patterns
+overrides:
+  # Be more lenient with example files
+  - files: "examples/**/*.fsh"
+    rules:
+      required-field-present: warn
+      missing-metadata: warn
+
+  # Strict enforcement for published profiles
+  - files: "profiles/**/*.fsh"
+    rules:
+      "*": error
+      missing-description: error
+      profile-assignment-present: error

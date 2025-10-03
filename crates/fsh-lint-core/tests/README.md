@@ -42,17 +42,17 @@ This directory contains comprehensive tests for the FSH parser layer, covering a
 
 ## Test Architecture
 
-### Mock Implementation
-The tests use a mock tree-sitter implementation (`mock_tree_sitter_fsh.rs`) that:
-- Uses JSON grammar as a stand-in for FSH grammar
-- Provides predictable parsing behavior for testing
-- Allows testing of error conditions and recovery
-- Enables testing without dependency on external tree-sitter-fsh grammar
+### Tree-sitter Integration
+The tests exercise the real `tree-sitter-fsh` grammar through lightweight
+helpers (`mock_tree_sitter_fsh.rs`) that:
+- Expose the grammar in a test-friendly wrapper
+- Provide utilities for inspecting error nodes and building diagnostics
+- Make it easy to simulate error scenarios and recovery logic
 
 ### Test Data
 Test data is organized into:
-- **Valid samples**: Well-formed JSON structures representing FSH resources
-- **Invalid samples**: Malformed JSON to test error handling
+- **Valid samples**: Well-formed FSH definitions (profiles, extensions, instances)
+- **Invalid samples**: Purposefully malformed FSH constructs to test error handling
 - **Edge cases**: Empty content, whitespace-only content, Unicode content
 
 ### Coverage Areas

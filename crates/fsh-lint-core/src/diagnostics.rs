@@ -1,6 +1,16 @@
 //! Diagnostic types and utilities for FSH linting
+//!
+//! This module provides rich, Biome-inspired diagnostics with:
+//! - Precise code positioning with line/column information
+//! - Code suggestions with applicability levels (safe vs unsafe)
+//! - Contextual advice system for helpful explanations
+//! - Multiple output formats (human, JSON, SARIF)
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fmt;
+use std::fs;
+use std::io;
 use std::path::PathBuf;
 
 /// Represents a diagnostic message from linting
@@ -18,10 +28,16 @@ pub struct Diagnostic {
     pub suggestions: Vec<Suggestion>,
     /// Optional code snippet for context
     pub code_snippet: Option<String>,
+    /// Optional error code
+    pub code: Option<String>,
+    /// Optional source of the diagnostic (e.g., "parser", "rule-engine")
+    pub source: Option<String>,
+    /// Category of the diagnostic
+    pub category: Option<DiagnosticCategory>,
 }
 
 /// Severity levels for diagnostics
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Severity {
     /// Informational messages
     Info,
@@ -49,9 +65,64 @@ pub struct Location {
     pub offset: usize,
     /// Length of the span
     pub length: usize,
+    /// Optional span information (start, end)
+    pub span: Option<(usize, usize)>,
 }
 
-/// Suggestion for fixing a diagnostic
+/// Indicates how a tool should manage this suggestion (Biome-inspired)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Applicability {
+    /// The suggestion is definitely correct and should be applied automatically.
+    /// Used for: formatting, whitespace, adding semicolons, obvious typos.
+    Always,
+
+    /// The suggestion may be correct but is uncertain and requires review.
+    /// Requires --unsafe flag to apply.
+    /// Used for: semantic changes, refactoring, removing code, renaming.
+    MaybeIncorrect,
+}
+
+impl fmt::Display for Applicability {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Applicability::Always => write!(f, "safe"),
+            Applicability::MaybeIncorrect => write!(f, "unsafe"),
+        }
+    }
+}
+
+/// A code suggestion that can be automatically applied (Biome-inspired)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodeSuggestion {
+    /// Description of the suggested fix
+    pub message: String,
+
+    /// The replacement text to apply
+    pub replacement: String,
+
+    /// Location to apply the replacement
+    pub location: Location,
+
+    /// When this suggestion should be applied
+    pub applicability: Applicability,
+
+    /// Additional labels/highlights for context
+    pub labels: Vec<Label>,
+}
+
+/// A label highlighting a specific region of code
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Label {
+    /// The location to highlight
+    pub location: Location,
+
+    /// Optional message for this label
+    pub message: Option<String>,
+}
+
+/// Suggestion for fixing a diagnostic (backward compatibility)
+#[deprecated(since = "0.2.0", note = "Use CodeSuggestion instead")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Suggestion {
     /// Description of the suggested fix
@@ -62,6 +133,94 @@ pub struct Suggestion {
     pub location: Location,
     /// Whether this fix is safe to apply automatically
     pub is_safe: bool,
+}
+
+impl From<Suggestion> for CodeSuggestion {
+    fn from(suggestion: Suggestion) -> Self {
+        Self {
+            message: suggestion.message,
+            replacement: suggestion.replacement,
+            location: suggestion.location,
+            applicability: if suggestion.is_safe {
+                Applicability::Always
+            } else {
+                Applicability::MaybeIncorrect
+            },
+            labels: vec![],
+        }
+    }
+}
+
+/// Trait for types that can provide contextual advice in diagnostics (Biome-inspired)
+pub trait Advices {
+    /// Record advices into the provided visitor
+    fn record(&self, visitor: &mut dyn Visit) -> io::Result<()>;
+}
+
+/// The Visit trait collects advices from a diagnostic (Biome-inspired visitor pattern)
+pub trait Visit {
+    /// Prints a single log entry with the provided category and text
+    fn record_log(&mut self, category: LogCategory, text: &dyn fmt::Display) -> io::Result<()>;
+
+    /// Prints an unordered list of items
+    fn record_list(&mut self, list: &[&dyn fmt::Display]) -> io::Result<()>;
+
+    /// Prints a code frame outlining the provided source location
+    fn record_frame(&mut self, location: &Location) -> io::Result<()>;
+
+    /// Prints a code suggestion with applicability marker
+    fn record_suggestion(&mut self, suggestion: &CodeSuggestion) -> io::Result<()>;
+
+    /// Prints a group of advices under a common title
+    fn record_group(&mut self, title: &dyn fmt::Display, advice: &dyn Advices) -> io::Result<()>;
+}
+
+/// The category for a log advice (Biome-inspired)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LogCategory {
+    /// No specific category
+    None,
+    /// Informational message
+    Info,
+    /// Warning message
+    Warn,
+    /// Error message
+    Error,
+}
+
+/// Utility type implementing Advices that emits a single log advice
+#[derive(Debug)]
+pub struct LogAdvice<T> {
+    pub category: LogCategory,
+    pub text: T,
+}
+
+impl<T: fmt::Display> Advices for LogAdvice<T> {
+    fn record(&self, visitor: &mut dyn Visit) -> io::Result<()> {
+        visitor.record_log(self.category, &self.text)
+    }
+}
+
+/// Utility advice that prints a list of items
+#[derive(Debug)]
+pub struct ListAdvice<T> {
+    pub items: Vec<T>,
+}
+
+impl<T: fmt::Display> Advices for ListAdvice<T> {
+    fn record(&self, visitor: &mut dyn Visit) -> io::Result<()> {
+        if self.items.is_empty() {
+            visitor.record_log(LogCategory::Warn, &"The list is empty.")
+        } else {
+            let display_items: Vec<_> = self
+                .items
+                .iter()
+                .map(|item| item as &dyn fmt::Display)
+                .collect();
+            visitor.record_list(&display_items)
+        }
+    }
 }
 
 impl Diagnostic {
@@ -79,18 +238,52 @@ impl Diagnostic {
             location,
             suggestions: Vec::new(),
             code_snippet: None,
+            code: None,
+            source: None,
+            category: None,
         }
     }
 
-    /// Add a suggestion to this diagnostic
+    /// Add a suggestion to this diagnostic (deprecated - use with_code_suggestion)
+    #[deprecated(since = "0.2.0", note = "Use with_code_suggestion instead")]
     pub fn with_suggestion(mut self, suggestion: Suggestion) -> Self {
         self.suggestions.push(suggestion);
+        self
+    }
+
+    /// Add a code suggestion to this diagnostic
+    pub fn with_code_suggestion(mut self, suggestion: CodeSuggestion) -> Self {
+        // Convert to old Suggestion for backward compatibility
+        self.suggestions.push(Suggestion {
+            message: suggestion.message,
+            replacement: suggestion.replacement,
+            location: suggestion.location,
+            is_safe: suggestion.applicability == Applicability::Always,
+        });
         self
     }
 
     /// Add a code snippet for context
     pub fn with_code_snippet(mut self, snippet: impl Into<String>) -> Self {
         self.code_snippet = Some(snippet.into());
+        self
+    }
+
+    /// Set the category for this diagnostic
+    pub fn with_category(mut self, category: DiagnosticCategory) -> Self {
+        self.category = Some(category);
+        self
+    }
+
+    /// Set the source for this diagnostic
+    pub fn with_source(mut self, source: impl Into<String>) -> Self {
+        self.source = Some(source.into());
+        self
+    }
+
+    /// Set the error code for this diagnostic
+    pub fn with_code(mut self, code: impl Into<String>) -> Self {
+        self.code = Some(code.into());
         self
     }
 
@@ -115,6 +308,7 @@ impl Default for Location {
             end_column: None,
             offset: 0,
             length: 0,
+            span: None,
         }
     }
 }
@@ -130,6 +324,7 @@ impl Location {
             end_column: None,
             offset,
             length,
+            span: None,
         }
     }
 
@@ -151,6 +346,28 @@ impl Location {
             end_column: Some(end_column),
             offset,
             length,
+            span: None,
+        }
+    }
+
+    /// Create a location with span information
+    pub fn with_span(
+        file: PathBuf,
+        line: usize,
+        column: usize,
+        offset: usize,
+        length: usize,
+        span: (usize, usize),
+    ) -> Self {
+        Self {
+            file,
+            line,
+            column,
+            end_line: None,
+            end_column: None,
+            offset,
+            length,
+            span: Some(span),
         }
     }
 }
@@ -187,4 +404,736 @@ impl std::fmt::Display for Location {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}:{}", self.file.display(), self.line, self.column)
     }
+}
+
+/// Trait for collecting and managing diagnostics
+pub trait DiagnosticCollector {
+    /// Collect a diagnostic
+    fn collect(&mut self, diagnostic: Diagnostic);
+
+    /// Collect multiple diagnostics
+    fn collect_all(&mut self, diagnostics: Vec<Diagnostic>) {
+        for diagnostic in diagnostics {
+            self.collect(diagnostic);
+        }
+    }
+
+    /// Get all collected diagnostics
+    fn diagnostics(&self) -> &[Diagnostic];
+
+    /// Filter diagnostics by minimum severity level
+    fn filter_by_severity(&self, min_severity: Severity) -> Vec<&Diagnostic>;
+
+    /// Group diagnostics by file
+    fn group_by_file(&self) -> HashMap<PathBuf, Vec<&Diagnostic>>;
+
+    /// Group diagnostics by rule ID
+    fn group_by_rule(&self) -> HashMap<String, Vec<&Diagnostic>>;
+
+    /// Group diagnostics by severity
+    fn group_by_severity(&self) -> HashMap<Severity, Vec<&Diagnostic>>;
+
+    /// Get diagnostics for a specific file
+    fn diagnostics_for_file(&self, file: &PathBuf) -> Vec<&Diagnostic>;
+
+    /// Get count of diagnostics by severity
+    fn count_by_severity(&self) -> HashMap<Severity, usize>;
+
+    /// Check if there are any errors
+    fn has_errors(&self) -> bool;
+
+    /// Check if there are any warnings
+    fn has_warnings(&self) -> bool;
+
+    /// Get total count of diagnostics
+    fn total_count(&self) -> usize;
+
+    /// Clear all collected diagnostics
+    fn clear(&mut self);
+}
+
+/// Default implementation of DiagnosticCollector
+#[derive(Debug, Clone, Default)]
+pub struct DefaultDiagnosticCollector {
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl DefaultDiagnosticCollector {
+    /// Create a new diagnostic collector
+    pub fn new() -> Self {
+        Self {
+            diagnostics: Vec::new(),
+        }
+    }
+
+    /// Create a collector with initial capacity
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            diagnostics: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// Sort diagnostics by location (file, then line, then column)
+    pub fn sort_by_location(&mut self) {
+        self.diagnostics.sort_by(|a, b| {
+            a.location
+                .file
+                .cmp(&b.location.file)
+                .then_with(|| a.location.line.cmp(&b.location.line))
+                .then_with(|| a.location.column.cmp(&b.location.column))
+        });
+    }
+
+    /// Sort diagnostics by severity (errors first, then warnings, etc.)
+    pub fn sort_by_severity(&mut self) {
+        self.diagnostics.sort_by(|a, b| {
+            // Reverse order so errors come first
+            b.severity
+                .cmp(&a.severity)
+                .then_with(|| a.location.file.cmp(&b.location.file))
+                .then_with(|| a.location.line.cmp(&b.location.line))
+                .then_with(|| a.location.column.cmp(&b.location.column))
+        });
+    }
+
+    /// Remove duplicate diagnostics
+    pub fn deduplicate(&mut self) {
+        self.diagnostics.sort_by(|a, b| {
+            a.rule_id
+                .cmp(&b.rule_id)
+                .then_with(|| a.location.file.cmp(&b.location.file))
+                .then_with(|| a.location.line.cmp(&b.location.line))
+                .then_with(|| a.location.column.cmp(&b.location.column))
+        });
+        self.diagnostics.dedup_by(|a, b| {
+            a.rule_id == b.rule_id
+                && a.location.file == b.location.file
+                && a.location.line == b.location.line
+                && a.location.column == b.location.column
+        });
+    }
+}
+
+impl DiagnosticCollector for DefaultDiagnosticCollector {
+    fn collect(&mut self, diagnostic: Diagnostic) {
+        self.diagnostics.push(diagnostic);
+    }
+
+    fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
+    fn filter_by_severity(&self, min_severity: Severity) -> Vec<&Diagnostic> {
+        self.diagnostics
+            .iter()
+            .filter(|d| d.severity >= min_severity)
+            .collect()
+    }
+
+    fn group_by_file(&self) -> HashMap<PathBuf, Vec<&Diagnostic>> {
+        let mut groups = HashMap::new();
+        for diagnostic in &self.diagnostics {
+            groups
+                .entry(diagnostic.location.file.clone())
+                .or_insert_with(Vec::new)
+                .push(diagnostic);
+        }
+        groups
+    }
+
+    fn group_by_rule(&self) -> HashMap<String, Vec<&Diagnostic>> {
+        let mut groups = HashMap::new();
+        for diagnostic in &self.diagnostics {
+            groups
+                .entry(diagnostic.rule_id.clone())
+                .or_insert_with(Vec::new)
+                .push(diagnostic);
+        }
+        groups
+    }
+
+    fn group_by_severity(&self) -> HashMap<Severity, Vec<&Diagnostic>> {
+        let mut groups = HashMap::new();
+        for diagnostic in &self.diagnostics {
+            groups
+                .entry(diagnostic.severity)
+                .or_insert_with(Vec::new)
+                .push(diagnostic);
+        }
+        groups
+    }
+
+    fn diagnostics_for_file(&self, file: &PathBuf) -> Vec<&Diagnostic> {
+        self.diagnostics
+            .iter()
+            .filter(|d| &d.location.file == file)
+            .collect()
+    }
+
+    fn count_by_severity(&self) -> HashMap<Severity, usize> {
+        let mut counts = HashMap::new();
+        for diagnostic in &self.diagnostics {
+            *counts.entry(diagnostic.severity).or_insert(0) += 1;
+        }
+        counts
+    }
+
+    fn has_errors(&self) -> bool {
+        self.diagnostics
+            .iter()
+            .any(|d| d.severity == Severity::Error)
+    }
+
+    fn has_warnings(&self) -> bool {
+        self.diagnostics
+            .iter()
+            .any(|d| d.severity == Severity::Warning)
+    }
+
+    fn total_count(&self) -> usize {
+        self.diagnostics.len()
+    }
+
+    fn clear(&mut self) {
+        self.diagnostics.clear();
+    }
+}
+
+/// Category for diagnostic classification aligned with Biome conventions
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DiagnosticCategory {
+    /// Correctness issues such as syntax or semantic violations
+    Correctness,
+    /// Suspicious patterns that may indicate bugs
+    Suspicious,
+    /// Excessive complexity warnings
+    Complexity,
+    /// Performance-related issues
+    Performance,
+    /// Style and formatting issues
+    Style,
+    /// Experimental or incubating diagnostics
+    Nursery,
+    /// Accessibility-related concerns
+    Accessibility,
+    /// Documentation or guidance improvements
+    Documentation,
+    /// Security-related issues
+    Security,
+    /// Compatibility issues with tooling or platforms
+    Compatibility,
+    /// Custom category
+    Custom(String),
+}
+
+impl DiagnosticCategory {
+    /// Convert category to kebab-case slug
+    pub fn slug(&self) -> &str {
+        match self {
+            DiagnosticCategory::Correctness => "correctness",
+            DiagnosticCategory::Suspicious => "suspicious",
+            DiagnosticCategory::Complexity => "complexity",
+            DiagnosticCategory::Performance => "performance",
+            DiagnosticCategory::Style => "style",
+            DiagnosticCategory::Nursery => "nursery",
+            DiagnosticCategory::Accessibility => "accessibility",
+            DiagnosticCategory::Documentation => "documentation",
+            DiagnosticCategory::Security => "security",
+            DiagnosticCategory::Compatibility => "compatibility",
+            DiagnosticCategory::Custom(name) => name.as_str(),
+        }
+    }
+}
+
+impl std::fmt::Display for DiagnosticCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.slug())
+    }
+}
+
+/// Formatter for diagnostic output
+pub struct DiagnosticFormatter {
+    /// Whether to include colors in output
+    pub use_colors: bool,
+    /// Whether to include code snippets
+    pub include_snippets: bool,
+    /// Number of context lines to show around the error
+    pub context_lines: usize,
+    /// Maximum width for formatting
+    pub max_width: usize,
+}
+
+impl Default for DiagnosticFormatter {
+    fn default() -> Self {
+        Self {
+            use_colors: true,
+            include_snippets: true,
+            context_lines: 2,
+            max_width: 120,
+        }
+    }
+}
+
+impl DiagnosticFormatter {
+    /// Create a new formatter
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a formatter without colors
+    pub fn no_colors() -> Self {
+        Self {
+            use_colors: false,
+            ..Self::default()
+        }
+    }
+
+    /// Create a formatter without code snippets
+    pub fn no_snippets() -> Self {
+        Self {
+            include_snippets: false,
+            ..Self::default()
+        }
+    }
+
+    /// Format a single diagnostic
+    pub fn format_diagnostic(&self, diagnostic: &Diagnostic) -> String {
+        let mut output = String::new();
+
+        // Format the header with location and severity
+        output.push_str(&self.format_header(diagnostic));
+        output.push('\n');
+
+        // Add the main message
+        output.push_str(&self.format_message(diagnostic));
+        output.push('\n');
+
+        // Add code snippet if available and requested
+        if self.include_snippets {
+            if let Some(snippet) = &diagnostic.code_snippet {
+                output.push('\n');
+                output.push_str(&self.format_code_snippet(snippet, diagnostic));
+                output.push('\n');
+            } else if let Ok(snippet) = self.extract_code_snippet(diagnostic) {
+                output.push('\n');
+                output.push_str(&self.format_code_snippet(&snippet, diagnostic));
+                output.push('\n');
+            }
+        }
+
+        // Add suggestions if available
+        if !diagnostic.suggestions.is_empty() {
+            output.push('\n');
+            output.push_str(&self.format_suggestions(&diagnostic.suggestions));
+        }
+
+        output
+    }
+
+    /// Format multiple diagnostics
+    pub fn format_diagnostics(&self, diagnostics: &[Diagnostic]) -> String {
+        let mut output = String::new();
+
+        for (i, diagnostic) in diagnostics.iter().enumerate() {
+            if i > 0 {
+                output.push('\n');
+                output.push_str(&"-".repeat(self.max_width.min(80)));
+                output.push('\n');
+                output.push('\n');
+            }
+            output.push_str(&self.format_diagnostic(diagnostic));
+        }
+
+        output
+    }
+
+    /// Format diagnostics grouped by file
+    pub fn format_by_file(&self, diagnostics: &HashMap<PathBuf, Vec<&Diagnostic>>) -> String {
+        let mut output = String::new();
+        let mut files: Vec<_> = diagnostics.keys().collect();
+        files.sort();
+
+        for (file_idx, file) in files.iter().enumerate() {
+            if file_idx > 0 {
+                output.push('\n');
+                output.push_str(&"=".repeat(self.max_width.min(80)));
+                output.push('\n');
+                output.push('\n');
+            }
+
+            // File header
+            output.push_str(&self.colorize(&format!("File: {}", file.display()), Color::Bold));
+            output.push('\n');
+            output.push('\n');
+
+            let file_diagnostics = &diagnostics[*file];
+            for (diag_idx, diagnostic) in file_diagnostics.iter().enumerate() {
+                if diag_idx > 0 {
+                    output.push('\n');
+                }
+                output.push_str(&self.format_diagnostic(diagnostic));
+            }
+        }
+
+        output
+    }
+
+    /// Format a summary of diagnostics
+    pub fn format_summary(&self, collector: &dyn DiagnosticCollector) -> String {
+        let counts = collector.count_by_severity();
+        let total = collector.total_count();
+
+        if total == 0 {
+            return self.colorize("No issues found", Color::Green);
+        }
+
+        let mut parts = Vec::new();
+
+        if let Some(&error_count) = counts.get(&Severity::Error) {
+            if error_count > 0 {
+                parts.push(self.colorize(
+                    &format!(
+                        "{} error{}",
+                        error_count,
+                        if error_count == 1 { "" } else { "s" }
+                    ),
+                    Color::Red,
+                ));
+            }
+        }
+
+        if let Some(&warning_count) = counts.get(&Severity::Warning) {
+            if warning_count > 0 {
+                parts.push(self.colorize(
+                    &format!(
+                        "{} warning{}",
+                        warning_count,
+                        if warning_count == 1 { "" } else { "s" }
+                    ),
+                    Color::Yellow,
+                ));
+            }
+        }
+
+        if let Some(&info_count) = counts.get(&Severity::Info) {
+            if info_count > 0 {
+                parts.push(self.colorize(&format!("{} info", info_count), Color::Blue));
+            }
+        }
+
+        if let Some(&hint_count) = counts.get(&Severity::Hint) {
+            if hint_count > 0 {
+                parts.push(self.colorize(
+                    &format!(
+                        "{} hint{}",
+                        hint_count,
+                        if hint_count == 1 { "" } else { "s" }
+                    ),
+                    Color::Cyan,
+                ));
+            }
+        }
+
+        format!(
+            "Found {} ({})",
+            self.colorize(
+                &format!("{} issue{}", total, if total == 1 { "" } else { "s" }),
+                Color::Bold
+            ),
+            parts.join(", ")
+        )
+    }
+
+    fn format_header(&self, diagnostic: &Diagnostic) -> String {
+        let severity_color = match diagnostic.severity {
+            Severity::Error => Color::Red,
+            Severity::Warning => Color::Yellow,
+            Severity::Info => Color::Blue,
+            Severity::Hint => Color::Cyan,
+        };
+
+        let severity_str = self.colorize(&diagnostic.severity.to_string(), severity_color);
+        let location_str = self.colorize(&diagnostic.location.to_string(), Color::Bold);
+
+        format!("{}: {}", severity_str, location_str)
+    }
+
+    fn format_message(&self, diagnostic: &Diagnostic) -> String {
+        let mut message = format!("  {}", diagnostic.message);
+
+        if let Some(ref code) = diagnostic.code {
+            message.push_str(&format!(" [{}]", self.colorize(code, Color::Dim)));
+        }
+
+        if let Some(ref category) = diagnostic.category {
+            message.push_str(&format!(
+                " ({})",
+                self.colorize(&category.to_string(), Color::Dim)
+            ));
+        }
+
+        message
+    }
+
+    fn format_code_snippet(&self, snippet: &str, diagnostic: &Diagnostic) -> String {
+        let lines: Vec<&str> = snippet.lines().collect();
+        let mut output = String::new();
+
+        let line_num_width = (diagnostic.location.line + lines.len())
+            .to_string()
+            .len()
+            .max(3);
+
+        for (i, line) in lines.iter().enumerate() {
+            let line_num = diagnostic.location.line + i;
+            let is_error_line = i == 0; // Assume first line is the error line
+
+            let line_num_str = format!("{:width$}", line_num, width = line_num_width);
+            let line_num_colored = if is_error_line {
+                self.colorize(&line_num_str, Color::Red)
+            } else {
+                self.colorize(&line_num_str, Color::Dim)
+            };
+
+            output.push_str(&format!("  {} | {}\n", line_num_colored, line));
+
+            // Add error indicator for the error line
+            if is_error_line && diagnostic.location.length > 0 {
+                let spaces =
+                    " ".repeat(line_num_width + 3 + diagnostic.location.column.saturating_sub(1));
+                let carets = "^".repeat(diagnostic.location.length.min(line.len()));
+                output.push_str(&format!(
+                    "  {}{}\n",
+                    spaces,
+                    self.colorize(&carets, Color::Red)
+                ));
+            }
+        }
+
+        output
+    }
+
+    fn format_suggestions(&self, suggestions: &[Suggestion]) -> String {
+        let mut output = String::new();
+
+        output.push_str(&self.colorize("Suggestions:", Color::Bold));
+        output.push('\n');
+
+        for (i, suggestion) in suggestions.iter().enumerate() {
+            let prefix = if suggestion.is_safe {
+                self.colorize("  ✓", Color::Green)
+            } else {
+                self.colorize("  ⚠", Color::Yellow)
+            };
+
+            output.push_str(&format!("{} {}\n", prefix, suggestion.message));
+
+            if !suggestion.replacement.is_empty() {
+                let replacement_preview = if suggestion.replacement.len() > 50 {
+                    format!("{}...", &suggestion.replacement[..47])
+                } else {
+                    suggestion.replacement.clone()
+                };
+                output.push_str(&format!(
+                    "    Replace with: {}\n",
+                    self.colorize(&replacement_preview, Color::Green)
+                ));
+            }
+
+            if i < suggestions.len() - 1 {
+                output.push('\n');
+            }
+        }
+
+        output
+    }
+
+    fn extract_code_snippet(&self, diagnostic: &Diagnostic) -> Result<String, std::io::Error> {
+        let content = fs::read_to_string(&diagnostic.location.file)?;
+        let lines: Vec<&str> = content.lines().collect();
+
+        let start_line = diagnostic
+            .location
+            .line
+            .saturating_sub(self.context_lines + 1);
+        let end_line = (diagnostic.location.line + self.context_lines).min(lines.len());
+
+        let snippet_lines = &lines[start_line..end_line];
+        Ok(snippet_lines.join("\n"))
+    }
+
+    fn colorize(&self, text: &str, color: Color) -> String {
+        if !self.use_colors {
+            return text.to_string();
+        }
+
+        let color_code = match color {
+            Color::Red => "\x1b[31m",
+            Color::Green => "\x1b[32m",
+            Color::Yellow => "\x1b[33m",
+            Color::Blue => "\x1b[34m",
+            Color::Cyan => "\x1b[36m",
+            Color::Bold => "\x1b[1m",
+            Color::Dim => "\x1b[2m",
+        };
+
+        format!("{}{}\x1b[0m", color_code, text)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Color {
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Cyan,
+    Bold,
+    Dim,
+}
+
+/// Trait for formatting diagnostics in different output formats
+pub trait DiagnosticOutputFormatter {
+    /// Format diagnostics as human-readable text
+    fn format_human(&self, diagnostics: &[Diagnostic]) -> String;
+
+    /// Format diagnostics as JSON
+    fn format_json(&self, diagnostics: &[Diagnostic]) -> Result<String, serde_json::Error>;
+
+    /// Format diagnostics as SARIF (Static Analysis Results Interchange Format)
+    fn format_sarif(&self, diagnostics: &[Diagnostic]) -> Result<String, serde_json::Error>;
+}
+
+/// Default implementation of DiagnosticOutputFormatter
+pub struct DefaultOutputFormatter {
+    formatter: DiagnosticFormatter,
+}
+
+impl DefaultOutputFormatter {
+    pub fn new(formatter: DiagnosticFormatter) -> Self {
+        Self { formatter }
+    }
+}
+
+impl DiagnosticOutputFormatter for DefaultOutputFormatter {
+    fn format_human(&self, diagnostics: &[Diagnostic]) -> String {
+        self.formatter.format_diagnostics(diagnostics)
+    }
+
+    fn format_json(&self, diagnostics: &[Diagnostic]) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(diagnostics)
+    }
+
+    fn format_sarif(&self, diagnostics: &[Diagnostic]) -> Result<String, serde_json::Error> {
+        // Basic SARIF format structure
+        let sarif_report = SarifReport {
+            version: "2.1.0".to_string(),
+            runs: vec![SarifRun {
+                tool: SarifTool {
+                    driver: SarifDriver {
+                        name: "fsh-lint".to_string(),
+                        version: env!("CARGO_PKG_VERSION").to_string(),
+                    },
+                },
+                results: diagnostics
+                    .iter()
+                    .map(|d| SarifResult {
+                        rule_id: d.rule_id.clone(),
+                        level: match d.severity {
+                            Severity::Error => "error".to_string(),
+                            Severity::Warning => "warning".to_string(),
+                            Severity::Info => "note".to_string(),
+                            Severity::Hint => "note".to_string(),
+                        },
+                        message: SarifMessage {
+                            text: d.message.clone(),
+                        },
+                        locations: vec![SarifLocation {
+                            physical_location: SarifPhysicalLocation {
+                                artifact_location: SarifArtifactLocation {
+                                    uri: d.location.file.to_string_lossy().to_string(),
+                                },
+                                region: SarifRegion {
+                                    start_line: d.location.line,
+                                    start_column: d.location.column,
+                                    end_line: d.location.end_line,
+                                    end_column: d.location.end_column,
+                                },
+                            },
+                        }],
+                    })
+                    .collect(),
+            }],
+        };
+
+        serde_json::to_string_pretty(&sarif_report)
+    }
+}
+
+// SARIF format structures
+#[derive(Serialize)]
+struct SarifReport {
+    version: String,
+    runs: Vec<SarifRun>,
+}
+
+#[derive(Serialize)]
+struct SarifRun {
+    tool: SarifTool,
+    results: Vec<SarifResult>,
+}
+
+#[derive(Serialize)]
+struct SarifTool {
+    driver: SarifDriver,
+}
+
+#[derive(Serialize)]
+struct SarifDriver {
+    name: String,
+    version: String,
+}
+
+#[derive(Serialize)]
+struct SarifResult {
+    #[serde(rename = "ruleId")]
+    rule_id: String,
+    level: String,
+    message: SarifMessage,
+    locations: Vec<SarifLocation>,
+}
+
+#[derive(Serialize)]
+struct SarifMessage {
+    text: String,
+}
+
+#[derive(Serialize)]
+struct SarifLocation {
+    #[serde(rename = "physicalLocation")]
+    physical_location: SarifPhysicalLocation,
+}
+
+#[derive(Serialize)]
+struct SarifPhysicalLocation {
+    #[serde(rename = "artifactLocation")]
+    artifact_location: SarifArtifactLocation,
+    region: SarifRegion,
+}
+
+#[derive(Serialize)]
+struct SarifArtifactLocation {
+    uri: String,
+}
+
+#[derive(Serialize)]
+struct SarifRegion {
+    #[serde(rename = "startLine")]
+    start_line: usize,
+    #[serde(rename = "startColumn")]
+    start_column: usize,
+    #[serde(rename = "endLine", skip_serializing_if = "Option::is_none")]
+    end_line: Option<usize>,
+    #[serde(rename = "endColumn", skip_serializing_if = "Option::is_none")]
+    end_column: Option<usize>,
 }

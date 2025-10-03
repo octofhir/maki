@@ -12,9 +12,15 @@ description = "Built-in rules and rule engine for FSH linter"
 fsh-lint-core = { path = "../fsh-lint-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+walkdir = { workspace = true }
+grit-pattern-matcher = "0.5.1"
+grit-util = "0.5.1"
+tree-sitter = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
+tempfile = "3.8"

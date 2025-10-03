@@ -1,0 +1,112 @@
+# Default FSH Lint Configuration
+# This configuration provides balanced linting with sensible defaults
+
+# Extend from base configurations (if any)
+extends: []
+
+# File inclusion/exclusion patterns
+include_patterns:
+  - "**/*.fsh"
+
+exclude_patterns:
+  - "node_modules/**"
+  - "target/**"
+  - "build/**"
+  - "fsh-generated/**"
+  - "input-cache/**"
+
+# Additional ignore files to respect
+ignore_files:
+  - ".gitignore"
+  - ".fshlintignore"
+
+# Rule Configuration
+rules:
+  # === Blocking/Required Field Rules ===
+  # These must pass before other rules run
+  required-field-present: error
+
+  # === Naming Convention Rules ===
+  # CodeSystem naming
+  code-system-name-matches-filename: warn
+  code-system-name-matches-id: warn
+  code-system-name-matches-title: warn
+
+  # Profile naming
+  profile-name-matches-filename: warn
+  profile-name-matches-id: warn
+  profile-name-matches-title: warn
+
+  # ValueSet naming
+  value-set-name-matches-filename: warn
+  value-set-name-matches-id: warn
+  value-set-name-matches-title: warn
+
+  # === Metadata Rules ===
+  profile-assignment-present: error
+  binding-strength-present: error
+  missing-metadata: warn
+  missing-description: warn
+
+  # === Correctness Rules ===
+  invalid-cardinality: error
+  conflicting-constraints: error
+  extension-context-missing: error
+  undefined-reference: error
+  invalid-fhir-path: error
+
+  # === Suspicious Patterns ===
+  profile-parent-not-retired: warn
+  redundant-cardinality: warn
+
+  # === Style Rules ===
+  inconsistent-naming: warn
+  enforce-title-case: off  # Optional, enable if desired
+
+  # === Informational Rules ===
+  search-parameter-notice: info
+
+  # === Optional Rules (disabled by default) ===
+  max-line-length: off
+  excessive-cardinality: off
+  deeply-nested-extensions: off
+
+# Autofix Configuration
+autofix:
+  # Enable safe fixes by default (formatting, whitespace, etc.)
+  enable_safe: true
+
+  # Unsafe fixes require explicit --unsafe flag
+  enable_unsafe: false
+
+# Formatter Configuration
+formatter:
+  # Indentation size in spaces
+  indent_size: 2
+
+  # Maximum line width for formatting
+  max_line_width: 100
+
+  # Whether to align caret expressions
+  align_carets: true
+
+# Environment Configuration
+env:
+  # Target FHIR version (optional)
+  fhir_version: "4.0.1"
+
+  # Additional context paths for package resolution
+  context_paths: []
+
+# Directory containing custom rules (GritQL patterns)
+rules_dir: []
+
+# Per-directory overrides
+overrides: []
+  # Example:
+  # - files: "profiles/*.fsh"
+  #   rules:
+  #     profile-name-matches-title: error
+  # - files: "examples/*.fsh"
+  #   rules:
+  #     required-field-present: warn

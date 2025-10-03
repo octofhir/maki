@@ -1,0 +1,726 @@
+//! Parallel execution engine for FSH linting operations
+//!
+//! This module provides the core execution engine that coordinates parallel
+//! processing of FSH files through the linting pipeline.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use rayon::prelude::*;
+use tracing::{Level, debug, error, info, span, warn};
+
+use crate::{
+    CompiledRule, Config, Diagnostic, FshLintError, Parser, Result, RuleEngine, SemanticAnalyzer,
+};
+
+/// Progress reporting callback type
+pub type ProgressCallback = Arc<dyn Fn(ProgressInfo) + Send + Sync>;
+
+/// Information about execution progress
+#[derive(Debug, Clone)]
+pub struct ProgressInfo {
+    /// Total number of files to process
+    pub total_files: usize,
+    /// Number of files completed
+    pub completed_files: usize,
+    /// Current file being processed (if available)
+    pub current_file: Option<PathBuf>,
+    /// Elapsed time since start
+    pub elapsed: Duration,
+    /// Estimated time remaining (if available)
+    pub estimated_remaining: Option<Duration>,
+}
+
+impl ProgressInfo {
+    /// Calculate completion percentage (0.0 to 1.0)
+    pub fn completion_percentage(&self) -> f64 {
+        if self.total_files == 0 {
+            1.0
+        } else {
+            self.completed_files as f64 / self.total_files as f64
+        }
+    }
+}
+
+/// Resource usage statistics
+#[derive(Debug, Clone, Default)]
+pub struct ResourceStats {
+    /// Peak memory usage in bytes
+    pub peak_memory_bytes: u64,
+    /// Current memory usage in bytes
+    pub current_memory_bytes: u64,
+    /// Number of active threads
+    pub active_threads: usize,
+    /// Total CPU time used
+    pub cpu_time: Duration,
+    /// Number of files processed
+    pub files_processed: usize,
+    /// Average processing time per file
+    pub avg_processing_time: Duration,
+}
+
+/// Resource monitor for tracking system resource usage
+#[derive(Debug)]
+pub struct ResourceMonitor {
+    /// Memory usage samples
+    memory_samples: Arc<Mutex<Vec<u64>>>,
+    /// Start time for monitoring
+    start_time: Instant,
+    /// Monitoring interval
+    interval: Duration,
+}
+
+impl ResourceMonitor {
+    /// Create a new resource monitor
+    pub fn new(interval: Duration) -> Self {
+        Self {
+            memory_samples: Arc::new(Mutex::new(Vec::new())),
+            start_time: Instant::now(),
+            interval,
+        }
+    }
+
+    /// Start monitoring resources in the background
+    pub fn start_monitoring(&self) -> Arc<Mutex<ResourceStats>> {
+        let stats = Arc::new(Mutex::new(ResourceStats::default()));
+        let stats_clone = Arc::clone(&stats);
+        let samples_clone = Arc::clone(&self.memory_samples);
+        let interval = self.interval;
+
+        std::thread::spawn(move || {
+            loop {
+                let current_memory = get_current_memory_usage();
+
+                // Update samples
+                {
+                    let mut samples = samples_clone.lock().unwrap();
+                    samples.push(current_memory);
+                    // Keep only last 100 samples to prevent unbounded growth
+                    if samples.len() > 100 {
+                        samples.remove(0);
+                    }
+                }
+
+                // Update stats
+                {
+                    let mut stats = stats_clone.lock().unwrap();
+                    stats.current_memory_bytes = current_memory;
+                    if current_memory > stats.peak_memory_bytes {
+                        stats.peak_memory_bytes = current_memory;
+                    }
+                    stats.active_threads = rayon::current_num_threads();
+                }
+
+                std::thread::sleep(interval);
+            }
+        });
+
+        stats
+    }
+
+    /// Get memory usage trend (increasing, decreasing, stable)
+    pub fn get_memory_trend(&self) -> MemoryTrend {
+        let samples = self.memory_samples.lock().unwrap();
+        if samples.len() < 3 {
+            return MemoryTrend::Stable;
+        }
+
+        let recent_samples = &samples[samples.len().saturating_sub(5)..];
+        let first = recent_samples[0];
+        let last = recent_samples[recent_samples.len() - 1];
+
+        let change_percent = if first > 0 {
+            ((last as f64 - first as f64) / first as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        if change_percent > 10.0 {
+            MemoryTrend::Increasing
+        } else if change_percent < -10.0 {
+            MemoryTrend::Decreasing
+        } else {
+            MemoryTrend::Stable
+        }
+    }
+}
+
+/// Memory usage trend
+#[derive(Debug, Clone, PartialEq)]
+pub enum MemoryTrend {
+    Increasing,
+    Decreasing,
+    Stable,
+}
+
+/// Backpressure controller for managing resource usage
+#[derive(Debug)]
+pub struct BackpressureController {
+    /// Current parallelism level
+    current_parallelism: Arc<Mutex<usize>>,
+    /// Maximum parallelism level
+    max_parallelism: usize,
+    /// Minimum parallelism level
+    min_parallelism: usize,
+    /// Memory threshold for applying backpressure (bytes)
+    memory_threshold: Option<u64>,
+}
+
+impl BackpressureController {
+    /// Create a new backpressure controller
+    pub fn new(max_parallelism: usize, memory_threshold: Option<u64>) -> Self {
+        Self {
+            current_parallelism: Arc::new(Mutex::new(max_parallelism)),
+            max_parallelism,
+            min_parallelism: 1,
+            memory_threshold,
+        }
+    }
+
+    /// Adjust parallelism based on resource usage
+    pub fn adjust_parallelism(&self, stats: &ResourceStats, trend: MemoryTrend) -> usize {
+        let mut current = self.current_parallelism.lock().unwrap();
+
+        // Check memory pressure
+        if let Some(threshold) = self.memory_threshold {
+            if stats.current_memory_bytes > threshold {
+                // Reduce parallelism under memory pressure
+                *current = (*current / 2).max(self.min_parallelism);
+                warn!(
+                    "Reducing parallelism to {} due to memory pressure",
+                    *current
+                );
+            } else if stats.current_memory_bytes < threshold / 2 && trend == MemoryTrend::Decreasing
+            {
+                // Increase parallelism when memory usage is low and decreasing
+                *current = (*current * 2).min(self.max_parallelism);
+                debug!(
+                    "Increasing parallelism to {} due to low memory usage",
+                    *current
+                );
+            }
+        }
+
+        *current
+    }
+
+    /// Get current parallelism level
+    pub fn get_current_parallelism(&self) -> usize {
+        *self.current_parallelism.lock().unwrap()
+    }
+}
+
+/// Execution context containing configuration and shared resources
+pub struct ExecutionContext {
+    /// Linting configuration
+    pub config: Config,
+    /// Compiled rules for execution
+    pub rules: Vec<CompiledRule>,
+    /// Thread pool configuration
+    pub thread_pool_size: Option<usize>,
+    /// Progress reporting callback
+    pub progress_callback: Option<ProgressCallback>,
+    /// Memory limit in bytes (None for no limit)
+    pub memory_limit: Option<u64>,
+    /// Resource usage statistics
+    pub resource_stats: Arc<Mutex<ResourceStats>>,
+    /// Resource monitor for tracking system resources
+    pub resource_monitor: Option<ResourceMonitor>,
+    /// Backpressure controller for managing resource usage
+    pub backpressure_controller: Option<BackpressureController>,
+}
+
+impl ExecutionContext {
+    /// Create a new execution context
+    pub fn new(config: Config, rules: Vec<CompiledRule>) -> Self {
+        Self {
+            config,
+            rules,
+            thread_pool_size: None,
+            progress_callback: None,
+            memory_limit: None,
+            resource_stats: Arc::new(Mutex::new(ResourceStats::default())),
+            resource_monitor: None,
+            backpressure_controller: None,
+        }
+    }
+
+    /// Set the thread pool size
+    pub fn with_thread_pool_size(mut self, size: usize) -> Self {
+        self.thread_pool_size = Some(size);
+        self
+    }
+
+    /// Set progress callback
+    pub fn with_progress_callback(mut self, callback: ProgressCallback) -> Self {
+        self.progress_callback = Some(callback);
+        self
+    }
+
+    /// Set memory limit
+    pub fn with_memory_limit(mut self, limit: u64) -> Self {
+        self.memory_limit = Some(limit);
+        self
+    }
+
+    /// Enable resource monitoring
+    pub fn with_resource_monitoring(mut self, interval: Duration) -> Self {
+        self.resource_monitor = Some(ResourceMonitor::new(interval));
+        self
+    }
+
+    /// Enable backpressure control
+    pub fn with_backpressure_control(
+        mut self,
+        max_parallelism: usize,
+        memory_threshold: Option<u64>,
+    ) -> Self {
+        self.backpressure_controller = Some(BackpressureController::new(
+            max_parallelism,
+            memory_threshold,
+        ));
+        self
+    }
+
+    /// Get current resource statistics
+    pub fn get_resource_stats(&self) -> ResourceStats {
+        self.resource_stats.lock().unwrap().clone()
+    }
+}
+
+/// Result of executing linting on a single file
+#[derive(Debug)]
+pub struct FileExecutionResult {
+    /// Path of the processed file
+    pub file_path: PathBuf,
+    /// Diagnostics found in the file
+    pub diagnostics: Vec<Diagnostic>,
+    /// Execution time for this file
+    pub execution_time: Duration,
+    /// Any error that occurred during processing
+    pub error: Option<FshLintError>,
+}
+
+/// Trait for executing linting operations
+pub trait Executor {
+    /// Execute linting on multiple files in parallel
+    fn execute_parallel(&self, files: Vec<PathBuf>) -> Result<Vec<FileExecutionResult>>;
+
+    /// Execute linting on a single file
+    fn execute_single(&self, file: &Path) -> Result<FileExecutionResult>;
+
+    /// Set the parallelism level (number of threads)
+    fn set_parallelism(&mut self, threads: usize);
+
+    /// Get current parallelism level
+    fn get_parallelism(&self) -> usize;
+}
+
+/// Default implementation of the parallel executor
+pub struct DefaultExecutor {
+    /// Execution context
+    context: ExecutionContext,
+    /// Parser instance (wrapped in Arc<Mutex> for thread safety)
+    parser: Arc<Mutex<Box<dyn Parser + Send>>>,
+    /// Semantic analyzer instance
+    semantic_analyzer: Box<dyn SemanticAnalyzer + Send + Sync>,
+    /// Rule engine instance
+    rule_engine: Box<dyn RuleEngine + Send + Sync>,
+}
+
+impl DefaultExecutor {
+    /// Create a new default executor
+    pub fn new(
+        context: ExecutionContext,
+        parser: Box<dyn Parser + Send>,
+        semantic_analyzer: Box<dyn SemanticAnalyzer + Send + Sync>,
+        rule_engine: Box<dyn RuleEngine + Send + Sync>,
+    ) -> Self {
+        Self {
+            context,
+            parser: Arc::new(Mutex::new(parser)),
+            semantic_analyzer,
+            rule_engine,
+        }
+    }
+
+    /// Process a single file through the complete linting pipeline
+    fn process_file(&self, file_path: &Path) -> FileExecutionResult {
+        let start_time = Instant::now();
+        let span = span!(Level::DEBUG, "process_file", file = %file_path.display());
+        let _enter = span.enter();
+
+        debug!("Processing file: {}", file_path.display());
+
+        // Read and parse the file
+        let content = match fs::read_to_string(file_path) {
+            Ok(content) => content,
+            Err(io_error) => {
+                let error = FshLintError::io_error(file_path, io_error);
+                error!("Failed to read file {}: {}", file_path.display(), error);
+                return FileExecutionResult {
+                    file_path: file_path.to_path_buf(),
+                    diagnostics: vec![],
+                    execution_time: start_time.elapsed(),
+                    error: Some(error),
+                };
+            }
+        };
+
+        let parse_result = match self.parser.lock().unwrap().parse(&content, None) {
+            Ok(result) => result,
+            Err(error) => {
+                error!("Failed to parse file {}: {}", file_path.display(), error);
+                return FileExecutionResult {
+                    file_path: file_path.to_path_buf(),
+                    diagnostics: vec![],
+                    execution_time: start_time.elapsed(),
+                    error: Some(error),
+                };
+            }
+        };
+
+        // Perform semantic analysis
+        let semantic_model = match self.semantic_analyzer.analyze(
+            &parse_result.tree,
+            &parse_result.source,
+            file_path.to_path_buf(),
+        ) {
+            Ok(model) => model,
+            Err(error) => {
+                error!("Failed to analyze file {}: {}", file_path.display(), error);
+                return FileExecutionResult {
+                    file_path: file_path.to_path_buf(),
+                    diagnostics: vec![],
+                    execution_time: start_time.elapsed(),
+                    error: Some(error),
+                };
+            }
+        };
+
+        // Execute rules
+        let mut diagnostics = self.rule_engine.execute_rules(&semantic_model);
+
+        // Add parse errors as diagnostics
+        for parse_error in parse_result.errors {
+            diagnostics.push(Diagnostic::from_parse_error(parse_error, file_path));
+        }
+
+        // Sort diagnostics for deterministic output
+        diagnostics.sort_by(|a, b| {
+            a.location
+                .line
+                .cmp(&b.location.line)
+                .then_with(|| a.location.column.cmp(&b.location.column))
+                .then_with(|| a.rule_id.cmp(&b.rule_id))
+        });
+
+        let execution_time = start_time.elapsed();
+        debug!(
+            "Completed processing file {} in {:?}",
+            file_path.display(),
+            execution_time
+        );
+
+        FileExecutionResult {
+            file_path: file_path.to_path_buf(),
+            diagnostics,
+            execution_time,
+            error: None,
+        }
+    }
+
+    /// Check memory usage and apply backpressure if needed
+    fn check_memory_usage(&self) -> Result<()> {
+        if let Some(limit) = self.context.memory_limit {
+            let current_usage = get_current_memory_usage();
+
+            if current_usage > limit {
+                warn!(
+                    "Memory usage ({} bytes) exceeds limit ({} bytes)",
+                    current_usage, limit
+                );
+                // Apply backpressure by reducing parallelism
+                return Err(FshLintError::ResourceLimit {
+                    resource: "memory".to_string(),
+                    limit: limit.to_string(),
+                    current: current_usage.to_string(),
+                });
+            }
+
+            // Update resource stats
+            if let Ok(mut stats) = self.context.resource_stats.lock() {
+                stats.current_memory_bytes = current_usage;
+                if current_usage > stats.peak_memory_bytes {
+                    stats.peak_memory_bytes = current_usage;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Report progress if callback is configured
+    fn report_progress(&self, info: ProgressInfo) {
+        if let Some(ref callback) = self.context.progress_callback {
+            callback(info);
+        }
+    }
+}
+
+impl Executor for DefaultExecutor {
+    fn execute_parallel(&self, files: Vec<PathBuf>) -> Result<Vec<FileExecutionResult>> {
+        let total_files = files.len();
+        let start_time = Instant::now();
+
+        info!("Starting parallel execution of {} files", total_files);
+
+        // Start resource monitoring if enabled
+        let _monitoring_stats = if let Some(ref monitor) = self.context.resource_monitor {
+            Some(monitor.start_monitoring())
+        } else {
+            None
+        };
+
+        // Configure initial thread pool (only if not already initialized)
+        if let Some(threads) = self.context.thread_pool_size {
+            // Try to build a custom thread pool, but don't fail if global pool is already initialized
+            if let Err(e) = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build_global()
+            {
+                debug!(
+                    "Could not configure global thread pool (may already be initialized): {}",
+                    e
+                );
+                // Continue with default thread pool
+            }
+        }
+
+        // Progress tracking
+        let completed_count = Arc::new(Mutex::new(0usize));
+        let completed_count_clone = Arc::clone(&completed_count);
+
+        // Execute files in parallel with deterministic ordering and adaptive parallelism
+        let results: Result<Vec<_>> = files
+            .par_iter()
+            .enumerate()
+            .map(|(index, file_path)| {
+                // Check memory usage and adjust parallelism periodically
+                if index % 10 == 0 {
+                    if let Err(e) = self.check_memory_usage() {
+                        return Err(e);
+                    }
+
+                    // Adjust parallelism based on resource usage
+                    if let (Some(monitor), Some(controller)) = (
+                        &self.context.resource_monitor,
+                        &self.context.backpressure_controller,
+                    ) {
+                        let trend = monitor.get_memory_trend();
+                        let stats = self.context.get_resource_stats();
+                        let new_parallelism = controller.adjust_parallelism(&stats, trend.clone());
+
+                        // Note: Rayon doesn't support dynamic thread pool resizing,
+                        // so this is more of a monitoring feature for now
+                        debug!(
+                            "Current parallelism: {}, Memory trend: {:?}",
+                            new_parallelism, trend
+                        );
+                    }
+                }
+
+                let _file_start_time = Instant::now();
+                let result = self.process_file(file_path);
+                let _file_processing_time = _file_start_time.elapsed();
+
+                // Update progress and statistics
+                {
+                    let mut count = completed_count_clone.lock().unwrap();
+                    *count += 1;
+                    let completed = *count;
+
+                    let elapsed = start_time.elapsed();
+                    let estimated_remaining = if completed > 0 {
+                        let avg_time_per_file = elapsed / completed as u32;
+                        let remaining_files = total_files - completed;
+                        Some(avg_time_per_file * remaining_files as u32)
+                    } else {
+                        None
+                    };
+
+                    // Update resource statistics
+                    if let Ok(mut stats) = self.context.resource_stats.lock() {
+                        stats.files_processed = completed;
+                        if completed > 0 {
+                            stats.avg_processing_time = elapsed / completed as u32;
+                        }
+                    }
+
+                    self.report_progress(ProgressInfo {
+                        total_files,
+                        completed_files: completed,
+                        current_file: Some(file_path.clone()),
+                        elapsed,
+                        estimated_remaining,
+                    });
+                }
+
+                Ok((index, result))
+            })
+            .collect();
+
+        let mut indexed_results = results?;
+
+        // Sort by original index to maintain deterministic ordering
+        indexed_results.sort_by_key(|(index, _)| *index);
+
+        let final_results: Vec<FileExecutionResult> = indexed_results
+            .into_iter()
+            .map(|(_, result)| result)
+            .collect();
+
+        let total_time = start_time.elapsed();
+        info!(
+            "Completed parallel execution of {} files in {:?}",
+            total_files, total_time
+        );
+
+        // Final progress report
+        self.report_progress(ProgressInfo {
+            total_files,
+            completed_files: total_files,
+            current_file: None,
+            elapsed: total_time,
+            estimated_remaining: Some(Duration::ZERO),
+        });
+
+        Ok(final_results)
+    }
+
+    fn execute_single(&self, file: &Path) -> Result<FileExecutionResult> {
+        info!("Executing single file: {}", file.display());
+        Ok(self.process_file(file))
+    }
+
+    fn set_parallelism(&mut self, threads: usize) {
+        self.context.thread_pool_size = Some(threads);
+    }
+
+    fn get_parallelism(&self) -> usize {
+        self.context.thread_pool_size.unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|p| p.get())
+                .unwrap_or(1)
+        })
+    }
+}
+
+impl DefaultExecutor {
+    /// Get the execution context (for testing)
+    pub fn get_context(&self) -> &ExecutionContext {
+        &self.context
+    }
+}
+
+/// Get current memory usage in bytes
+/// This is a simplified implementation - in production you might want to use
+/// a more sophisticated memory monitoring solution
+fn get_current_memory_usage() -> u64 {
+    // Try to get memory usage from /proc/self/status on Linux
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+            for line in status.lines() {
+                if line.starts_with("VmRSS:") {
+                    if let Some(kb_str) = line.split_whitespace().nth(1) {
+                        if let Ok(kb) = kb_str.parse::<u64>() {
+                            return kb * 1024; // Convert KB to bytes
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: return 0 as we can't accurately measure memory usage
+    // In a real implementation, you would use a crate like `memory-stats`
+    // or platform-specific APIs
+    0
+}
+
+/// Extension trait to convert parse errors to diagnostics
+trait ParseErrorExt {
+    fn from_parse_error(error: crate::ParseError, file_path: &Path) -> Diagnostic;
+}
+
+impl ParseErrorExt for Diagnostic {
+    fn from_parse_error(error: crate::ParseError, file_path: &Path) -> Diagnostic {
+        Diagnostic {
+            rule_id: "parse-error".to_string(),
+            severity: crate::Severity::Error,
+            message: error.message,
+            location: crate::Location {
+                file: file_path.to_path_buf(),
+                line: error.line,
+                column: error.column,
+                end_line: None,
+                end_column: None,
+                offset: error.offset,
+                length: error.length,
+                span: Some((error.offset, error.offset + error.length)),
+            },
+            suggestions: vec![],
+            code_snippet: None,
+            code: None,
+            source: Some("parser".to_string()),
+            category: Some(crate::DiagnosticCategory::Correctness),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn test_progress_info_completion_percentage() {
+        let progress = ProgressInfo {
+            total_files: 100,
+            completed_files: 25,
+            current_file: None,
+            elapsed: Duration::from_secs(10),
+            estimated_remaining: None,
+        };
+
+        assert_eq!(progress.completion_percentage(), 0.25);
+    }
+
+    #[test]
+    fn test_progress_info_completion_percentage_zero_total() {
+        let progress = ProgressInfo {
+            total_files: 0,
+            completed_files: 0,
+            current_file: None,
+            elapsed: Duration::from_secs(0),
+            estimated_remaining: None,
+        };
+
+        assert_eq!(progress.completion_percentage(), 1.0);
+    }
+
+    #[test]
+    fn test_execution_context_builder() {
+        let config = Config::default();
+        let rules = vec![];
+
+        let context = ExecutionContext::new(config, rules)
+            .with_thread_pool_size(4)
+            .with_memory_limit(1024 * 1024 * 1024); // 1GB
+
+        assert_eq!(context.thread_pool_size, Some(4));
+        assert_eq!(context.memory_limit, Some(1024 * 1024 * 1024));
+    }
+}
