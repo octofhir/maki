@@ -156,7 +156,8 @@ fn all_rules_combines_everything_without_duplicates() {
     let documentation = BuiltinRules::documentation_rules();
     let all = BuiltinRules::all_rules();
 
-    let expected_total = blocking.len() + correctness.len() + suspicious.len() + style.len() + documentation.len();
+    let expected_total =
+        blocking.len() + correctness.len() + suspicious.len() + style.len() + documentation.len();
     assert_eq!(all.len(), expected_total);
 
     for rule in all {

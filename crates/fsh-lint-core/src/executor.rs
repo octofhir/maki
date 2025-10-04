@@ -369,7 +369,7 @@ impl DefaultExecutor {
             }
         };
 
-        let parse_result = match self.parser.lock().unwrap().parse(&content, None) {
+        let parse_result = match self.parser.lock().unwrap().parse(&content) {
             Ok(result) => result,
             Err(error) => {
                 error!("Failed to parse file {}: {}", file_path.display(), error);
@@ -382,10 +382,32 @@ impl DefaultExecutor {
             }
         };
 
+        let parse_result = parse_result;
+        let parse_source = parse_result.source;
+        let parse_errors = parse_result.errors;
+        let document = parse_result.document;
+
+        let mut parse_diagnostics = Vec::new();
+        for parse_error in parse_errors {
+            parse_diagnostics.push(Diagnostic::from_parse_error(parse_error, file_path));
+        }
+
+        let document = match document {
+            Some(doc) => doc,
+            None => {
+                return FileExecutionResult {
+                    file_path: file_path.to_path_buf(),
+                    diagnostics: parse_diagnostics,
+                    execution_time: start_time.elapsed(),
+                    error: None,
+                };
+            }
+        };
+
         // Perform semantic analysis
         let semantic_model = match self.semantic_analyzer.analyze(
-            &parse_result.tree,
-            &parse_result.source,
+            &document,
+            parse_source.as_ref(),
             file_path.to_path_buf(),
         ) {
             Ok(model) => model,
@@ -402,11 +424,7 @@ impl DefaultExecutor {
 
         // Execute rules
         let mut diagnostics = self.rule_engine.execute_rules(&semantic_model);
-
-        // Add parse errors as diagnostics
-        for parse_error in parse_result.errors {
-            diagnostics.push(Diagnostic::from_parse_error(parse_error, file_path));
-        }
+        diagnostics.extend(parse_diagnostics.into_iter());
 
         // Sort diagnostics for deterministic output
         diagnostics.sort_by(|a, b| {

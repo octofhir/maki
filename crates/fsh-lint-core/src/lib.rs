@@ -4,6 +4,7 @@
 //! This crate provides the fundamental components for parsing, analyzing,
 //! and linting FSH files.
 
+pub mod ast;
 pub mod autofix;
 pub mod cache;
 pub mod config;
@@ -12,7 +13,9 @@ pub mod discovery;
 pub mod error;
 pub mod executor;
 pub mod formatter;
+pub mod lexer;
 pub mod parser;
+mod parser_chumsky;
 pub mod result;
 pub mod rules;
 pub mod semantic;
@@ -30,7 +33,7 @@ pub use diagnostics::{
     Advices, Applicability, CodeSuggestion, DefaultDiagnosticCollector, DefaultOutputFormatter,
     Diagnostic, DiagnosticCategory, DiagnosticCollector, DiagnosticFormatter,
     DiagnosticOutputFormatter, Label, ListAdvice, Location, LogAdvice, LogCategory, Severity,
-    Suggestion, Visit,
+    SourceMap, Suggestion, Visit,
 };
 pub use discovery::{
     DefaultFileDiscovery, FileChangeEvent, FileChangeKind, FileDiscovery, FileWatcher,
@@ -44,7 +47,9 @@ pub use formatter::{
     AstFormatter, CaretAlignment, DiffChange, DiffChangeType, FormatDiff, FormatMode, FormatResult,
     Formatter, FormatterManager, Range,
 };
-pub use parser::{CachedFshParser, FshParser, ParseError, ParseResult, Parser, ParserConfig};
+pub use parser::{
+    CachedFshParser, FshParser, ParseError, ParseErrorKind, ParseResult, Parser, ParserConfig,
+};
 pub use result::Result;
 pub use rules::{
     AutofixTemplate, CompiledRule, FixSafety, GritQLMatcher, Rule, RuleCategory, RuleConfig,

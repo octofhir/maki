@@ -1,8 +1,8 @@
 //! Demonstration of rich diagnostic formatting
 //! Run with: cargo test --test formatter_demo -- --nocapture
 
-use fsh_lint_core::{Diagnostic, DiagnosticCategory, Location, Severity, Suggestion};
 use fsh_lint_core::formatter::RichDiagnosticFormatter;
+use fsh_lint_core::{Diagnostic, DiagnosticCategory, Location, Severity, Suggestion};
 use std::path::PathBuf;
 
 #[test]

@@ -409,7 +409,7 @@ mod tests {
     #[test]
     fn test_parse_result_cache() {
         let cache = ParseResultCache::with_capacity(2);
-        let mut parser = FshParser::new().unwrap();
+        let mut parser = FshParser::new();
 
         let content1 = "Profile: MyPatient\nParent: Patient";
         let content2 = "Profile: MyObservation\nParent: Observation";
@@ -417,8 +417,8 @@ mod tests {
         let hash1 = ContentHash::from_content(content1);
         let hash2 = ContentHash::from_content(content2);
 
-        let result1 = parser.parse(content1, None).unwrap();
-        let result2 = parser.parse(content2, None).unwrap();
+        let result1 = parser.parse(content1).unwrap();
+        let result2 = parser.parse(content2).unwrap();
 
         // Cache the results
         cache.insert(hash1.clone(), result1);
@@ -445,8 +445,8 @@ mod tests {
 
         // Add some entries
         let hash = ContentHash::from_content("test content");
-        let mut parser = FshParser::new().unwrap();
-        let result = parser.parse("test content", None).unwrap();
+        let mut parser = FshParser::new();
+        let result = parser.parse("test content").unwrap();
         cache.insert(hash, result);
 
         let stats = cache.stats();
@@ -459,13 +459,13 @@ mod tests {
         use std::time::Instant;
 
         let cache = ParseResultCache::with_capacity(10);
-        let mut parser = FshParser::new().unwrap();
+        let mut parser = FshParser::new();
 
         // Add some entries to cache
         let hash1 = ContentHash::from_content("content1");
         let hash2 = ContentHash::from_content("content2");
-        let result1 = parser.parse("content1", None).unwrap();
-        let result2 = parser.parse("content2", None).unwrap();
+        let result1 = parser.parse("content1").unwrap();
+        let result2 = parser.parse("content2").unwrap();
 
         cache.insert(hash1.clone(), result1);
         cache.insert(hash2.clone(), result2);
@@ -488,11 +488,11 @@ mod tests {
         use std::time::Instant;
 
         let manager = CacheManager::with_capacity(5);
-        let mut parser = FshParser::new().unwrap();
+        let mut parser = FshParser::new();
 
         // Add entry to parse cache
         let hash = ContentHash::from_content("test content");
-        let result = parser.parse("test content", None).unwrap();
+        let result = parser.parse("test content").unwrap();
         manager.parse_cache().insert(hash, result);
 
         let stats = manager.stats();
@@ -517,7 +517,7 @@ mod tests {
 
         // Add entry back
         let hash = ContentHash::from_content("test content");
-        let result = parser.parse("test content", None).unwrap();
+        let result = parser.parse("test content").unwrap();
         manager.parse_cache().insert(hash, result);
         assert_eq!(manager.stats().parse_cache.size, 1);
 

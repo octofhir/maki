@@ -313,16 +313,15 @@ async fn main() -> Result<()> {
 
     // Initialize tracing based on verbosity
     let log_level = match cli.verbose {
-        0 => "fsh_lint=info",
-        1 => "fsh_lint=debug",
-        _ => "fsh_lint=trace",
+        0 => "fsh_lint=warn",  // Only warnings and errors by default
+        1 => "fsh_lint=info",  // Info on first -v
+        2 => "fsh_lint=debug", // Debug on -vv
+        _ => "fsh_lint=trace", // Trace on -vvv+
     };
     unsafe {
         std::env::set_var("RUST_LOG", log_level);
     }
     init_tracing();
-
-    info!("Starting FSH Lint v{}", fsh_lint_core::VERSION);
 
     // Set thread pool size if specified
     if let Some(threads) = cli.threads {
@@ -336,10 +335,7 @@ async fn main() -> Result<()> {
     }
 
     match run_command(cli).await {
-        Ok(()) => {
-            info!("FSH Lint completed successfully");
-            Ok(())
-        }
+        Ok(()) => Ok(()),
         Err(e) => {
             error!("FSH Lint failed: {}", e);
             std::process::exit(1);
@@ -402,9 +398,8 @@ async fn run_command(cli: Cli) -> Result<()> {
             } else {
                 paths
             };
-            info!("Formatting paths: {:?}", paths);
-            // TODO: Implement formatting logic in later tasks
-            println!("Formatting functionality will be implemented in task 11");
+            println!("Formatting functionality is not yet implemented.");
+            println!("This will format FSH files according to style guidelines.");
             Ok(())
         }
 

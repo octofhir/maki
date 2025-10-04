@@ -47,7 +47,7 @@ impl Fix {
             applicability: suggestion.applicability,
             rule_id: diagnostic.rule_id.clone(),
             priority: match suggestion.applicability {
-                Applicability::Always => 10,      // Higher priority for safe fixes
+                Applicability::Always => 10,        // Higher priority for safe fixes
                 Applicability::MaybeIncorrect => 5, // Lower priority for unsafe fixes
             },
         }
@@ -369,7 +369,9 @@ impl DefaultAutofixEngine {
 
     /// Check if a fix only changes formatting/whitespace
     fn is_formatting_only_fix(&self, fix: &Fix) -> bool {
-        let original_trimmed = fix.location.span
+        let original_trimmed = fix
+            .location
+            .span
             .map(|(start, end)| {
                 // Would need access to source code here
                 // For now, use a heuristic
@@ -379,13 +381,15 @@ impl DefaultAutofixEngine {
 
         // Check if replacement only differs in whitespace
         fix.replacement.trim() == fix.replacement.trim()
-            && fix.replacement.chars().all(|c| c.is_whitespace() || c.is_alphanumeric())
+            && fix
+                .replacement
+                .chars()
+                .all(|c| c.is_whitespace() || c.is_alphanumeric())
     }
 
     /// Check if a fix is a simple punctuation change
     fn is_simple_punctuation_fix(&self, fix: &Fix) -> bool {
-        fix.replacement.len() <= 2
-            && fix.replacement.chars().all(|c| ".,;:()[]{}".contains(c))
+        fix.replacement.len() <= 2 && fix.replacement.chars().all(|c| ".,;:()[]{}".contains(c))
     }
 
     /// Check if a fix removes code
@@ -396,7 +400,14 @@ impl DefaultAutofixEngine {
     /// Check if a fix makes semantic changes
     fn is_semantic_change(&self, fix: &Fix) -> bool {
         // Heuristic: if it changes structure keywords, it's semantic
-        let keywords = ["Profile", "Extension", "ValueSet", "CodeSystem", "from", "only"];
+        let keywords = [
+            "Profile",
+            "Extension",
+            "ValueSet",
+            "CodeSystem",
+            "from",
+            "only",
+        ];
         keywords.iter().any(|kw| fix.replacement.contains(kw))
     }
 

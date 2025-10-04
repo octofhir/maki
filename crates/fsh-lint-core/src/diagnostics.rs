@@ -1137,3 +1137,147 @@ struct SarifRegion {
     #[serde(rename = "endColumn", skip_serializing_if = "Option::is_none")]
     end_column: Option<usize>,
 }
+
+/// Source map for efficient byte offset to line/column conversion
+///
+/// This uses a precomputed table of line start offsets for O(log n) lookup
+/// performance, which is critical for compiler-grade diagnostic quality.
+#[derive(Debug, Clone)]
+pub struct SourceMap {
+    /// Cumulative byte offsets for each line start (line 0, line 1, ...)
+    line_starts: Vec<usize>,
+}
+
+impl SourceMap {
+    /// Create a source map from source text
+    ///
+    /// Time complexity: O(n) where n is source length
+    /// Space complexity: O(lines) - typically much smaller than source
+    pub fn new(source: &str) -> Self {
+        let mut line_starts = vec![0]; // Line 1 starts at offset 0
+
+        for (idx, ch) in source.char_indices() {
+            if ch == '\n' {
+                // Next line starts after this newline
+                line_starts.push(idx + 1);
+            }
+        }
+
+        Self { line_starts }
+    }
+
+    /// Convert byte offset to (line, column) position
+    ///
+    /// Returns 1-based line and column numbers as per LSP convention.
+    /// Time complexity: O(log n) using binary search
+    ///
+    /// # Arguments
+    /// * `offset` - Byte offset in source (0-based)
+    /// * `source` - Original source text (needed for UTF-8 column calculation)
+    ///
+    /// # Returns
+    /// `(line, column)` tuple, both 1-based
+    pub fn offset_to_position(&self, offset: usize, source: &str) -> (usize, usize) {
+        // Binary search for the line containing this offset
+        let line_idx = match self.line_starts.binary_search(&offset) {
+            Ok(idx) => idx, // Exact match - offset is at line start
+            Err(idx) => idx.saturating_sub(1), // Offset is within line idx-1
+        };
+
+        let line = line_idx + 1; // Convert to 1-based
+
+        // Calculate column by counting characters from line start
+        let line_start = self.line_starts[line_idx];
+        let line_text = &source[line_start..offset.min(source.len())];
+
+        // Count Unicode characters, not bytes, for proper column number
+        let column = line_text.chars().count() + 1; // 1-based
+
+        (line, column)
+    }
+
+    /// Convert a span (byte range) to full location information
+    ///
+    /// # Returns
+    /// `(start_line, start_col, end_line, end_col)` - all 1-based
+    pub fn span_to_location(&self, span: &std::ops::Range<usize>, source: &str) -> (usize, usize, usize, usize) {
+        let (start_line, start_col) = self.offset_to_position(span.start, source);
+        let (end_line, end_col) = self.offset_to_position(span.end, source);
+        (start_line, start_col, end_line, end_col)
+    }
+
+    /// Create a Location struct from a span
+    pub fn span_to_diagnostic_location(
+        &self,
+        span: &std::ops::Range<usize>,
+        source: &str,
+        file_path: &std::path::PathBuf,
+    ) -> Location {
+        let (line, column, end_line, end_column) = self.span_to_location(span, source);
+
+        Location {
+            file: file_path.clone(),
+            line,
+            column,
+            end_line: Some(end_line),
+            end_column: Some(end_column),
+            offset: span.start,
+            length: span.end - span.start,
+            span: Some((span.start, span.end)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod source_map_tests {
+    use super::*;
+
+    #[test]
+    fn test_single_line() {
+        let source = "Hello, World!";
+        let map = SourceMap::new(source);
+
+        assert_eq!(map.offset_to_position(0, source), (1, 1)); // 'H'
+        assert_eq!(map.offset_to_position(7, source), (1, 8)); // 'W'
+        assert_eq!(map.offset_to_position(12, source), (1, 13)); // '!'
+    }
+
+    #[test]
+    fn test_multiple_lines() {
+        let source = "Profile: Test\nParent: Patient\nTitle: \"Test Profile\"";
+        let map = SourceMap::new(source);
+
+        // Line 1: "Profile: Test\n"
+        assert_eq!(map.offset_to_position(0, source), (1, 1)); // 'P' in Profile
+        assert_eq!(map.offset_to_position(9, source), (1, 10)); // 'T' in Test
+
+        // Line 2: "Parent: Patient\n" starts at offset 14
+        assert_eq!(map.offset_to_position(14, source), (2, 1)); // 'P' in Parent
+        assert_eq!(map.offset_to_position(22, source), (2, 9)); // 'P' in Patient
+
+        // Line 3: "Title: \"Test Profile\"" starts at offset 30
+        assert_eq!(map.offset_to_position(30, source), (3, 1)); // 'T' in Title
+    }
+
+    #[test]
+    fn test_unicode() {
+        let source = "Profile: 日本語\nTitle: \"Test\"";
+        let map = SourceMap::new(source);
+
+        // Unicode characters count as single columns
+        assert_eq!(map.offset_to_position(9, source), (1, 10)); // First Japanese char
+    }
+
+    #[test]
+    fn test_span_to_location() {
+        let source = "Profile: Test\nParent: Patient";
+        let map = SourceMap::new(source);
+
+        // Span covering "Test" (offset 9-13)
+        let (start_line, start_col, end_line, end_col) = map.span_to_location(&(9..13), source);
+        assert_eq!(start_line, 1);
+        assert_eq!(start_col, 10);
+        assert_eq!(end_line, 1);
+        assert_eq!(end_col, 14);
+    }
+}

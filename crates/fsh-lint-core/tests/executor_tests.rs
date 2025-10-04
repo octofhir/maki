@@ -6,12 +6,13 @@ use std::time::Duration;
 
 use tempfile::TempDir;
 
+use fsh_lint_core::ast::FSHDocument;
+use fsh_lint_core::parser::{ParseResult, Parser};
 use fsh_lint_core::{
     CompiledRule, Config, DefaultExecutor, Diagnostic, ExecutionContext, Executor, FshLintError,
-    Location, ParseResult, Parser, ProgressCallback, ProgressInfo, ResourceStats, Result,
-    RuleEngine, SemanticAnalyzer, SemanticModel, Severity,
+    Location, ProgressCallback, ProgressInfo, ResourceStats, Result, RuleEngine, SemanticAnalyzer,
+    SemanticModel, Severity,
 };
-use tree_sitter::Tree;
 
 /// Mock parser for testing
 struct MockParser {
@@ -39,7 +40,7 @@ impl MockParser {
 }
 
 impl Parser for MockParser {
-    fn parse(&mut self, content: &str, _old_tree: Option<&Tree>) -> Result<ParseResult> {
+    fn parse(&mut self, content: &str) -> Result<ParseResult> {
         if self.delay > Duration::ZERO {
             std::thread::sleep(self.delay);
         }
@@ -51,25 +52,11 @@ impl Parser for MockParser {
             });
         }
 
-        // Create a mock tree - this is a simplified approach for testing
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(tree_sitter_fsh::language()).unwrap();
-        let tree = parser.parse("Profile: TestProfile", None).unwrap();
-
         Ok(ParseResult {
-            tree,
-            errors: vec![],
-            is_valid: true,
-            source: content.to_string(),
+            source: Arc::<str>::from(content.to_owned()),
+            document: Some(FSHDocument::new(0..content.len())),
+            errors: Vec::new(),
         })
-    }
-
-    fn parse_incremental(&mut self, content: &str, old_tree: &Tree) -> Result<ParseResult> {
-        self.parse(content, Some(old_tree))
-    }
-
-    fn set_language(&mut self, _language: tree_sitter::Language) -> Result<()> {
-        Ok(())
     }
 }
 
@@ -99,7 +86,12 @@ impl MockSemanticAnalyzer {
 }
 
 impl SemanticAnalyzer for MockSemanticAnalyzer {
-    fn analyze(&self, _tree: &Tree, _source: &str, file_path: PathBuf) -> Result<SemanticModel> {
+    fn analyze(
+        &self,
+        _document: &FSHDocument,
+        _source: &str,
+        file_path: PathBuf,
+    ) -> Result<SemanticModel> {
         if self.should_fail {
             return Err(FshLintError::SemanticError {
                 message: "Mock semantic error".to_string(),

@@ -2,8 +2,8 @@
 
 use fsh_lint_core::{Diagnostic, Severity};
 use fsh_lint_rules::builtin::required_fields::{
-    check_profile_required_fields, check_code_system_required_fields,
-    check_value_set_required_fields, REQUIRED_FIELD_PRESENT,
+    REQUIRED_FIELD_PRESENT, check_code_system_required_fields, check_profile_required_fields,
+    check_value_set_required_fields,
 };
 use std::path::PathBuf;
 use tree_sitter::{Parser, Tree};
@@ -135,10 +135,6 @@ Title: "My Value Set"
 #[test]
 fn test_helper_functions() {
     // Test the kebab-case and title-case conversion functions
-    use fsh_lint_rules::builtin::required_fields::{
-        // These are private, so we can't test them directly
-        // Instead we test them through the public API
-    };
 
     // The conversion functions are tested through the suggestion generation
     // when a field is missing. The suggestions should use proper casing.

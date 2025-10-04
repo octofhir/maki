@@ -17,9 +17,7 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 walkdir = { workspace = true }
-grit-pattern-matcher = "0.5.1"
-grit-util = "0.5.1"
-tree-sitter = { workspace = true }
+regex = "1.10"
 
 [dev-dependencies]
 tokio-test = "0.4"

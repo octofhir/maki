@@ -14,9 +14,9 @@ homepage = "https://github.com/octofhir"
 edition = "2024"
 
 [workspace.dependencies]
-# Core parsing and AST
-tree-sitter = "0.20.10"
-tree-sitter-fsh = { git = "https://github.com/mgramigna/tree-sitter-fsh" }
+# Core parsing and AST - using Chumsky parser combinator
+chumsky = "0.10"
+ariadne = "0.5"
 
 # Serialization and configuration
 serde = { version = "1.0", features = ["derive"] }
@@ -58,3 +58,6 @@ panic = "abort"
 
 [profile.dev]
 debug = true
+# Reduce symbol name lengths to avoid macOS linker issues with parser combinators
+opt-level = 0
+incremental = true

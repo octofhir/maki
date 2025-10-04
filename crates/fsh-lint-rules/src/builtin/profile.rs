@@ -2,22 +2,394 @@
 //!
 //! Validates that profiles and extensions have proper assignments and context.
 
-use fsh_lint_core::{Diagnostic, Location, Severity};
-use std::path::PathBuf;
-use tree_sitter::Node;
+use fsh_lint_core::{Diagnostic, SemanticModel, Severity};
+// TODO: Migrate to Chumsky AST
+// use tree_sitter::Node;
 
 /// Rule ID for profile assignment validation
-pub const PROFILE_ASSIGNMENT_PRESENT: &str = "builtin/correctness/profile-assignment-present";
+pub const PROFILE_ASSIGNMENT_PRESENT: &str = "correctness/profile-assignment-present";
 
 /// Rule ID for extension context validation
-pub const EXTENSION_CONTEXT_MISSING: &str = "builtin/correctness/extension-context-missing";
+pub const EXTENSION_CONTEXT_MISSING: &str = "correctness/extension-context-missing";
 
 /// Check for missing profile assignments (status, abstract)
-pub fn check_profile_assignments(
-    node: Node,
-    source: &str,
-    file_path: &PathBuf,
-) -> Vec<Diagnostic> {
+pub fn check_profile_assignments(model: &SemanticModel) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for profile in &model.document.profiles {
+        // Check if Parent is specified (required per spec)
+        if profile.parent.is_none() {
+            let location = model.source_map.span_to_diagnostic_location(
+                &profile.span,
+                &model.source,
+                &model.source_file,
+            );
+
+            diagnostics.push(
+                Diagnostic::new(
+                    PROFILE_ASSIGNMENT_PRESENT,
+                    Severity::Warning,
+                    &format!(
+                        "Profile '{}' does not specify a Parent. Profiles should declare a parent resource type.",
+                        profile.name.value
+                    ),
+                    location.clone(),
+                )
+                .with_suggestion(fsh_lint_core::Suggestion {
+                    message: "Add Parent declaration".to_string(),
+                    replacement: "Parent: <resource-type>".to_string(),
+                    location,
+                    is_safe: false,
+                }),
+            );
+        }
+
+        // Check for recommended caret assignments (^status, ^experimental)
+        let has_status = profile.rules.iter().any(|rule| {
+            if let fsh_lint_core::ast::SDRule::CaretValue(caret) = rule {
+                caret.caret_path.value == "status"
+            } else {
+                false
+            }
+        });
+
+        if !has_status {
+            let location = model.source_map.span_to_diagnostic_location(
+                &profile.span,
+                &model.source,
+                &model.source_file,
+            );
+
+            diagnostics.push(
+                Diagnostic::new(
+                    PROFILE_ASSIGNMENT_PRESENT,
+                    Severity::Info,
+                    &format!(
+                        "Profile '{}' does not specify ^status. Consider adding ^status = #draft or #active",
+                        profile.name.value
+                    ),
+                    location.clone(),
+                )
+                .with_suggestion(fsh_lint_core::Suggestion {
+                    message: "Add status assignment".to_string(),
+                    replacement: "* ^status = #draft".to_string(),
+                    location,
+                    is_safe: false,
+                }),
+            );
+        }
+    }
+
+    diagnostics
+}
+
+/// Check for missing extension context
+pub fn check_extension_context(model: &SemanticModel) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for extension in &model.document.extensions {
+        // Check if contexts field is empty
+        if extension.contexts.is_empty() {
+            let location = model.source_map.span_to_diagnostic_location(
+                &extension.span,
+                &model.source,
+                &model.source_file,
+            );
+
+            diagnostics.push(
+                Diagnostic::new(
+                    EXTENSION_CONTEXT_MISSING,
+                    Severity::Error,
+                    &format!(
+                        "Extension '{}' is missing context specification. Extensions must define where they can be used.",
+                        extension.name.value
+                    ),
+                    location.clone(),
+                )
+                .with_suggestion(fsh_lint_core::Suggestion {
+                    message: "Add context specification".to_string(),
+                    replacement: "Context: <element-path>".to_string(),
+                    location,
+                    is_safe: false,
+                }),
+            );
+        }
+    }
+
+    diagnostics
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fsh_lint_core::ast::{Extension, Profile, SDRule, CaretValueRule, Spanned, FSHDocument, Value, Code};
+    use fsh_lint_core::SemanticModel;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_extension_with_context() {
+        let source = "Extension: MyExtension\nContext: Patient\n";
+        let source_map = fsh_lint_core::SourceMap::new(source);
+
+        let mut doc = FSHDocument::new(0..source.len());
+        doc.extensions.push(Extension {
+            name: Spanned::new("MyExtension".to_string(), 11..22),
+            parent: None,
+            id: None,
+            title: None,
+            description: None,
+            contexts: vec![Spanned::new("Patient".to_string(), 23..30)], // Has context
+            rules: Vec::new(),
+            span: 0..source.len(),
+        });
+
+        let model = SemanticModel {
+            document: doc,
+            resources: Vec::new(),
+            symbols: Default::default(),
+            references: Vec::new(),
+            source_file: PathBuf::from("test.fsh"),
+            source_map,
+            source: source.to_string(),
+        };
+
+        let diagnostics = check_extension_context(&model);
+        assert_eq!(diagnostics.len(), 0, "Extension with context should not produce diagnostic");
+    }
+
+    #[test]
+    fn test_extension_missing_context() {
+        let source = "Extension: NoContextExtension\n";
+        let source_map = fsh_lint_core::SourceMap::new(source);
+
+        let mut doc = FSHDocument::new(0..source.len());
+        doc.extensions.push(Extension {
+            name: Spanned::new("NoContextExtension".to_string(), 11..29),
+            parent: None,
+            id: None,
+            title: None,
+            description: None,
+            contexts: Vec::new(), // Missing context
+            rules: Vec::new(),
+            span: 0..source.len(),
+        });
+
+        let model = SemanticModel {
+            document: doc,
+            resources: Vec::new(),
+            symbols: Default::default(),
+            references: Vec::new(),
+            source_file: PathBuf::from("test.fsh"),
+            source_map,
+            source: source.to_string(),
+        };
+
+        let diagnostics = check_extension_context(&model);
+        assert_eq!(diagnostics.len(), 1, "Extension without context should produce diagnostic");
+        assert_eq!(diagnostics[0].rule_id, EXTENSION_CONTEXT_MISSING);
+        assert_eq!(diagnostics[0].severity, Severity::Error);
+        assert!(diagnostics[0].message.contains("NoContextExtension"));
+        assert!(diagnostics[0].message.contains("missing context specification"));
+    }
+
+    #[test]
+    fn test_profile_with_parent_and_status() {
+        let source = "Profile: GoodProfile\nParent: Patient\n* ^status = #draft\n";
+        let source_map = fsh_lint_core::SourceMap::new(source);
+
+        let mut doc = FSHDocument::new(0..source.len());
+        doc.profiles.push(Profile {
+            name: Spanned::new("GoodProfile".to_string(), 9..20),
+            parent: Some(Spanned::new("Patient".to_string(), 29..36)),
+            id: None,
+            title: None,
+            description: None,
+            rules: vec![SDRule::CaretValue(CaretValueRule {
+                path: None,
+                caret_path: Spanned::new("status".to_string(), 40..46),
+                value: Spanned::new(Value::Code(Code {
+                    system: None,
+                    code: "draft".to_string(),
+                    display: None,
+                }),49..55),
+                span: 38..55,
+            })],
+            span: 0..source.len(),
+        });
+
+        let model = SemanticModel {
+            document: doc,
+            resources: Vec::new(),
+            symbols: Default::default(),
+            references: Vec::new(),
+            source_file: PathBuf::from("test.fsh"),
+            source_map,
+            source: source.to_string(),
+        };
+
+        let diagnostics = check_profile_assignments(&model);
+        assert_eq!(diagnostics.len(), 0, "Profile with parent and status should not produce diagnostics");
+    }
+
+    #[test]
+    fn test_profile_missing_parent() {
+        let source = "Profile: NoParentProfile\n* ^status = #draft\n";
+        let source_map = fsh_lint_core::SourceMap::new(source);
+
+        let mut doc = FSHDocument::new(0..source.len());
+        doc.profiles.push(Profile {
+            name: Spanned::new("NoParentProfile".to_string(), 9..24),
+            parent: None, // Missing parent
+            id: None,
+            title: None,
+            description: None,
+            rules: vec![SDRule::CaretValue(CaretValueRule {
+                path: None,
+                caret_path: Spanned::new("status".to_string(), 28..34),
+                value: Spanned::new(Value::Code(Code {
+                    system: None,
+                    code: "draft".to_string(),
+                    display: None,
+                }),37..43),
+                span: 26..43,
+            })],
+            span: 0..source.len(),
+        });
+
+        let model = SemanticModel {
+            document: doc,
+            resources: Vec::new(),
+            symbols: Default::default(),
+            references: Vec::new(),
+            source_file: PathBuf::from("test.fsh"),
+            source_map,
+            source: source.to_string(),
+        };
+
+        let diagnostics = check_profile_assignments(&model);
+        assert_eq!(diagnostics.len(), 1, "Profile without parent should produce warning");
+        assert_eq!(diagnostics[0].rule_id, PROFILE_ASSIGNMENT_PRESENT);
+        assert_eq!(diagnostics[0].severity, Severity::Warning);
+        assert!(diagnostics[0].message.contains("NoParentProfile"));
+        assert!(diagnostics[0].message.contains("does not specify a Parent"));
+    }
+
+    #[test]
+    fn test_profile_missing_status() {
+        let source = "Profile: NoStatusProfile\nParent: Patient\n";
+        let source_map = fsh_lint_core::SourceMap::new(source);
+
+        let mut doc = FSHDocument::new(0..source.len());
+        doc.profiles.push(Profile {
+            name: Spanned::new("NoStatusProfile".to_string(), 9..24),
+            parent: Some(Spanned::new("Patient".to_string(), 33..40)),
+            id: None,
+            title: None,
+            description: None,
+            rules: Vec::new(), // Missing status
+            span: 0..source.len(),
+        });
+
+        let model = SemanticModel {
+            document: doc,
+            resources: Vec::new(),
+            symbols: Default::default(),
+            references: Vec::new(),
+            source_file: PathBuf::from("test.fsh"),
+            source_map,
+            source: source.to_string(),
+        };
+
+        let diagnostics = check_profile_assignments(&model);
+        assert_eq!(diagnostics.len(), 1, "Profile without status should produce info diagnostic");
+        assert_eq!(diagnostics[0].rule_id, PROFILE_ASSIGNMENT_PRESENT);
+        assert_eq!(diagnostics[0].severity, Severity::Info);
+        assert!(diagnostics[0].message.contains("NoStatusProfile"));
+        assert!(diagnostics[0].message.contains("does not specify ^status"));
+    }
+
+    #[test]
+    fn test_profile_missing_both_parent_and_status() {
+        let source = "Profile: IncompleteProfile\n";
+        let source_map = fsh_lint_core::SourceMap::new(source);
+
+        let mut doc = FSHDocument::new(0..source.len());
+        doc.profiles.push(Profile {
+            name: Spanned::new("IncompleteProfile".to_string(), 9..26),
+            parent: None, // Missing parent
+            id: None,
+            title: None,
+            description: None,
+            rules: Vec::new(), // Missing status
+            span: 0..source.len(),
+        });
+
+        let model = SemanticModel {
+            document: doc,
+            resources: Vec::new(),
+            symbols: Default::default(),
+            references: Vec::new(),
+            source_file: PathBuf::from("test.fsh"),
+            source_map,
+            source: source.to_string(),
+        };
+
+        let diagnostics = check_profile_assignments(&model);
+        assert_eq!(diagnostics.len(), 2, "Profile missing both parent and status should produce 2 diagnostics");
+
+        // Should have one warning (parent) and one info (status)
+        let severities: Vec<_> = diagnostics.iter().map(|d| d.severity).collect();
+        assert!(severities.contains(&Severity::Warning), "Should have warning for missing parent");
+        assert!(severities.contains(&Severity::Info), "Should have info for missing status");
+    }
+
+    #[test]
+    fn test_multiple_extensions_mixed_contexts() {
+        let source = "Extension: Ext1\nContext: Patient\n\nExtension: Ext2\n";
+        let source_map = fsh_lint_core::SourceMap::new(source);
+
+        let mut doc = FSHDocument::new(0..source.len());
+        doc.extensions.push(Extension {
+            name: Spanned::new("Ext1".to_string(), 11..15),
+            parent: None,
+            id: None,
+            title: None,
+            description: None,
+            contexts: vec![Spanned::new("Patient".to_string(), 23..30)], // Has context
+            rules: Vec::new(),
+            span: 0..33,
+        });
+        doc.extensions.push(Extension {
+            name: Spanned::new("Ext2".to_string(), 45..49),
+            parent: None,
+            id: None,
+            title: None,
+            description: None,
+            contexts: Vec::new(), // Missing context
+            rules: Vec::new(),
+            span: 35..source.len(),
+        });
+
+        let model = SemanticModel {
+            document: doc,
+            resources: Vec::new(),
+            symbols: Default::default(),
+            references: Vec::new(),
+            source_file: PathBuf::from("test.fsh"),
+            source_map,
+            source: source.to_string(),
+        };
+
+        let diagnostics = check_extension_context(&model);
+        assert_eq!(diagnostics.len(), 1, "Should only flag Ext2 without context");
+        assert!(diagnostics[0].message.contains("Ext2"));
+    }
+}
+
+/*
+// TODO: Reimplement using Chumsky AST
+
+pub fn check_profile_assignments(node: Node, source: &str, file_path: &PathBuf) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
     // Walk through profile declarations
@@ -36,7 +408,9 @@ pub fn check_profile_assignments(
     diagnostics
 }
 
-/// Check for missing extension context
+/*
+// TODO: Reimplement using Chumsky AST
+
 pub fn check_extension_context(node: Node, source: &str, file_path: &PathBuf) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -57,11 +431,7 @@ pub fn check_extension_context(node: Node, source: &str, file_path: &PathBuf) ->
 }
 
 /// Check a single profile for required assignments
-fn check_single_profile(
-    node: Node,
-    source: &str,
-    file_path: &PathBuf,
-) -> Option<Vec<Diagnostic>> {
+fn check_single_profile(node: Node, source: &str, file_path: &PathBuf) -> Option<Vec<Diagnostic>> {
     let mut diagnostics = Vec::new();
 
     let profile_text = node.utf8_text(source.as_bytes()).unwrap_or("");
@@ -171,7 +541,12 @@ fn create_missing_assignment_diagnostic(
         profile_name, field
     );
 
-    let mut diagnostic = Diagnostic::new(PROFILE_ASSIGNMENT_PRESENT, severity, &message, location.clone());
+    let mut diagnostic = Diagnostic::new(
+        PROFILE_ASSIGNMENT_PRESENT,
+        severity,
+        &message,
+        location.clone(),
+    );
 
     let suggestion_text = format!("* ^{} = #{}", field, default_value);
 
@@ -315,3 +690,6 @@ Parent: Patient
         assert!(has_parent(text));
     }
 }
+
+*/
+*/

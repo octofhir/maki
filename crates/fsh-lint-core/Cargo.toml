@@ -9,8 +9,8 @@ homepage.workspace = true
 description = "Core linting engine for FHIR Shorthand (FSH) files"
 
 [dependencies]
-tree-sitter = { workspace = true }
-tree-sitter-fsh = { workspace = true }
+chumsky = { workspace = true }
+ariadne = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }

@@ -6,21 +6,28 @@
 pub mod builtin;
 pub mod engine;
 pub mod gritql;
+pub mod gritql_ast;
+pub mod pattern_parser;
 
 // Re-export commonly used types
+pub use builtin::BuiltinRules;
 pub use engine::{
     DefaultRuleEngine, RuleDiscoveryConfig, RuleEngineStatistics, RulePack, RulePackDependency,
     RulePackMetadata, RulePrecedence, RuleRegistry,
 };
 pub use gritql::{CompiledGritQLPattern, GritQLCompiler, GritQLMatch, matches_to_diagnostics};
+pub use gritql_ast::{AstPattern, AstMatch, NodeType, Predicate, execute_pattern, matches_to_diagnostics as ast_matches_to_diagnostics};
+pub use pattern_parser::parse_pattern;
 
-/// Initialize the built-in rules
+/// Initialize the built-in rules registry
+///
+/// Note: Rules are not pre-registered in the registry. They are loaded
+/// dynamically by the rule engine when needed. This function creates
+/// an empty registry that will be populated by the DefaultRuleEngine
+/// as rules are loaded via load_rule().
 pub fn init_builtin_rules() -> RuleRegistry {
     let registry = RuleRegistry::new();
-
-    // TODO: Register built-in rules in later tasks
-    tracing::info!("Initialized built-in rules registry");
-
+    tracing::debug!("Initialized built-in rules registry");
     registry
 }
 

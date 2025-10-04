@@ -2,12 +2,13 @@
 
 use fsh_lint_core::{AutofixTemplate, FixSafety, Rule, RuleCategory, RuleMetadata, Severity};
 
-pub mod required_fields;
-pub mod cardinality;
 pub mod binding;
-pub mod metadata;
-pub mod profile;
+pub mod cardinality;
 pub mod duplicates;
+pub mod metadata;
+pub mod naming;
+pub mod profile;
+pub mod required_fields;
 
 /// Collection of built-in FSH linting rules
 pub struct BuiltinRules;
@@ -54,7 +55,10 @@ impl BuiltinRules {
 
     /// Get all built-in style rules
     pub fn style_rules() -> Vec<Rule> {
-        vec![Self::profile_naming_convention_rule()]
+        vec![
+            Self::profile_naming_convention_rule(),
+            Self::naming_convention_rule(),
+        ]
     }
 
     /// Get all built-in documentation guidance rules
@@ -70,7 +74,7 @@ impl BuiltinRules {
     /// Rule for detecting invalid FSH keywords
     fn invalid_keyword_rule() -> Rule {
         Rule {
-            id: "builtin/correctness/invalid-keyword".to_string(),
+            id: "correctness/invalid-keyword".to_string(),
             severity: Severity::Error,
             description: "Detects invalid or misspelled FSH keywords".to_string(),
             gritql_pattern: r#"
@@ -92,7 +96,7 @@ impl BuiltinRules {
                 safety: FixSafety::Safe,
             }),
             metadata: RuleMetadata {
-                id: "builtin/correctness/invalid-keyword".to_string(),
+                id: "correctness/invalid-keyword".to_string(),
                 name: "Invalid Keyword".to_string(),
                 description:
                     "Detects invalid or misspelled FSH keywords like 'Profil' instead of 'Profile'"
@@ -106,13 +110,14 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting malformed alias declarations
     fn malformed_alias_rule() -> Rule {
         Rule {
-            id: "builtin/correctness/malformed-alias".to_string(),
+            id: "correctness/malformed-alias".to_string(),
             severity: Severity::Error,
             description: "Detects malformed alias declarations".to_string(),
             gritql_pattern: r#"
@@ -132,7 +137,7 @@ impl BuiltinRules {
                 safety: FixSafety::Unsafe,
             }),
             metadata: RuleMetadata {
-                id: "builtin/correctness/malformed-alias".to_string(),
+                id: "correctness/malformed-alias".to_string(),
                 name: "Malformed Alias".to_string(),
                 description: "Detects malformed alias declarations with syntax errors".to_string(),
                 severity: Severity::Error,
@@ -144,13 +149,14 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting invalid caret paths
     fn invalid_caret_path_rule() -> Rule {
         Rule {
-            id: "builtin/correctness/invalid-caret-path".to_string(),
+            id: "correctness/invalid-caret-path".to_string(),
             severity: Severity::Error,
             description: "Detects invalid caret path syntax".to_string(),
             gritql_pattern: r#"
@@ -169,7 +175,7 @@ impl BuiltinRules {
             .to_string(),
             autofix: None,
             metadata: RuleMetadata {
-                id: "builtin/correctness/invalid-caret-path".to_string(),
+                id: "correctness/invalid-caret-path".to_string(),
                 name: "Invalid Caret Path".to_string(),
                 description: "Detects invalid caret path syntax in FSH rules".to_string(),
                 severity: Severity::Error,
@@ -185,13 +191,14 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting trailing text after statements
     fn trailing_text_rule() -> Rule {
         Rule {
-            id: "builtin/suspicious/trailing-text".to_string(),
+            id: "suspicious/trailing-text".to_string(),
             severity: Severity::Warning,
             description: "Detects unexpected trailing text after FSH statements".to_string(),
             gritql_pattern: r#"
@@ -223,7 +230,7 @@ impl BuiltinRules {
                 safety: FixSafety::Unsafe,
             }),
             metadata: RuleMetadata {
-                id: "builtin/suspicious/trailing-text".to_string(),
+                id: "suspicious/trailing-text".to_string(),
                 name: "Trailing Text".to_string(),
                 description: "Detects unexpected trailing text after FSH statements".to_string(),
                 severity: Severity::Warning,
@@ -235,13 +242,14 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting missing profile IDs
     fn missing_profile_id_rule() -> Rule {
         Rule {
-            id: "builtin/correctness/missing-profile-id".to_string(),
+            id: "correctness/missing-profile-id".to_string(),
             severity: Severity::Error,
             description: "Detects profile declarations without proper IDs".to_string(),
             gritql_pattern: r#"
@@ -261,7 +269,7 @@ impl BuiltinRules {
             .to_string(),
             autofix: None,
             metadata: RuleMetadata {
-                id: "builtin/correctness/missing-profile-id".to_string(),
+                id: "correctness/missing-profile-id".to_string(),
                 name: "Missing Profile ID".to_string(),
                 description: "Detects profile declarations without proper identifiers".to_string(),
                 severity: Severity::Error,
@@ -277,13 +285,14 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting invalid identifiers
     fn invalid_identifier_rule() -> Rule {
         Rule {
-            id: "builtin/correctness/invalid-identifier".to_string(),
+            id: "correctness/invalid-identifier".to_string(),
             severity: Severity::Error,
             description: "Detects invalid identifier syntax".to_string(),
             gritql_pattern: r#"
@@ -306,7 +315,7 @@ impl BuiltinRules {
                 safety: FixSafety::Unsafe,
             }),
             metadata: RuleMetadata {
-                id: "builtin/correctness/invalid-identifier".to_string(),
+                id: "correctness/invalid-identifier".to_string(),
                 name: "Invalid Identifier".to_string(),
                 description: "Detects invalid identifier syntax in FSH files".to_string(),
                 severity: Severity::Error,
@@ -318,13 +327,14 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting invalid slicing rules
     fn invalid_slicing_rule() -> Rule {
         Rule {
-            id: "builtin/correctness/invalid-slicing".to_string(),
+            id: "correctness/invalid-slicing".to_string(),
             severity: Severity::Error,
             description: "Detects invalid slicing rule syntax and semantics".to_string(),
             gritql_pattern: r#"
@@ -344,7 +354,7 @@ impl BuiltinRules {
             .to_string(),
             autofix: None,
             metadata: RuleMetadata {
-                id: "builtin/correctness/invalid-slicing".to_string(),
+                id: "correctness/invalid-slicing".to_string(),
                 name: "Invalid Slicing".to_string(),
                 description: "Detects invalid slicing rule syntax and semantic issues".to_string(),
                 severity: Severity::Error,
@@ -356,13 +366,14 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting duplicate canonical URLs
     fn duplicate_canonical_url_rule() -> Rule {
         Rule {
-            id: "builtin/correctness/duplicate-canonical-url".to_string(),
+            id: "correctness/duplicate-canonical-url".to_string(),
             severity: Severity::Error,
             description: "Detects duplicate canonical URLs across resources".to_string(),
             gritql_pattern: r#"
@@ -377,7 +388,7 @@ impl BuiltinRules {
             "#.to_string(),
             autofix: None,
             metadata: RuleMetadata {
-                id: "builtin/correctness/duplicate-canonical-url".to_string(),
+                id: "correctness/duplicate-canonical-url".to_string(),
                 name: "Duplicate Canonical URL".to_string(),
                 description: "Detects duplicate canonical URLs across FHIR resources".to_string(),
                 severity: Severity::Error,
@@ -386,13 +397,14 @@ impl BuiltinRules {
                 version: Some("1.0.0".to_string()),
                 docs_url: Some("https://octofhir.github.io/fsh-lint-rs/rules/correctness/duplicate-canonical-url".to_string()),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting duplicate identifiers
     fn duplicate_identifier_rule() -> Rule {
         Rule {
-            id: "builtin/correctness/duplicate-identifier".to_string(),
+            id: "correctness/duplicate-identifier".to_string(),
             severity: Severity::Error,
             description: "Detects duplicate resource identifiers within a file".to_string(),
             gritql_pattern: r#"
@@ -407,7 +419,7 @@ impl BuiltinRules {
             "#.to_string(),
             autofix: None,
             metadata: RuleMetadata {
-                id: "builtin/correctness/duplicate-identifier".to_string(),
+                id: "correctness/duplicate-identifier".to_string(),
                 name: "Duplicate Identifier".to_string(),
                 description: "Detects duplicate resource identifiers within FSH files".to_string(),
                 severity: Severity::Error,
@@ -416,13 +428,14 @@ impl BuiltinRules {
                 version: Some("1.0.0".to_string()),
                 docs_url: Some("https://octofhir.github.io/fsh-lint-rs/rules/correctness/duplicate-identifier".to_string()),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting invalid constraint expressions
     fn invalid_constraint_rule() -> Rule {
         Rule {
-            id: "builtin/correctness/invalid-constraint".to_string(),
+            id: "correctness/invalid-constraint".to_string(),
             severity: Severity::Error,
             description: "Detects invalid constraint expressions and FHIRPath".to_string(),
             gritql_pattern: r#"
@@ -444,7 +457,7 @@ impl BuiltinRules {
             .to_string(),
             autofix: None,
             metadata: RuleMetadata {
-                id: "builtin/correctness/invalid-constraint".to_string(),
+                id: "correctness/invalid-constraint".to_string(),
                 name: "Invalid Constraint".to_string(),
                 description: "Detects invalid constraint expressions and FHIRPath syntax"
                     .to_string(),
@@ -461,13 +474,14 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting missing parent profile declarations
     fn missing_parent_profile_rule() -> Rule {
         Rule {
-            id: "builtin/correctness/missing-parent-profile".to_string(),
+            id: "correctness/missing-parent-profile".to_string(),
             severity: Severity::Warning,
             description: "Detects profiles without explicit parent declarations".to_string(),
             gritql_pattern: r#"
@@ -484,7 +498,7 @@ impl BuiltinRules {
                 safety: FixSafety::Unsafe,
             }),
             metadata: RuleMetadata {
-                id: "builtin/correctness/missing-parent-profile".to_string(),
+                id: "correctness/missing-parent-profile".to_string(),
                 name: "Missing Parent Profile".to_string(),
                 description: "Detects profiles without explicit parent profile declarations".to_string(),
                 severity: Severity::Warning,
@@ -493,13 +507,14 @@ impl BuiltinRules {
                 version: Some("1.0.0".to_string()),
                 docs_url: Some("https://octofhir.github.io/fsh-lint-rs/rules/correctness/missing-parent-profile".to_string()),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for enforcing profile naming conventions
     fn profile_naming_convention_rule() -> Rule {
         Rule {
-            id: "builtin/style/profile-naming-convention".to_string(),
+            id: "style/profile-naming-convention".to_string(),
             severity: Severity::Warning,
             description: "Enforces consistent naming conventions for profiles".to_string(),
             gritql_pattern: r#"
@@ -524,7 +539,7 @@ impl BuiltinRules {
                 safety: FixSafety::Unsafe,
             }),
             metadata: RuleMetadata {
-                id: "builtin/style/profile-naming-convention".to_string(),
+                id: "style/profile-naming-convention".to_string(),
                 name: "Profile Naming Convention".to_string(),
                 description: "Enforces PascalCase naming convention for FHIR profiles".to_string(),
                 severity: Severity::Warning,
@@ -540,13 +555,14 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting missing description fields
     fn missing_description_rule() -> Rule {
         Rule {
-            id: "builtin/documentation/missing-description".to_string(),
+            id: "documentation/missing-description".to_string(),
             severity: Severity::Warning,
             description: "Detects resources without description metadata".to_string(),
             gritql_pattern: r#"
@@ -565,11 +581,11 @@ impl BuiltinRules {
             "#.to_string(),
             autofix: Some(AutofixTemplate {
                 description: "Add description field".to_string(),
-                replacement_template: "$resource\n^description = \"TODO: Add description\"".to_string(),
+                replacement_template: "$resource\n^description = \"Add description here\"".to_string(),
                 safety: FixSafety::Safe,
             }),
             metadata: RuleMetadata {
-                id: "builtin/documentation/missing-description".to_string(),
+                id: "documentation/missing-description".to_string(),
                 name: "Missing Description".to_string(),
                 description: "Detects FHIR resources without description metadata".to_string(),
                 severity: Severity::Warning,
@@ -578,13 +594,14 @@ impl BuiltinRules {
                 version: Some("1.0.0".to_string()),
                 docs_url: Some("https://octofhir.github.io/fsh-lint-rs/rules/documentation/missing-description".to_string()),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting missing title fields
     fn missing_title_rule() -> Rule {
         Rule {
-            id: "builtin/documentation/missing-title".to_string(),
+            id: "documentation/missing-title".to_string(),
             severity: Severity::Info,
             description: "Detects resources without title metadata".to_string(),
             gritql_pattern: r#"
@@ -608,7 +625,7 @@ impl BuiltinRules {
                 safety: FixSafety::Safe,
             }),
             metadata: RuleMetadata {
-                id: "builtin/documentation/missing-title".to_string(),
+                id: "documentation/missing-title".to_string(),
                 name: "Missing Title".to_string(),
                 description: "Detects FHIR resources without title metadata".to_string(),
                 severity: Severity::Info,
@@ -624,13 +641,14 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting inconsistent metadata fields
     fn inconsistent_metadata_rule() -> Rule {
         Rule {
-            id: "builtin/suspicious/inconsistent-metadata".to_string(),
+            id: "suspicious/inconsistent-metadata".to_string(),
             severity: Severity::Warning,
             description: "Detects inconsistent metadata across related resources".to_string(),
             gritql_pattern: r#"
@@ -646,7 +664,7 @@ impl BuiltinRules {
             "#.to_string(),
             autofix: None,
             metadata: RuleMetadata {
-                id: "builtin/suspicious/inconsistent-metadata".to_string(),
+                id: "suspicious/inconsistent-metadata".to_string(),
                 name: "Inconsistent Metadata".to_string(),
                 description: "Detects inconsistent metadata fields across related FHIR resources".to_string(),
                 severity: Severity::Warning,
@@ -655,13 +673,14 @@ impl BuiltinRules {
                 version: Some("1.0.0".to_string()),
                 docs_url: Some("https://octofhir.github.io/fsh-lint-rs/rules/suspicious/inconsistent-metadata".to_string()),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting missing publisher information
     fn missing_publisher_rule() -> Rule {
         Rule {
-            id: "builtin/documentation/missing-publisher".to_string(),
+            id: "documentation/missing-publisher".to_string(),
             severity: Severity::Info,
             description: "Detects resources without publisher metadata".to_string(),
             gritql_pattern: r#"
@@ -681,11 +700,11 @@ impl BuiltinRules {
             .to_string(),
             autofix: Some(AutofixTemplate {
                 description: "Add publisher field".to_string(),
-                replacement_template: "$resource\n^publisher = \"TODO: Add publisher\"".to_string(),
+                replacement_template: "$resource\n^publisher = \"Add publisher here\"".to_string(),
                 safety: FixSafety::Safe,
             }),
             metadata: RuleMetadata {
-                id: "builtin/documentation/missing-publisher".to_string(),
+                id: "documentation/missing-publisher".to_string(),
                 name: "Missing Publisher".to_string(),
                 description: "Detects FHIR resources without publisher metadata".to_string(),
                 severity: Severity::Info,
@@ -701,13 +720,14 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+        is_ast_rule: false,
         }
     }
 
     /// Rule for detecting invalid status values
     fn invalid_status_rule() -> Rule {
         Rule {
-            id: "builtin/correctness/invalid-status".to_string(),
+            id: "correctness/invalid-status".to_string(),
             severity: Severity::Error,
             description: "Detects invalid status values in resource metadata".to_string(),
             gritql_pattern: r#"
@@ -727,7 +747,7 @@ impl BuiltinRules {
                 safety: FixSafety::Unsafe,
             }),
             metadata: RuleMetadata {
-                id: "builtin/correctness/invalid-status".to_string(),
+                id: "correctness/invalid-status".to_string(),
                 name: "Invalid Status".to_string(),
                 description: "Detects invalid status values in FHIR resource metadata".to_string(),
                 severity: Severity::Error,
@@ -743,6 +763,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+        is_ast_rule: false,
         }
     }
 
@@ -785,6 +806,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+            is_ast_rule: true,
         }
     }
 
@@ -816,6 +838,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+            is_ast_rule: true,
         }
     }
 
@@ -847,6 +870,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+            is_ast_rule: true,
         }
     }
 
@@ -877,6 +901,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+            is_ast_rule: true,
         }
     }
 
@@ -905,6 +930,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+            is_ast_rule: true,
         }
     }
 
@@ -933,6 +959,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+            is_ast_rule: true,
         }
     }
 
@@ -963,6 +990,38 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
+            is_ast_rule: true,
+        }
+    }
+
+    /// Rule for enforcing naming conventions across all resources
+    /// This is an AST-based style rule for PascalCase names and kebab-case IDs
+    fn naming_convention_rule() -> Rule {
+        Rule {
+            id: naming::NAMING_CONVENTION.to_string(),
+            severity: Severity::Warning,
+            description: "Enforces naming conventions: PascalCase for resource names, kebab-case for IDs".to_string(),
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: naming::NAMING_CONVENTION.to_string(),
+                name: "Naming Convention".to_string(),
+                description: "Enforces consistent naming conventions: PascalCase for Profile/Extension/ValueSet/CodeSystem names and kebab-case for resource IDs".to_string(),
+                severity: Severity::Warning,
+                category: RuleCategory::Style,
+                tags: vec![
+                    "style".to_string(),
+                    "naming".to_string(),
+                    "consistency".to_string(),
+                    "best-practices".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/fsh-lint-rs/rules/style/naming-convention"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
         }
     }
 }

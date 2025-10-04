@@ -22,6 +22,10 @@ pub struct Rule {
     pub autofix: Option<AutofixTemplate>,
     /// Additional metadata for the rule
     pub metadata: RuleMetadata,
+    /// Whether this rule uses direct AST access instead of GritQL patterns
+    /// AST-based rules have empty gritql_pattern and implement custom logic
+    #[serde(default)]
+    pub is_ast_rule: bool,
 }
 
 /// Compiled version of a rule ready for execution
@@ -240,6 +244,7 @@ impl Rule {
                 version: None,
                 docs_url: None,
             },
+            is_ast_rule: false,
         }
     }
 
@@ -266,8 +271,21 @@ impl Rule {
             });
         }
 
-        // NOTE: GritQL pattern can be empty for AST-based rules that use direct tree-sitter traversal
+        // GritQL pattern can be empty for AST-based rules that use direct AST traversal
         // These rules implement their logic in custom check functions instead of using GritQL patterns
+        if !self.is_ast_rule && self.gritql_pattern.trim().is_empty() {
+            return Err(FshLintError::RuleError {
+                rule_id: self.id.clone(),
+                message: "GritQL pattern cannot be empty for non-AST rules".to_string(),
+            });
+        }
+
+        if self.is_ast_rule && !self.gritql_pattern.trim().is_empty() {
+            return Err(FshLintError::RuleError {
+                rule_id: self.id.clone(),
+                message: "AST-based rules should have empty GritQL pattern".to_string(),
+            });
+        }
 
         let segments: Vec<&str> = self
             .id
@@ -392,17 +410,16 @@ impl GritQLMatcher {
 
     /// Create a new GritQL matcher with a specific rule ID
     pub fn new_with_rule_id(pattern: String, rule_id: &str) -> Result<Self> {
-        if pattern.is_empty() {
-            return Err(FshLintError::RuleError {
-                rule_id: rule_id.to_string(),
-                message: "GritQL pattern cannot be empty".to_string(),
-            });
-        }
-
+        // Allow empty patterns for AST-based rules
         Ok(Self {
             pattern,
             rule_id: rule_id.to_string(),
         })
+    }
+
+    /// Check if this matcher has a pattern
+    pub fn has_pattern(&self) -> bool {
+        !self.pattern.is_empty()
     }
 
     /// Get the original pattern

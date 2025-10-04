@@ -3,300 +3,302 @@
 //! Validates that FHIR resources have proper documentation metadata.
 //! These are warning-level rules that encourage good documentation practices.
 
-use fsh_lint_core::{Diagnostic, Location, Severity};
-use std::path::PathBuf;
-use tree_sitter::Node;
+use fsh_lint_core::ast::{CodeSystem, Extension, Profile, ValueSet};
+use fsh_lint_core::{Diagnostic, SemanticModel, Severity};
 
 /// Rule ID for missing metadata validation
-pub const MISSING_METADATA: &str = "builtin/documentation/missing-metadata";
+pub const MISSING_METADATA: &str = "documentation/missing-metadata";
 
-/// Required and recommended metadata fields by resource type
-const METADATA_FIELDS: &[&str] = &[
-    "Description",
-    "Title",
-    "Publisher",
-    "Contact",
-    "Copyright",
-    "Purpose",
-];
-
-/// Check for missing metadata documentation
-pub fn check_missing_metadata(node: Node, source: &str, file_path: &PathBuf) -> Vec<Diagnostic> {
+/// Check for missing metadata documentation in FSH document
+pub fn check_missing_metadata(model: &SemanticModel) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    // Walk through resource declarations
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        let kind = child.kind();
+    // Check profiles
+    for profile in &model.document.profiles {
+        diagnostics.extend(check_profile_metadata(profile, model));
+    }
 
-        if matches!(
-            kind,
-            "profile_declaration" | "extension_declaration" | "value_set_declaration" | "code_system_declaration"
-        ) {
-            if let Some(metadata_diags) = check_resource_metadata(child, source, file_path, kind) {
-                diagnostics.extend(metadata_diags);
-            }
-        }
+    // Check extensions
+    for extension in &model.document.extensions {
+        diagnostics.extend(check_extension_metadata(extension, model));
+    }
 
-        // Recursively check children
-        diagnostics.extend(check_missing_metadata(child, source, file_path));
+    // Check value sets
+    for value_set in &model.document.value_sets {
+        diagnostics.extend(check_value_set_metadata(value_set, model));
+    }
+
+    // Check code systems
+    for code_system in &model.document.code_systems {
+        diagnostics.extend(check_code_system_metadata(code_system, model));
     }
 
     diagnostics
 }
 
-/// Check metadata for a single resource
-fn check_resource_metadata(
-    node: Node,
-    source: &str,
-    file_path: &PathBuf,
-    resource_type: &str,
-) -> Option<Vec<Diagnostic>> {
+/// Check metadata for Profile
+fn check_profile_metadata(profile: &Profile, model: &SemanticModel) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    // Extract resource name for context
-    let resource_name = extract_resource_name(node, source);
-
-    // Get resource content
-    let resource_text = node
-        .utf8_text(source.as_bytes())
-        .unwrap_or("");
-
-    // Check for missing Description (most important)
-    if !has_field(resource_text, "Description") && !has_caret_field(resource_text, "description") {
+    // Description is important for understanding the profile
+    if profile.description.is_none() {
         diagnostics.push(create_missing_metadata_diagnostic(
-            node,
-            file_path,
-            &resource_name,
+            "Profile",
+            &profile.name.value,
             "Description",
-            resource_type,
-            Severity::Warning,
+            &profile.span,
+            model,
+            "Profiles should have a Description field for documentation",
         ));
     }
 
-    // Check for missing Title (already checked by required-fields for some, but good practice for all)
-    if !has_field(resource_text, "Title") && !has_caret_field(resource_text, "title") {
+    diagnostics
+}
+
+/// Check metadata for Extension
+fn check_extension_metadata(extension: &Extension, model: &SemanticModel) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    // Description is important for understanding the extension
+    if extension.description.is_none() {
         diagnostics.push(create_missing_metadata_diagnostic(
-            node,
-            file_path,
-            &resource_name,
-            "Title",
-            resource_type,
-            Severity::Info, // Less critical
+            "Extension",
+            &extension.name.value,
+            "Description",
+            &extension.span,
+            model,
+            "Extensions should have a Description field for documentation",
         ));
     }
 
-    // Check for missing Publisher (recommended for published resources)
-    if !has_field(resource_text, "Publisher") && !has_caret_field(resource_text, "publisher") {
+    diagnostics
+}
+
+/// Check metadata for ValueSet
+fn check_value_set_metadata(value_set: &ValueSet, model: &SemanticModel) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    // Description is important for understanding what values are included
+    if value_set.description.is_none() {
         diagnostics.push(create_missing_metadata_diagnostic(
-            node,
-            file_path,
-            &resource_name,
-            "Publisher",
-            resource_type,
-            Severity::Info,
+            "ValueSet",
+            &value_set.name.value,
+            "Description",
+            &value_set.span,
+            model,
+            "ValueSets should have a Description field explaining the purpose and contents",
         ));
     }
 
-    // Check for missing Contact (recommended)
-    if !has_field(resource_text, "Contact") && !has_caret_field(resource_text, "contact") {
+    diagnostics
+}
+
+/// Check metadata for CodeSystem
+fn check_code_system_metadata(code_system: &CodeSystem, model: &SemanticModel) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    // Description is important for understanding the code system
+    if code_system.description.is_none() {
         diagnostics.push(create_missing_metadata_diagnostic(
-            node,
-            file_path,
-            &resource_name,
-            "Contact",
-            resource_type,
-            Severity::Info,
+            "CodeSystem",
+            &code_system.name.value,
+            "Description",
+            &code_system.span,
+            model,
+            "CodeSystems should have a Description field explaining the codes",
         ));
     }
 
-    if diagnostics.is_empty() {
-        None
-    } else {
-        Some(diagnostics)
-    }
+    diagnostics
 }
 
-/// Extract resource name from declaration
-fn extract_resource_name(node: Node, source: &str) -> String {
-    let text = node.utf8_text(source.as_bytes()).unwrap_or("");
-
-    // Try to find the name after the resource type keyword
-    // Format: "Profile: Name" or "Extension: Name"
-    if let Some(colon_pos) = text.find(':') {
-        let after_colon = &text[colon_pos + 1..];
-        if let Some(first_line) = after_colon.lines().next() {
-            return first_line.trim().to_string();
-        }
-    }
-
-    "Unknown".to_string()
-}
-
-/// Check if a field is present using keyword syntax
-/// Example: "Description: Some text"
-fn has_field(text: &str, field_name: &str) -> bool {
-    let pattern = format!("{}: ", field_name);
-    text.contains(&pattern) || text.contains(&format!("{}:", field_name))
-}
-
-/// Check if a field is present using caret syntax
-/// Example: "^description = \"Some text\""
-fn has_caret_field(text: &str, field_name: &str) -> bool {
-    let pattern = format!("^{}", field_name);
-    text.contains(&pattern)
-}
-
-/// Create diagnostic for missing metadata field
+/// Create a diagnostic for missing metadata field
 fn create_missing_metadata_diagnostic(
-    node: Node,
-    file_path: &PathBuf,
+    resource_type: &str,
     resource_name: &str,
     field_name: &str,
-    resource_type: &str,
-    severity: Severity,
+    span: &std::ops::Range<usize>,
+    model: &SemanticModel,
+    message: &str,
 ) -> Diagnostic {
-    let location = create_location(node, file_path);
-
-    let message = format!(
-        "{} '{}' is missing {} field",
-        resource_type.replace("_declaration", "").replace('_', " "),
-        resource_name,
-        field_name
+    // Use SourceMap for precise location!
+    let location = model.source_map.span_to_diagnostic_location(
+        span,
+        &model.source,
+        &model.source_file,
     );
 
-    let mut diagnostic = Diagnostic::new(
+    Diagnostic::new(
         MISSING_METADATA,
-        severity,
-        &message,
+        Severity::Warning, // Warning, not error - documentation is encouraged but not required
+        &format!(
+            "{} '{}' is missing recommended field: {}. {}",
+            resource_type, resource_name, field_name, message
+        ),
         location.clone(),
-    );
-
-    // Suggest adding the field
-    let suggestion_text = match field_name {
-        "Description" => format!("Description: \"Describes the purpose and usage of {}\"", resource_name),
-        "Title" => format!("Title: \"{}\"", format_title(resource_name)),
-        "Publisher" => "Publisher: \"Your Organization\"".to_string(),
-        "Contact" => "Contact: \"contact@example.org\"".to_string(),
-        _ => format!("{}: \"TODO: Add {}\"", field_name, field_name.to_lowercase()),
-    };
-
-    diagnostic = diagnostic.with_suggestion(fsh_lint_core::Suggestion {
-        message: format!("Add {} field for better documentation", field_name),
-        replacement: format!("\n{}", suggestion_text),
-        location: location.clone(),
-        is_safe: true, // Adding documentation is safe
-    });
-
-    diagnostic
-}
-
-/// Format resource name into a readable title
-fn format_title(name: &str) -> String {
-    // Convert PascalCase or kebab-case to Title Case
-    name.chars()
-        .enumerate()
-        .flat_map(|(i, c)| {
-            if i > 0 && c.is_uppercase() {
-                vec![' ', c]
-            } else if c == '-' || c == '_' {
-                vec![' ']
-            } else {
-                vec![c]
-            }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                None => String::new(),
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-/// Create a Location from a tree-sitter Node
-fn create_location(node: Node, file_path: &PathBuf) -> Location {
-    Location {
-        file: file_path.clone(),
-        line: node.start_position().row + 1,
-        column: node.start_position().column + 1,
-        end_line: Some(node.end_position().row + 1),
-        end_column: Some(node.end_position().column + 1),
-        offset: node.start_byte(),
-        length: node.end_byte() - node.start_byte(),
-        span: Some((node.start_byte(), node.end_byte())),
-    }
+    )
+    .with_suggestion(fsh_lint_core::Suggestion {
+        message: format!("Add {} field", field_name),
+        replacement: format!("{}: \"\"", field_name),
+        location,
+        is_safe: false,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fsh_lint_core::ast::{FSHDocument, Spanned};
+    use fsh_lint_core::SemanticModel;
+    use std::path::PathBuf;
 
-    #[test]
-    fn test_has_field() {
-        assert!(has_field("Description: Some text", "Description"));
-        assert!(has_field("Title: My Title\nDescription: Text", "Description"));
-        assert!(!has_field("Title: My Title", "Description"));
+    fn create_test_model() -> SemanticModel {
+        let source = "Profile: Test\nDescription: \"Test\"".to_string();
+        let source_map = fsh_lint_core::SourceMap::new(&source);
+        SemanticModel {
+            document: FSHDocument::new(0..source.len()),
+            resources: Vec::new(),
+            symbols: Default::default(),
+            references: Vec::new(),
+            source_file: PathBuf::from("test.fsh"),
+            source_map,
+            source,
+        }
     }
 
     #[test]
-    fn test_has_caret_field() {
-        assert!(has_caret_field("^description = \"text\"", "description"));
-        assert!(has_caret_field("^title = \"My Title\"", "title"));
-        assert!(!has_caret_field("^title = \"text\"", "description"));
+    fn test_profile_with_description() {
+        let model = create_test_model();
+        let profile = Profile {
+            name: Spanned::new("TestProfile".to_string(), 0..11),
+            parent: None,
+            id: Some(Spanned::new("test-profile".to_string(), 20..32)),
+            title: Some(Spanned::new("Test Profile".to_string(), 40..52)),
+            description: Some(Spanned::new("A test profile".to_string(), 60..74)),
+            rules: Vec::new(),
+            span: 0..100,
+        };
+
+        let diagnostics = check_profile_metadata(&profile, &model);
+        assert_eq!(diagnostics.len(), 0, "Profile with description should have no warnings");
     }
 
     #[test]
-    fn test_format_title() {
-        assert_eq!(format_title("MyPatientProfile"), "My Patient Profile");
-        assert_eq!(format_title("patient-profile"), "Patient Profile");
-        assert_eq!(format_title("USCorePatient"), "U S Core Patient");
-        assert_eq!(format_title("simple"), "Simple");
+    fn test_profile_missing_description() {
+        let model = create_test_model();
+        let profile = Profile {
+            name: Spanned::new("TestProfile".to_string(), 0..11),
+            parent: None,
+            id: Some(Spanned::new("test-profile".to_string(), 20..32)),
+            title: Some(Spanned::new("Test Profile".to_string(), 40..52)),
+            description: None,
+            rules: Vec::new(),
+            span: 0..100,
+        };
+
+        let diagnostics = check_profile_metadata(&profile, &model);
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("Description"));
+        assert_eq!(diagnostics[0].severity, Severity::Warning);
     }
 
     #[test]
-    fn test_extract_resource_name() {
-        // These would normally work with actual tree-sitter nodes
-        // For now we test the format_title helper instead
-        assert_eq!(format_title("PatientProfile"), "Patient Profile");
+    fn test_extension_missing_description() {
+        let model = create_test_model();
+        let extension = Extension {
+            name: Spanned::new("TestExtension".to_string(), 0..13),
+            parent: None,
+            id: Some(Spanned::new("test-ext".to_string(), 20..28)),
+            title: Some(Spanned::new("Test Extension".to_string(), 35..49)),
+            description: None,
+            contexts: Vec::new(),
+            rules: Vec::new(),
+            span: 0..100,
+        };
+
+        let diagnostics = check_extension_metadata(&extension, &model);
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("Description"));
     }
 
     #[test]
-    fn test_metadata_field_detection() {
-        let text = r#"
-Profile: MyProfile
-Description: "A test profile"
-Title: "My Profile"
-"#;
-        assert!(has_field(text, "Description"));
-        assert!(has_field(text, "Title"));
-        assert!(!has_field(text, "Publisher"));
+    fn test_value_set_missing_description() {
+        let model = create_test_model();
+        let value_set = ValueSet {
+            name: Spanned::new("TestVS".to_string(), 0..6),
+            parent: None,
+            id: Some(Spanned::new("test-vs".to_string(), 15..22)),
+            title: Some(Spanned::new("Test VS".to_string(), 30..37)),
+            description: None,
+            components: Vec::new(),
+            rules: Vec::new(),
+            span: 0..50,
+        };
+
+        let diagnostics = check_value_set_metadata(&value_set, &model);
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("Description"));
     }
 
     #[test]
-    fn test_caret_syntax_detection() {
-        let text = r#"
-Profile: MyProfile
-^description = "A test profile"
-^title = "My Profile"
-"#;
-        assert!(has_caret_field(text, "description"));
-        assert!(has_caret_field(text, "title"));
-        assert!(!has_caret_field(text, "publisher"));
+    fn test_code_system_missing_description() {
+        let model = create_test_model();
+        let code_system = CodeSystem {
+            name: Spanned::new("TestCS".to_string(), 0..6),
+            id: Some(Spanned::new("test-cs".to_string(), 15..22)),
+            title: Some(Spanned::new("Test CS".to_string(), 30..37)),
+            description: None,
+            concepts: Vec::new(),
+            rules: Vec::new(),
+            span: 0..50,
+        };
+
+        let diagnostics = check_code_system_metadata(&code_system, &model);
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("Description"));
     }
 
     #[test]
-    fn test_mixed_syntax_detection() {
-        let text = r#"
-Profile: MyProfile
-Description: "A test profile"
-^title = "My Profile"
-"#;
-        assert!(has_field(text, "Description"));
-        assert!(has_caret_field(text, "title"));
+    fn test_check_metadata_in_document() {
+        let source = "Profile: Test\nExtension: Ext".to_string();
+        let source_map = fsh_lint_core::SourceMap::new(&source);
+        let mut doc = FSHDocument::new(0..source.len());
+
+        // Add profile without description
+        doc.profiles.push(Profile {
+            name: Spanned::new("TestProfile".to_string(), 0..11),
+            parent: None,
+            id: Some(Spanned::new("test".to_string(), 20..24)),
+            title: Some(Spanned::new("Test".to_string(), 30..34)),
+            description: None,
+            rules: Vec::new(),
+            span: 0..50,
+        });
+
+        // Add value set without description
+        doc.value_sets.push(ValueSet {
+            name: Spanned::new("TestVS".to_string(), 60..66),
+            parent: None,
+            id: Some(Spanned::new("test-vs".to_string(), 75..82)),
+            title: Some(Spanned::new("Test VS".to_string(), 90..97)),
+            description: None,
+            components: Vec::new(),
+            rules: Vec::new(),
+            span: 60..100,
+        });
+
+        let model = SemanticModel {
+            document: doc,
+            resources: Vec::new(),
+            symbols: Default::default(),
+            references: Vec::new(),
+            source_file: PathBuf::from("test.fsh"),
+            source_map,
+            source,
+        };
+
+        let diagnostics = check_missing_metadata(&model);
+        assert_eq!(diagnostics.len(), 2, "Should find 2 missing descriptions");
+        assert!(diagnostics.iter().all(|d| d.severity == Severity::Warning));
     }
 }

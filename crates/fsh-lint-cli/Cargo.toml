@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 fsh-lint-core = { path = "../fsh-lint-core" }
+fsh-lint-rules = { path = "../fsh-lint-rules" }
 clap = { version = "4.0", features = ["derive", "env", "color", "suggestions"] }
 clap_complete = "4.0"
 tokio = { workspace = true }
@@ -27,6 +28,7 @@ thiserror = { workspace = true }
 colored = "2.0"
 rayon = { workspace = true }
 atty = "0.2"
+glob = "0.3"
 
 [dev-dependencies]
 assert_cmd = "2.0"

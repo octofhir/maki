@@ -3,334 +3,254 @@
 //! Validates that bindings to value sets have proper strength specifications
 //! and use valid strength values.
 
-use fsh_lint_core::{Diagnostic, Location, Severity};
-use std::path::PathBuf;
-use tree_sitter::Node;
+use fsh_lint_core::ast::{BindingStrength, SDRule, ValueSetRule};
+use fsh_lint_core::{Diagnostic, SemanticModel, Severity};
 
 /// Rule ID for binding strength validation
-pub const BINDING_STRENGTH_PRESENT: &str = "builtin/correctness/binding-strength-present";
+pub const BINDING_STRENGTH_PRESENT: &str = "correctness/binding-strength-present";
 
-/// Valid FHIR binding strength values
-const VALID_BINDING_STRENGTHS: &[&str] = &["required", "extensible", "preferred", "example"];
-
-/// Check for missing or invalid binding strengths
-pub fn check_binding_strength(node: Node, source: &str, file_path: &PathBuf) -> Vec<Diagnostic> {
+/// Check for missing or invalid binding strengths in FSH document
+pub fn check_binding_strength(model: &SemanticModel) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    // Walk through all binding rule nodes
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "binding_rule" {
-            if let Some(binding_diag) = check_binding_rule(child, source, file_path) {
-                diagnostics.extend(binding_diag);
+    // Check profiles
+    for profile in &model.document.profiles {
+        for rule in &profile.rules {
+            if let SDRule::ValueSet(vs_rule) = rule {
+                if let Some(diag) = validate_binding_strength(vs_rule, model) {
+                    diagnostics.push(diag);
+                }
             }
         }
+    }
 
-        // Recursively check children
-        diagnostics.extend(check_binding_strength(child, source, file_path));
+    // Check extensions
+    for extension in &model.document.extensions {
+        for rule in &extension.rules {
+            if let SDRule::ValueSet(vs_rule) = rule {
+                if let Some(diag) = validate_binding_strength(vs_rule, model) {
+                    diagnostics.push(diag);
+                }
+            }
+        }
     }
 
     diagnostics
 }
 
-/// Check a single binding rule for strength specification
-fn check_binding_rule(
-    node: Node,
-    source: &str,
-    file_path: &PathBuf,
-) -> Option<Vec<Diagnostic>> {
-    let mut diagnostics = Vec::new();
+/// Validate a single ValueSet binding rule
+fn validate_binding_strength(vs_rule: &ValueSetRule, model: &SemanticModel) -> Option<Diagnostic> {
+    // Check if strength is missing
+    if vs_rule.strength.is_none() {
+        // Use SourceMap for precise location!
+        let location = model.source_map.span_to_diagnostic_location(
+            &vs_rule.span,
+            &model.source,
+            &model.source_file,
+        );
 
-    // Get the full binding rule text
-    let binding_text = node
-        .utf8_text(source.as_bytes())
-        .unwrap_or("")
-        .trim();
-
-    // Check if it has "from" keyword (indicates a binding)
-    if !binding_text.contains(" from ") {
-        return None;
+        return Some(
+            Diagnostic::new(
+                BINDING_STRENGTH_PRESENT,
+                Severity::Error,
+                &format!(
+                    "Binding to '{}' is missing strength specification. Must be one of: required, extensible, preferred, example",
+                    vs_rule.value_set.value
+                ),
+                location.clone(),
+            )
+            .with_suggestion(fsh_lint_core::Suggestion {
+                message: "Add binding strength".to_string(),
+                replacement: format!(
+                    "{} from {} (required)",
+                    vs_rule.path.value,
+                    vs_rule.value_set.value
+                ),
+                location,
+                is_safe: false,
+            }),
+        );
     }
 
-    // Check for binding strength in parentheses
-    let has_strength = binding_text.contains('(') && binding_text.contains(')');
+    // Check if strength is invalid (Unknown variant)
+    if let Some(ref strength_spanned) = vs_rule.strength {
+        if let BindingStrength::Unknown(ref invalid_strength) = strength_spanned.value {
+            // Use SourceMap for precise location!
+            let location = model.source_map.span_to_diagnostic_location(
+                &strength_spanned.span,
+                &model.source,
+                &model.source_file,
+            );
 
-    if !has_strength {
-        // Missing binding strength
-        let location = create_location(node, file_path);
-        diagnostics.push(create_missing_strength_diagnostic(
-            &location,
-            binding_text,
-        ));
-    } else {
-        // Has strength - validate it
-        if let Some(strength) = extract_binding_strength(binding_text) {
-            if !is_valid_binding_strength(&strength) {
-                let location = create_location(node, file_path);
-                diagnostics.push(create_invalid_strength_diagnostic(
-                    &location,
-                    &strength,
-                    binding_text,
-                ));
-            }
-        }
-    }
-
-    if diagnostics.is_empty() {
-        None
-    } else {
-        Some(diagnostics)
-    }
-}
-
-/// Extract binding strength from binding rule text
-/// Example: "* code from ValueSet (required)" -> "required"
-fn extract_binding_strength(binding_text: &str) -> Option<String> {
-    // Find text within parentheses
-    let start = binding_text.find('(')?;
-    let end = binding_text.find(')')?;
-
-    if end <= start {
-        return None;
-    }
-
-    let strength = binding_text[start + 1..end].trim();
-    Some(strength.to_string())
-}
-
-/// Check if a binding strength value is valid
-fn is_valid_binding_strength(strength: &str) -> bool {
-    VALID_BINDING_STRENGTHS.contains(&strength)
-}
-
-/// Create diagnostic for missing binding strength
-fn create_missing_strength_diagnostic(
-    location: &Location,
-    binding_text: &str,
-) -> Diagnostic {
-    let mut diagnostic = Diagnostic::new(
-        BINDING_STRENGTH_PRESENT,
-        Severity::Error,
-        "Binding is missing strength specification",
-        location.clone(),
-    );
-
-    // Try to suggest a reasonable default based on context
-    let suggested_strength = suggest_binding_strength(binding_text);
-    let fixed_binding = format!("{} ({})", binding_text, suggested_strength);
-
-    diagnostic = diagnostic.with_suggestion(fsh_lint_core::Suggestion {
-        message: format!("Add binding strength: ({})", suggested_strength),
-        replacement: fixed_binding,
-        location: location.clone(),
-        is_safe: false, // Choosing strength requires semantic understanding
-    });
-
-    diagnostic
-}
-
-/// Create diagnostic for invalid binding strength
-fn create_invalid_strength_diagnostic(
-    location: &Location,
-    invalid_strength: &str,
-    binding_text: &str,
-) -> Diagnostic {
-    let mut diagnostic = Diagnostic::new(
-        BINDING_STRENGTH_PRESENT,
-        Severity::Error,
-        &format!(
-            "Invalid binding strength '{}'. Must be one of: {}",
-            invalid_strength,
-            VALID_BINDING_STRENGTHS.join(", ")
-        ),
-        location.clone(),
-    );
-
-    // Suggest the closest valid strength
-    let suggested = suggest_closest_strength(invalid_strength);
-    let fixed_binding = binding_text.replace(
-        &format!("({})", invalid_strength),
-        &format!("({})", suggested),
-    );
-
-    diagnostic = diagnostic.with_suggestion(fsh_lint_core::Suggestion {
-        message: format!("Use valid strength: ({})", suggested),
-        replacement: fixed_binding,
-        location: location.clone(),
-        is_safe: false, // Changing strength changes semantics
-    });
-
-    diagnostic
-}
-
-/// Suggest an appropriate binding strength based on context
-fn suggest_binding_strength(binding_text: &str) -> &'static str {
-    // Heuristics for suggesting binding strength
-    let lower = binding_text.to_lowercase();
-
-    // Code/category often required or extensible
-    if lower.contains("* code ") || lower.contains("*.code ") {
-        "required"
-    } else if lower.contains("* category") || lower.contains("*.category") {
-        "extensible"
-    } else if lower.contains("* interpretation") || lower.contains("*.interpretation") {
-        "preferred"
-    } else if lower.contains("* method") || lower.contains("*.method") {
-        "example"
-    } else if lower.contains("valuecoding") || lower.contains("valuecodeable") {
-        "required"
-    } else {
-        // Default suggestion
-        "extensible"
-    }
-}
-
-/// Suggest the closest valid binding strength for a typo
-fn suggest_closest_strength(invalid: &str) -> &'static str {
-    let lower = invalid.to_lowercase();
-
-    // Direct matches or common typos
-    match lower.as_str() {
-        "require" | "mandatory" | "must" | "strict" => "required",
-        "extend" | "extensable" | "extendable" => "extensible",
-        "prefer" | "preferred" | "recommended" => "preferred",
-        "sample" | "examples" | "illustration" => "example",
-        "very-strict" | "super-strict" => "required",
-        _ => {
-            // Fuzzy matching - find shortest edit distance
-            let mut min_distance = usize::MAX;
-            let mut closest = "extensible";
-
-            for valid in VALID_BINDING_STRENGTHS {
-                let distance = edit_distance(&lower, valid);
-                if distance < min_distance {
-                    min_distance = distance;
-                    closest = valid;
-                }
-            }
-
-            closest
-        }
-    }
-}
-
-/// Calculate Levenshtein distance between two strings
-fn edit_distance(s1: &str, s2: &str) -> usize {
-    let len1 = s1.chars().count();
-    let len2 = s2.chars().count();
-
-    let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
-
-    for i in 0..=len1 {
-        matrix[i][0] = i;
-    }
-    for j in 0..=len2 {
-        matrix[0][j] = j;
-    }
-
-    let s1_chars: Vec<char> = s1.chars().collect();
-    let s2_chars: Vec<char> = s2.chars().collect();
-
-    for i in 1..=len1 {
-        for j in 1..=len2 {
-            let cost = if s1_chars[i - 1] == s2_chars[j - 1] { 0 } else { 1 };
-            matrix[i][j] = std::cmp::min(
-                std::cmp::min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1),
-                matrix[i - 1][j - 1] + cost,
+            return Some(
+                Diagnostic::new(
+                    BINDING_STRENGTH_PRESENT,
+                    Severity::Error,
+                    &format!(
+                        "Invalid binding strength '{}'. Must be one of: required, extensible, preferred, example",
+                        invalid_strength
+                    ),
+                    location.clone(),
+                )
+                .with_suggestion(fsh_lint_core::Suggestion {
+                    message: "Use 'required' (strongest)".to_string(),
+                    replacement: "required".to_string(),
+                    location: location.clone(),
+                    is_safe: false,
+                })
+                .with_suggestion(fsh_lint_core::Suggestion {
+                    message: "Use 'extensible'".to_string(),
+                    replacement: "extensible".to_string(),
+                    location: location.clone(),
+                    is_safe: false,
+                })
+                .with_suggestion(fsh_lint_core::Suggestion {
+                    message: "Use 'preferred'".to_string(),
+                    replacement: "preferred".to_string(),
+                    location: location.clone(),
+                    is_safe: false,
+                })
+                .with_suggestion(fsh_lint_core::Suggestion {
+                    message: "Use 'example' (weakest)".to_string(),
+                    replacement: "example".to_string(),
+                    location,
+                    is_safe: false,
+                }),
             );
         }
     }
 
-    matrix[len1][len2]
-}
-
-/// Create a Location from a tree-sitter Node
-fn create_location(node: Node, file_path: &PathBuf) -> Location {
-    Location {
-        file: file_path.clone(),
-        line: node.start_position().row + 1,
-        column: node.start_position().column + 1,
-        end_line: Some(node.end_position().row + 1),
-        end_column: Some(node.end_position().column + 1),
-        offset: node.start_byte(),
-        length: node.end_byte() - node.start_byte(),
-        span: Some((node.start_byte(), node.end_byte())),
-    }
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fsh_lint_core::ast::{FSHDocument, Profile, Spanned};
+    use fsh_lint_core::SemanticModel;
+    use std::path::PathBuf;
 
-    #[test]
-    fn test_valid_binding_strengths() {
-        assert!(is_valid_binding_strength("required"));
-        assert!(is_valid_binding_strength("extensible"));
-        assert!(is_valid_binding_strength("preferred"));
-        assert!(is_valid_binding_strength("example"));
+    fn create_test_model() -> SemanticModel {
+        let source = "Profile: Test\n* status from StatusVS (required)".to_string();
+        let source_map = fsh_lint_core::SourceMap::new(&source);
+        SemanticModel {
+            document: FSHDocument::new(0..source.len()),
+            resources: Vec::new(),
+            symbols: Default::default(),
+            references: Vec::new(),
+            source_file: PathBuf::from("test.fsh"),
+            source_map,
+            source,
+        }
     }
 
     #[test]
-    fn test_invalid_binding_strengths() {
-        assert!(!is_valid_binding_strength("mandatory"));
-        assert!(!is_valid_binding_strength("strict"));
-        assert!(!is_valid_binding_strength("very-strict"));
-        assert!(!is_valid_binding_strength("optional"));
+    fn test_valid_binding_with_strength() {
+        let model = create_test_model();
+        let vs_rule = ValueSetRule {
+            path: Spanned::new("status".to_string(), 0..6),
+            value_set: Spanned::new("StatusVS".to_string(), 12..20),
+            strength: Some(Spanned::new(BindingStrength::Required, 22..30)),
+            span: 0..31,
+        };
+
+        let result = validate_binding_strength(&vs_rule, &model);
+        assert!(result.is_none(), "Valid binding with strength should not produce diagnostic");
     }
 
     #[test]
-    fn test_extract_binding_strength() {
-        assert_eq!(
-            extract_binding_strength("* code from ValueSet (required)"),
-            Some("required".to_string())
-        );
-        assert_eq!(
-            extract_binding_strength("* category from Codes (extensible)"),
-            Some("extensible".to_string())
-        );
-        assert_eq!(
-            extract_binding_strength("* code from ValueSet"),
-            None
-        );
+    fn test_binding_missing_strength() {
+        let model = create_test_model();
+        let vs_rule = ValueSetRule {
+            path: Spanned::new("status".to_string(), 0..6),
+            value_set: Spanned::new("StatusVS".to_string(), 12..20),
+            strength: None,
+            span: 0..20,
+        };
+
+        let result = validate_binding_strength(&vs_rule, &model);
+        assert!(result.is_some(), "Binding without strength should produce diagnostic");
+
+        let diag = result.unwrap();
+        assert_eq!(diag.rule_id, BINDING_STRENGTH_PRESENT);
+        assert_eq!(diag.severity, Severity::Error);
+        assert!(diag.message.contains("missing strength"));
     }
 
     #[test]
-    fn test_suggest_binding_strength() {
-        assert_eq!(suggest_binding_strength("* code from ValueSet"), "required");
-        assert_eq!(suggest_binding_strength("* category from Codes"), "extensible");
-        assert_eq!(suggest_binding_strength("* interpretation from Interp"), "preferred");
-        assert_eq!(suggest_binding_strength("* method from Methods"), "example");
-        assert_eq!(suggest_binding_strength("* other from Other"), "extensible");
+    fn test_binding_invalid_strength() {
+        let model = create_test_model();
+        let vs_rule = ValueSetRule {
+            path: Spanned::new("status".to_string(), 0..6),
+            value_set: Spanned::new("StatusVS".to_string(), 12..20),
+            strength: Some(Spanned::new(BindingStrength::Unknown("invalid".to_string()), 22..29)),
+            span: 0..30,
+        };
+
+        let result = validate_binding_strength(&vs_rule, &model);
+        assert!(result.is_some(), "Binding with invalid strength should produce diagnostic");
+
+        let diag = result.unwrap();
+        assert_eq!(diag.rule_id, BINDING_STRENGTH_PRESENT);
+        assert!(diag.message.contains("Invalid binding strength"));
+        assert!(diag.suggestions.len() == 4, "Should suggest all 4 valid strengths");
     }
 
     #[test]
-    fn test_suggest_closest_strength() {
-        assert_eq!(suggest_closest_strength("require"), "required");
-        assert_eq!(suggest_closest_strength("mandatory"), "required");
-        assert_eq!(suggest_closest_strength("extensable"), "extensible");
-        assert_eq!(suggest_closest_strength("prefer"), "preferred");
-        assert_eq!(suggest_closest_strength("sample"), "example");
-        assert_eq!(suggest_closest_strength("very-strict"), "required");
+    fn test_all_valid_strengths() {
+        let model = create_test_model();
+        for strength in &[
+            BindingStrength::Required,
+            BindingStrength::Extensible,
+            BindingStrength::Preferred,
+            BindingStrength::Example,
+        ] {
+            let vs_rule = ValueSetRule {
+                path: Spanned::new("status".to_string(), 0..6),
+                value_set: Spanned::new("StatusVS".to_string(), 12..20),
+                strength: Some(Spanned::new(strength.clone(), 22..30)),
+                span: 0..31,
+            };
+
+            let result = validate_binding_strength(&vs_rule, &model);
+            assert!(result.is_none(), "Valid strength {:?} should not produce diagnostic", strength);
+        }
     }
 
     #[test]
-    fn test_edit_distance() {
-        assert_eq!(edit_distance("required", "required"), 0);
-        assert_eq!(edit_distance("require", "required"), 1);
-        assert_eq!(edit_distance("extensable", "extensible"), 1);
-        assert_eq!(edit_distance("preferred", "prefered"), 1); // One 'r' removed
-        assert_eq!(edit_distance("example", "sample"), 2); // e->s, x->a
-    }
+    fn test_check_binding_in_profile() {
+        let source = "Profile: TestProfile\n* status from StatusVS".to_string();
+        let source_map = fsh_lint_core::SourceMap::new(&source);
 
-    #[test]
-    fn test_fuzzy_matching() {
-        // "extensable" should match "extensible" (1 char difference)
-        assert_eq!(suggest_closest_strength("extensable"), "extensible");
+        let mut doc = FSHDocument::new(0..source.len());
 
-        // "prefered" should match "preferred" (1 char difference - missing 'r')
-        assert_eq!(suggest_closest_strength("prefered"), "preferred");
+        doc.profiles.push(Profile {
+            name: Spanned::new("TestProfile".to_string(), 0..11),
+            parent: None,
+            id: None,
+            title: None,
+            description: None,
+            rules: vec![SDRule::ValueSet(ValueSetRule {
+                path: Spanned::new("status".to_string(), 20..26),
+                value_set: Spanned::new("StatusVS".to_string(), 32..40),
+                strength: None,
+                span: 20..40,
+            })],
+            span: 0..50,
+        });
 
-        // "requried" should match "required" (2 char difference - transposition)
-        assert_eq!(suggest_closest_strength("requried"), "required");
+        let model = SemanticModel {
+            document: doc,
+            resources: Vec::new(),
+            symbols: Default::default(),
+            references: Vec::new(),
+            source_file: PathBuf::from("test.fsh"),
+            source_map,
+            source,
+        };
+
+        let diagnostics = check_binding_strength(&model);
+        assert_eq!(diagnostics.len(), 1, "Should find 1 binding strength error");
+        assert_eq!(diagnostics[0].rule_id, BINDING_STRENGTH_PRESENT);
     }
 }

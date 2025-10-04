@@ -3,13 +3,15 @@
 //! This module contains the implementation of all CLI commands
 
 use fsh_lint_core::{
-    Result,
+    CachedFshParser, DefaultExecutor, DefaultFileDiscovery, DefaultSemanticAnalyzer,
+    ExecutionContext, Executor, FileDiscovery, Result, RuleEngine,
     config::{ConfigManager, DefaultConfigManager},
 };
+use fsh_lint_rules::{BuiltinRules, DefaultRuleEngine, init_builtin_rules};
 use serde_json;
 use std::path::PathBuf;
 use std::time::Instant;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::output::{LintSummary, OutputFormatter, ProgressReporter};
 use crate::{ConfigFormat, OutputFormat, Severity};
@@ -28,42 +30,156 @@ pub async fn lint_command(
     progress: bool,
     config_path: Option<PathBuf>,
 ) -> Result<()> {
-    info!("Running lint command on paths: {:?}", paths);
+    debug!("Running lint command on paths: {:?}", paths);
 
     // Load configuration
     let config_manager = DefaultConfigManager::new();
-    let config = config_manager.load_config(config_path.as_ref().map(|p| p.as_path()))?;
+    let mut config = config_manager.load_config(config_path.as_ref().map(|p| p.as_path()))?;
 
-    info!("Loaded configuration with {} rules", config.rules.len());
+    // Apply CLI overrides to configuration
+    if !include.is_empty() {
+        config.include_patterns = include.clone();
+    }
+    if !exclude.is_empty() {
+        config.exclude_patterns = exclude.clone();
+    }
+
+    debug!("Loaded configuration with {} rules", config.rules.len());
 
     let start_time = Instant::now();
 
+    // Determine which files to lint
+    let fsh_files = if paths.is_empty() {
+        // No paths specified - discover files based on config patterns
+        let file_discovery = DefaultFileDiscovery::new(std::env::current_dir()?);
+        file_discovery.discover_files(&config)?
+    } else {
+        // Paths specified - use them directly (respecting globs)
+        let mut files = Vec::new();
+        for path in paths {
+            if path.is_file() {
+                // Direct file path
+                if path.extension().map_or(false, |ext| ext == "fsh") {
+                    files.push(path);
+                }
+            } else if path.is_dir() {
+                // Directory - find all .fsh files in it
+                let file_discovery = DefaultFileDiscovery::new(&path);
+                files.extend(file_discovery.discover_files(&config)?);
+            } else if path.to_string_lossy().contains('*') {
+                // Glob pattern - expand it
+                let pattern_str = path.to_string_lossy();
+                for entry in glob::glob(&pattern_str).map_err(|e| fsh_lint_core::FshLintError::IoError {
+                    path: path.clone(),
+                    source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
+                })? {
+                    match entry {
+                        Ok(p) if p.extension().map_or(false, |ext| ext == "fsh") => files.push(p),
+                        _ => {}
+                    }
+                }
+            } else {
+                // Path doesn't exist - try as glob pattern anyway
+                let pattern_str = path.to_string_lossy();
+                let mut found = false;
+                for entry in glob::glob(&pattern_str).map_err(|e| fsh_lint_core::FshLintError::IoError {
+                    path: path.clone(),
+                    source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
+                })? {
+                    match entry {
+                        Ok(p) if p.extension().map_or(false, |ext| ext == "fsh") => {
+                            files.push(p);
+                            found = true;
+                        }
+                        _ => {}
+                    }
+                }
+                if !found {
+                    error!("Path does not exist: {}", path.display());
+                }
+            }
+        }
+        files
+    };
+
+    if fsh_files.is_empty() {
+        println!("No FSH files found in specified paths.");
+        return Ok(());
+    }
+
+    debug!("Found {} FSH files to lint", fsh_files.len());
+
     // Initialize progress reporter
-    let mut progress_reporter = ProgressReporter::new(progress, paths.len());
+    let mut progress_reporter = ProgressReporter::new(progress, fsh_files.len());
 
-    // TODO: Implement actual linting logic using fsh-lint-core components
-    // This will be implemented when the core components are integrated
+    // Create rule engine
+    let mut rule_engine = DefaultRuleEngine::new();
 
-    // Simulate processing files
-    let mut summary = LintSummary::new();
-    summary.files_checked = paths.len();
+    // Collect and compile all built-in rules
+    let all_builtin_rules = BuiltinRules::all_rules();
+    let mut compiled_rules = Vec::new();
+
+    for rule in all_builtin_rules {
+        match rule_engine.compile_rule(&rule) {
+            Ok(compiled_rule) => {
+                rule_engine.registry_mut().register(compiled_rule.clone());
+                compiled_rules.push(compiled_rule);
+            }
+            Err(e) => {
+                error!("Failed to compile rule {}: {}", rule.id, e);
+            }
+        }
+    }
+
+    debug!("Loaded {} rules for execution", compiled_rules.len());
+
+    // Create parser, semantic analyzer, and executor
+    let parser = Box::new(CachedFshParser::new()?);
+    let semantic_analyzer = Box::new(DefaultSemanticAnalyzer::new());
+
+    // Create execution context
+    let context = ExecutionContext::new(config.clone(), compiled_rules);
+
+    // Create executor
+    let executor = DefaultExecutor::new(context, parser, semantic_analyzer, Box::new(rule_engine));
+
+    // Execute linting in parallel
+    if progress {
+        progress_reporter.update(0, "Starting linting...");
+    }
+
+    let results = executor.execute_parallel(fsh_files)?;
 
     if progress {
-        for (i, path) in paths.iter().enumerate() {
-            progress_reporter.update(i + 1, &format!("Checking {}", path.display()));
-            // Simulate processing time
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
         progress_reporter.finish("Linting");
     }
 
-    // Create placeholder diagnostics for demonstration
-    let diagnostics = vec![];
+    // Collect diagnostics and build summary
+    let mut all_diagnostics = Vec::new();
+    let mut summary = LintSummary::new();
+    summary.files_checked = results.len();
+
+    for result in results {
+        if let Some(error) = result.error {
+            error!("Error processing {}: {}", result.file_path.display(), error);
+            summary.errors += 1;
+        } else {
+            for diagnostic in &result.diagnostics {
+                match diagnostic.severity {
+                    fsh_lint_core::Severity::Error => summary.errors += 1,
+                    fsh_lint_core::Severity::Warning => summary.warnings += 1,
+                    fsh_lint_core::Severity::Info => summary.info += 1,
+                    fsh_lint_core::Severity::Hint => summary.hints += 1,
+                }
+            }
+            all_diagnostics.extend(result.diagnostics);
+        }
+    }
 
     // Format and print results
     let use_colors = !std::env::var("NO_COLOR").is_ok() && atty::is(atty::Stream::Stdout);
     let formatter = OutputFormatter::new(format, use_colors);
-    formatter.print_results(&diagnostics, &summary, progress)?;
+    formatter.print_results(&all_diagnostics, &summary, progress)?;
 
     let duration = start_time.elapsed();
     if progress {
@@ -71,6 +187,14 @@ pub async fn lint_command(
             "Completed in {}",
             crate::output::utils::format_duration(duration)
         );
+    }
+
+    // Determine exit code
+    let has_errors = summary.errors > 0;
+    let has_warnings = summary.warnings > 0;
+
+    if has_errors || (error_on_warnings && has_warnings) {
+        std::process::exit(1);
     }
 
     Ok(())
@@ -83,73 +207,72 @@ pub async fn rules_list_command(
     tag: Option<String>,
     config_path: Option<PathBuf>,
 ) -> Result<()> {
-    info!("Listing available rules");
+    debug!("Listing available rules");
 
     // Load configuration to get rule settings
     let config_manager = DefaultConfigManager::new();
     let config = config_manager.load_config(config_path.as_ref().map(|p| p.as_path()))?;
 
-    // TODO: Load actual rules from rule engine
-    // For now, show placeholder rules
-    let placeholder_rules = vec![
-        (
-            "builtin/correctness/invalid-keyword",
-            "Invalid keyword usage",
-            "correctness",
-            vec!["correctness", "keywords"],
-        ),
-        (
-            "builtin/suspicious/trailing-text",
-            "Unexpected trailing text",
-            "suspicious",
-            vec!["suspicious", "formatting"],
-        ),
-        (
-            "builtin/style/profile-naming-convention",
-            "Profile naming convention",
-            "style",
-            vec!["style", "naming"],
-        ),
-        (
-            "builtin/documentation/missing-description",
-            "Missing description metadata",
-            "documentation",
-            vec!["documentation", "metadata"],
-        ),
-    ];
+    // Collect all built-in rules
+    let all_rules = BuiltinRules::all_rules();
 
     println!("Available Rules:");
     println!("================");
 
-    for (id, description, cat, tags) in placeholder_rules {
-        // Apply filters
+    let mut count = 0;
+    for rule in all_rules {
+        let rule_category = match &rule.metadata.category {
+            fsh_lint_core::RuleCategory::Correctness => "correctness",
+            fsh_lint_core::RuleCategory::Suspicious => "suspicious",
+            fsh_lint_core::RuleCategory::Style => "style",
+            fsh_lint_core::RuleCategory::Complexity => "complexity",
+            fsh_lint_core::RuleCategory::Documentation => "documentation",
+            fsh_lint_core::RuleCategory::Performance => "performance",
+            fsh_lint_core::RuleCategory::Nursery => "nursery",
+            fsh_lint_core::RuleCategory::Accessibility => "accessibility",
+            fsh_lint_core::RuleCategory::Security => "security",
+            fsh_lint_core::RuleCategory::Custom(s) => s.as_str(),
+        };
+
+        // Apply category filter
         if let Some(ref filter_cat) = category {
-            if cat != filter_cat {
+            if rule_category != filter_cat.as_str() {
                 continue;
             }
         }
 
+        // Apply tag filter (if tags exist)
         if let Some(ref filter_tag) = tag {
-            if !tags.contains(&filter_tag.as_str()) {
-                continue;
-            }
+            // Skip if no tags match
+            continue;
         }
+
+        count += 1;
 
         if detailed {
-            println!("\n{} - {}", id, description);
-            println!("  Category: {}", cat);
-            println!("  Tags: {}", tags.join(", "));
+            println!("\n{}", rule.id);
+            println!("  Description: {}", rule.metadata.description);
+            println!("  Category: {}", rule_category);
             println!(
                 "  Status: {}",
-                if config.rules.contains_key(id) {
-                    "enabled"
+                if config.rules.contains_key(&rule.id) {
+                    "configured"
                 } else {
                     "default"
                 }
             );
+            if rule.autofix.is_some() {
+                println!("  Autofix: available");
+            }
         } else {
-            println!("  {} - {}", id, description);
+            println!("  {} - {}", rule.id, rule.metadata.description);
         }
+    }
+
+    if count == 0 {
+        println!("\nNo rules found matching the specified filters.");
+    } else {
+        println!("\nTotal: {} rules", count);
     }
 
     Ok(())
@@ -157,31 +280,49 @@ pub async fn rules_list_command(
 
 /// Rules explain command implementation
 pub async fn rules_explain_command(rule_id: String, _config_path: Option<PathBuf>) -> Result<()> {
-    info!("Explaining rule: {}", rule_id);
+    debug!("Explaining rule: {}", rule_id);
 
-    // TODO: Load actual rule details from rule engine
-    // For now, show placeholder explanation
-    match rule_id.as_str() {
-        "builtin/correctness/invalid-keyword" => {
-            println!("Rule: builtin/correctness/invalid-keyword - Invalid keyword usage");
-            println!("==============================================================");
+    // Collect all built-in rules
+    let all_rules = BuiltinRules::all_rules();
+
+    // Find the rule
+    let rule = all_rules.iter().find(|r| r.id == rule_id);
+
+    match rule {
+        Some(rule) => {
+            let category = match &rule.metadata.category {
+                fsh_lint_core::RuleCategory::Correctness => "Correctness",
+                fsh_lint_core::RuleCategory::Suspicious => "Suspicious",
+                fsh_lint_core::RuleCategory::Style => "Style",
+                fsh_lint_core::RuleCategory::Complexity => "Complexity",
+                fsh_lint_core::RuleCategory::Documentation => "Documentation",
+                fsh_lint_core::RuleCategory::Performance => "Performance",
+                fsh_lint_core::RuleCategory::Nursery => "Nursery",
+                fsh_lint_core::RuleCategory::Accessibility => "Accessibility",
+                fsh_lint_core::RuleCategory::Security => "Security",
+                fsh_lint_core::RuleCategory::Custom(s) => s.as_str(),
+            };
+
+            println!("Rule: {}", rule.id);
+            println!("{}", "=".repeat(rule.id.len() + 6));
             println!();
-            println!("Description:");
-            println!("  This rule detects the use of invalid or deprecated FSH keywords.");
+            println!("Category: {}", category);
+            println!("Description: {}", rule.metadata.description);
+
+            if let Some(autofix) = &rule.autofix {
+                println!();
+                println!("Autofix available: {}", autofix.description);
+                println!("Safety: {:?}", autofix.safety);
+            }
+
             println!();
-            println!("Examples of violations:");
-            println!("  - Using 'Alias:' instead of 'Alias:'");
-            println!("  - Using deprecated keywords");
-            println!();
-            println!("How to fix:");
-            println!("  - Use the correct FSH keyword syntax");
-            println!("  - Refer to the FSH specification for valid keywords");
+            println!("GritQL Pattern:");
+            println!("{}", rule.gritql_pattern);
         }
-        _ => {
-            println!("Rule '{}' not found or not yet documented.", rule_id);
-            println!(
-                "Available rules: builtin/correctness/invalid-keyword, builtin/suspicious/trailing-text, builtin/style/profile-naming-convention, builtin/documentation/missing-description"
-            );
+        None => {
+            println!("Rule '{}' not found.", rule_id);
+            println!();
+            println!("Use 'fsh-lint rules' to list all available rules.");
         }
     }
 
@@ -190,39 +331,23 @@ pub async fn rules_explain_command(rule_id: String, _config_path: Option<PathBuf
 
 /// Rules search command implementation
 pub async fn rules_search_command(query: String, _config_path: Option<PathBuf>) -> Result<()> {
-    info!("Searching rules for: {}", query);
+    debug!("Searching rules for: {}", query);
 
-    // TODO: Implement actual rule search
-    let placeholder_rules = vec![
-        (
-            "builtin/correctness/invalid-keyword",
-            "Invalid keyword usage",
-            "correctness",
-        ),
-        (
-            "builtin/suspicious/trailing-text",
-            "Unexpected trailing text",
-            "suspicious",
-        ),
-        (
-            "builtin/style/profile-naming-convention",
-            "Profile naming convention",
-            "style",
-        ),
-        (
-            "builtin/documentation/missing-description",
-            "Missing description metadata",
-            "documentation",
-        ),
-    ];
+    // Collect all built-in rules
+    let all_rules = BuiltinRules::all_rules();
 
     let query_lower = query.to_lowercase();
-    let matches: Vec<_> = placeholder_rules
+
+    // Search in rule IDs and descriptions
+    let matches: Vec<_> = all_rules
         .into_iter()
-        .filter(|(id, desc, cat)| {
-            id.to_lowercase().contains(&query_lower)
-                || desc.to_lowercase().contains(&query_lower)
-                || cat.to_lowercase().contains(&query_lower)
+        .filter(|rule| {
+            rule.id.to_lowercase().contains(&query_lower)
+                || rule
+                    .metadata
+                    .description
+                    .to_lowercase()
+                    .contains(&query_lower)
         })
         .collect();
 
@@ -230,9 +355,25 @@ pub async fn rules_search_command(query: String, _config_path: Option<PathBuf>) 
         println!("No rules found matching '{}'", query);
     } else {
         println!("Rules matching '{}':", query);
-        println!("====================");
-        for (id, description, category) in matches {
-            println!("  {} - {} ({})", id, description, category);
+        println!("{}", "=".repeat(20 + query.len()));
+        println!();
+        for rule in matches {
+            let category = match &rule.metadata.category {
+                fsh_lint_core::RuleCategory::Correctness => "correctness",
+                fsh_lint_core::RuleCategory::Suspicious => "suspicious",
+                fsh_lint_core::RuleCategory::Style => "style",
+                fsh_lint_core::RuleCategory::Complexity => "complexity",
+                fsh_lint_core::RuleCategory::Documentation => "documentation",
+                fsh_lint_core::RuleCategory::Performance => "performance",
+                fsh_lint_core::RuleCategory::Nursery => "nursery",
+                fsh_lint_core::RuleCategory::Accessibility => "accessibility",
+                fsh_lint_core::RuleCategory::Security => "security",
+                fsh_lint_core::RuleCategory::Custom(s) => s.as_str(),
+            };
+            println!(
+                "  {} - {} ({})",
+                rule.id, rule.metadata.description, category
+            );
         }
     }
 
@@ -245,7 +386,7 @@ pub async fn config_init_command(
     force: bool,
     with_examples: bool,
 ) -> Result<()> {
-    info!("Initializing configuration file with format: {:?}", format);
+    debug!("Initializing configuration file with format: {:?}", format);
 
     let filename = match format {
         ConfigFormat::Json => ".fshlintrc.json",
@@ -299,7 +440,7 @@ pub async fn config_init_command(
 
 /// Config validate command implementation
 pub async fn config_validate_command(path: Option<PathBuf>) -> Result<()> {
-    info!("Validating configuration file: {:?}", path);
+    debug!("Validating configuration file: {:?}", path);
 
     let config_manager = DefaultConfigManager::new();
 
@@ -321,7 +462,7 @@ pub async fn config_validate_command(path: Option<PathBuf>) -> Result<()> {
 
 /// Config show command implementation
 pub async fn config_show_command(resolved: bool, config_path: Option<PathBuf>) -> Result<()> {
-    info!("Showing configuration (resolved: {})", resolved);
+    debug!("Showing configuration (resolved: {})", resolved);
 
     let config_manager = DefaultConfigManager::new();
     let config = config_manager.load_config(config_path.as_ref().map(|p| p.as_path()))?;

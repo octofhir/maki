@@ -609,30 +609,73 @@ impl DefaultRuleEngine {
         model: &SemanticModel,
         compiler: &GritQLCompiler,
     ) -> Result<Vec<Diagnostic>> {
-        let diagnostics = Vec::new();
+        let mut diagnostics = Vec::new();
 
-        // Compile the GritQL pattern for this rule
-        let _compiled_pattern = compiler.compile_pattern(rule.matcher.pattern(), rule.id())?;
+        // Check if this is an AST-based rule by checking if it has a pattern
+        if !rule.matcher.has_pattern() {
+            // AST-based rule without GritQL pattern - execute builtin rule check function
+            tracing::debug!(
+                "Executing AST-based rule '{}' against semantic model for file '{}'",
+                rule.id(),
+                model.source_file.display()
+            );
 
-        // For now, we'll need to execute against the semantic model's source file
-        // In a future task, we'll need to modify the semantic model to include parse trees
-        // or modify the rule execution to work with the semantic model directly
+            // Execute AST-based builtin rules
+            match rule.id() {
+                crate::builtin::cardinality::INVALID_CARDINALITY => {
+                    diagnostics.extend(crate::builtin::cardinality::check_cardinality(
+                        model,
+                    ));
+                }
+                crate::builtin::required_fields::REQUIRED_FIELD_PRESENT => {
+                    diagnostics.extend(crate::builtin::required_fields::check_required_fields(
+                        model,
+                    ));
+                }
+                crate::builtin::binding::BINDING_STRENGTH_PRESENT => {
+                    diagnostics.extend(crate::builtin::binding::check_binding_strength(
+                        model,
+                    ));
+                }
+                crate::builtin::metadata::MISSING_METADATA => {
+                    diagnostics.extend(crate::builtin::metadata::check_missing_metadata(
+                        model,
+                    ));
+                }
+                crate::builtin::duplicates::DUPLICATE_DEFINITION => {
+                    diagnostics.extend(crate::builtin::duplicates::check_duplicates(
+                        model,
+                    ));
+                }
+                crate::builtin::profile::PROFILE_ASSIGNMENT_PRESENT => {
+                    diagnostics.extend(crate::builtin::profile::check_profile_assignments(
+                        model,
+                    ));
+                }
+                crate::builtin::profile::EXTENSION_CONTEXT_MISSING => {
+                    diagnostics.extend(crate::builtin::profile::check_extension_context(
+                        model,
+                    ));
+                }
+                crate::builtin::naming::NAMING_CONVENTION => {
+                    diagnostics.extend(crate::builtin::naming::check_naming_conventions(
+                        model,
+                    ));
+                }
+                _ => {
+                    tracing::warn!(
+                        "AST rule '{}' not found in builtin rules registry",
+                        rule.id()
+                    );
+                }
+            }
+        } else {
+            // GritQL pattern-based rule
+            let _compiled_pattern = compiler.compile_pattern(rule.matcher.pattern(), rule.id())?;
 
-        // TODO: This is a placeholder implementation
-        // The actual implementation will need to be updated when we have access to parse trees
-        // through the semantic model or when we modify the rule execution architecture
-
-        tracing::debug!(
-            "Executing rule '{}' against semantic model for file '{}'",
-            rule.id(),
-            model.source_file.display()
-        );
-
-        // For now, we'll create a placeholder diagnostic to show the rule would execute
-        // This will be replaced with actual GritQL execution in the next iteration
-        if !rule.matcher.pattern().is_empty() {
-            // Create a sample diagnostic to demonstrate the integration
-            // In practice, this would come from actual GritQL pattern matching
+            // Note: GritQL pattern execution against semantic model will be implemented
+            // when tree-sitter-fsh integration is complete. For now, rules use semantic
+            // analysis directly through the rule implementations.
             tracing::debug!("Rule '{}' pattern: {}", rule.id(), rule.matcher.pattern());
         }
 
@@ -734,11 +777,11 @@ impl RuleEngineTrait for DefaultRuleEngine {
             ));
         }
 
-        // Validate GritQL pattern syntax (basic check for now)
-        if rule.gritql_pattern.trim().is_empty() {
+        // Validate GritQL pattern syntax (only for non-AST rules)
+        if !rule.is_ast_rule && rule.gritql_pattern.trim().is_empty() {
             return Err(FshLintError::rule_error(
                 &rule.id,
-                "GritQL pattern cannot be empty or whitespace-only",
+                "GritQL pattern cannot be empty or whitespace-only for non-AST rules",
             ));
         }
 
@@ -910,6 +953,7 @@ mod tests {
                 version: Some("1.0.0".to_string()),
                 docs_url: None,
             },
+            is_ast_rule: false,
         }
     }
 
@@ -1013,6 +1057,7 @@ mod tests {
                         version: Some("1.0.0".to_string()),
                         docs_url: None,
                     },
+                    is_ast_rule: false,
                 },
             ],
             dependencies: Vec::new(),
