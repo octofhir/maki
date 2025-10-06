@@ -22,15 +22,10 @@ Download the latest binary for your platform from [GitHub Releases](https://gith
 
 **Linux:**
 ```bash
-# x86_64
+# x86_64 (ARM64 not currently available)
 wget https://github.com/octofhir/fsh-lint-rs/releases/latest/download/fsh-lint-linux-x64
 chmod +x fsh-lint-linux-x64
 sudo mv fsh-lint-linux-x64 /usr/local/bin/fsh-lint
-
-# ARM64
-wget https://github.com/octofhir/fsh-lint-rs/releases/latest/download/fsh-lint-linux-arm64
-chmod +x fsh-lint-linux-arm64
-sudo mv fsh-lint-linux-arm64 /usr/local/bin/fsh-lint
 ```
 
 **macOS:**
