@@ -3,11 +3,39 @@
 //! This module provides functionality for discovering FSH files based on
 //! glob patterns, respecting ignore files, and watching for file changes.
 
-use crate::{Config, FshLintError, Result};
+use crate::{FshLintConfiguration, FshLintError, Result};
 use glob::{Pattern, glob};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+
+/// Helper to extract file patterns from configuration
+fn get_include_patterns(config: &FshLintConfiguration) -> Vec<String> {
+    config
+        .files
+        .as_ref()
+        .and_then(|f| f.include.as_ref())
+        .cloned()
+        .unwrap_or_else(|| vec!["**/*.fsh".to_string()])
+}
+
+fn get_exclude_patterns(config: &FshLintConfiguration) -> Vec<String> {
+    config
+        .files
+        .as_ref()
+        .and_then(|f| f.exclude.as_ref())
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn get_ignore_files(config: &FshLintConfiguration) -> Vec<String> {
+    config
+        .files
+        .as_ref()
+        .and_then(|f| f.ignore_files.as_ref())
+        .cloned()
+        .unwrap_or_else(|| vec![".fshlintignore".to_string()])
+}
 
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc as tokio_mpsc;
@@ -17,10 +45,10 @@ use walkdir::WalkDir;
 /// Trait for file discovery functionality
 pub trait FileDiscovery {
     /// Discover FSH files based on configuration patterns
-    fn discover_files(&self, config: &Config) -> Result<Vec<PathBuf>>;
+    fn discover_files(&self, config: &FshLintConfiguration) -> Result<Vec<PathBuf>>;
 
     /// Check if a file should be included based on configuration
-    fn should_include(&self, path: &Path, config: &Config) -> bool;
+    fn should_include(&self, path: &Path, config: &FshLintConfiguration) -> bool;
 
     /// Create a file watcher for LSP integration
     fn watch_for_changes(&self) -> Result<FileWatcher>;
@@ -42,7 +70,7 @@ impl DefaultFileDiscovery {
     }
 
     /// Load ignore patterns from .gitignore and custom ignore files
-    fn load_ignore_patterns(&self, config: &Config) -> Result<Vec<Pattern>> {
+    fn load_ignore_patterns(&self, config: &FshLintConfiguration) -> Result<Vec<Pattern>> {
         let mut patterns = Vec::new();
 
         // Load .gitignore if it exists
@@ -56,13 +84,13 @@ impl DefaultFileDiscovery {
                             // Convert gitignore-style patterns to glob patterns
                             let glob_pattern = if line.ends_with('/') {
                                 // Directory pattern: "temp/" becomes "temp/**"
-                                format!("{}**", line)
+                                format!("{line}**")
                             } else if !line.contains('*') && !line.contains('?') {
                                 // Plain filename: "file.txt" becomes "**/file.txt"
                                 if line.contains('/') {
                                     line.to_string()
                                 } else {
-                                    format!("**/{}", line)
+                                    format!("**/{line}")
                                 }
                             } else {
                                 // Already a glob pattern
@@ -81,7 +109,7 @@ impl DefaultFileDiscovery {
         }
 
         // Load custom ignore files specified in config
-        for ignore_file in &config.ignore_files {
+        for ignore_file in &get_ignore_files(config) {
             let ignore_path = self.root_dir.join(ignore_file);
             if ignore_path.exists() {
                 match std::fs::read_to_string(&ignore_path) {
@@ -92,13 +120,13 @@ impl DefaultFileDiscovery {
                                 // Convert gitignore-style patterns to glob patterns
                                 let glob_pattern = if line.ends_with('/') {
                                     // Directory pattern: "temp/" becomes "temp/**"
-                                    format!("{}**", line)
+                                    format!("{line}**")
                                 } else if !line.contains('*') && !line.contains('?') {
                                     // Plain filename: "file.txt" becomes "**/file.txt"
                                     if line.contains('/') {
                                         line.to_string()
                                     } else {
-                                        format!("**/{}", line)
+                                        format!("**/{line}")
                                     }
                                 } else {
                                     // Already a glob pattern
@@ -165,7 +193,7 @@ impl DefaultFileDiscovery {
                 }
                 Err(e) => {
                     return Err(FshLintError::ConfigError {
-                        message: format!("Invalid glob pattern '{}': {}", pattern, e),
+                        message: format!("Invalid glob pattern '{pattern}': {e}"),
                     });
                 }
             }
@@ -203,27 +231,27 @@ impl DefaultFileDiscovery {
 }
 
 impl FileDiscovery for DefaultFileDiscovery {
-    fn discover_files(&self, config: &Config) -> Result<Vec<PathBuf>> {
+    fn discover_files(&self, config: &FshLintConfiguration) -> Result<Vec<PathBuf>> {
         info!("Discovering FSH files in {}", self.root_dir.display());
 
         let ignore_patterns = self.load_ignore_patterns(config)?;
 
         // Discover files using include patterns
-        let mut discovered_files = if config.include_patterns.is_empty() {
+        let mut discovered_files = if get_include_patterns(config).is_empty() {
             // Default: discover .fsh files
             self.discover_by_walking(&["fsh".to_string()])?
         } else {
-            self.discover_with_globs(&config.include_patterns)?
+            self.discover_with_globs(&get_include_patterns(config))?
         };
 
         // Filter out files matching exclude patterns
-        if !config.exclude_patterns.is_empty() {
-            let exclude_patterns: Result<Vec<Pattern>> = config
-                .exclude_patterns
+        let exclude_list = get_exclude_patterns(config);
+        if !exclude_list.is_empty() {
+            let exclude_patterns: Result<Vec<Pattern>> = exclude_list
                 .iter()
                 .map(|p| {
                     Pattern::new(p).map_err(|e| FshLintError::ConfigError {
-                        message: format!("Invalid exclude pattern '{}': {}", p, e),
+                        message: format!("Invalid exclude pattern '{p}': {e}"),
                     })
                 })
                 .collect();
@@ -236,31 +264,50 @@ impl FileDiscovery for DefaultFileDiscovery {
         // Filter out files matching ignore patterns
         discovered_files.retain(|path| !self.is_ignored(path, &ignore_patterns));
 
-        // Make paths relative to root directory for consistent output
-        let mut relative_files = Vec::new();
+        // Ensure all paths are absolute - convert to canonical paths for consistency
+        let mut absolute_files = Vec::new();
         for file in discovered_files {
-            if let Ok(relative) = file.strip_prefix(&self.root_dir) {
-                relative_files.push(relative.to_path_buf());
+            // If the path is already absolute, use it as-is
+            // Otherwise, join it with the root directory
+            let absolute_path = if file.is_absolute() {
+                file
+            } else if file.starts_with(&self.root_dir) {
+                // Path already includes root_dir (from glob expansion), just ensure it's absolute
+                if let Ok(canonical) = std::fs::canonicalize(&file) {
+                    canonical
+                } else {
+                    // If canonicalize fails, try joining with current dir
+                    std::env::current_dir()
+                        .unwrap_or_else(|_| PathBuf::from("."))
+                        .join(&file)
+                }
             } else {
-                relative_files.push(file);
-            }
+                // Path is relative to root_dir, join them
+                let joined = self.root_dir.join(&file);
+                if let Ok(canonical) = std::fs::canonicalize(&joined) {
+                    canonical
+                } else {
+                    joined
+                }
+            };
+            absolute_files.push(absolute_path);
         }
 
-        info!("Discovered {} FSH files", relative_files.len());
-        debug!("Files: {:?}", relative_files);
+        info!("Discovered {} FSH files", absolute_files.len());
+        debug!("Files: {:?}", absolute_files);
 
-        Ok(relative_files)
+        Ok(absolute_files)
     }
 
-    fn should_include(&self, path: &Path, config: &Config) -> bool {
+    fn should_include(&self, path: &Path, config: &FshLintConfiguration) -> bool {
         // Check if file matches include patterns
-        let matches_include = if config.include_patterns.is_empty() {
+        let matches_include = if get_include_patterns(config).is_empty() {
             // Default: include .fsh files (case-insensitive)
             path.extension()
                 .map(|ext| ext.to_string_lossy().to_lowercase() == "fsh")
                 .unwrap_or(false)
         } else {
-            config.include_patterns.iter().any(|pattern| {
+            get_include_patterns(config).iter().any(|pattern| {
                 Pattern::new(pattern)
                     .map(|p| p.matches(&path.to_string_lossy()))
                     .unwrap_or(false)
@@ -272,7 +319,7 @@ impl FileDiscovery for DefaultFileDiscovery {
         }
 
         // Check if file matches exclude patterns
-        let matches_exclude = config.exclude_patterns.iter().any(|pattern| {
+        let matches_exclude = get_exclude_patterns(config).iter().any(|pattern| {
             Pattern::new(pattern)
                 .map(|p| p.matches(&path.to_string_lossy()))
                 .unwrap_or(false)
@@ -361,20 +408,14 @@ impl FileWatcher {
             })
             .map_err(|e| FshLintError::IoError {
                 path: root_dir.to_path_buf(),
-                source: std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to create file watcher: {}", e),
-                ),
+                source: std::io::Error::other(format!("Failed to create file watcher: {e}")),
             })?;
 
         watcher
             .watch(root_dir, RecursiveMode::Recursive)
             .map_err(|e| FshLintError::IoError {
                 path: root_dir.to_path_buf(),
-                source: std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to watch directory: {}", e),
-                ),
+                source: std::io::Error::other(format!("Failed to watch directory: {e}")),
             })?;
 
         Ok(Self {
@@ -485,11 +526,13 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    fn create_test_config() -> Config {
-        Config {
-            include_patterns: vec!["**/*.fsh".to_string()],
-            exclude_patterns: vec!["**/target/**".to_string()],
-            ignore_files: vec![".fshlintignore".to_string()],
+    fn create_test_config() -> FshLintConfiguration {
+        FshLintConfiguration {
+            files: Some(crate::FilesConfiguration {
+                include: Some(vec!["**/*.fsh".to_string()]),
+                exclude: Some(vec!["**/target/**".to_string()]),
+                ignore_files: Some(vec![".fshlintignore".to_string()]),
+            }),
             ..Default::default()
         }
     }
@@ -510,8 +553,8 @@ mod tests {
         let files = discovery.discover_files(&config).unwrap();
 
         assert_eq!(files.len(), 2);
-        assert!(files.contains(&PathBuf::from("test1.fsh")));
-        assert!(files.contains(&PathBuf::from("test2.fsh")));
+        assert!(files.contains(&root.join("test1.fsh")));
+        assert!(files.contains(&root.join("test2.fsh")));
     }
 
     #[test]
@@ -543,7 +586,7 @@ mod tests {
         let files = discovery.discover_files(&config).unwrap();
 
         assert_eq!(files.len(), 1);
-        assert!(files.contains(&PathBuf::from("test.fsh")));
+        assert!(files.contains(&root.join("test.fsh")));
     }
 
     #[tokio::test]
@@ -648,30 +691,57 @@ mod tests {
         let discovery = DefaultFileDiscovery::new(root);
 
         // Test specific glob patterns
-        let mut config = Config::default();
 
         // Test matching all FSH files
-        config.include_patterns = vec!["**/*.fsh".to_string()];
-        config.exclude_patterns = vec![];
+        let config = FshLintConfiguration {
+            files: Some(crate::FilesConfiguration {
+                include: Some(vec!["**/*.fsh".to_string()]),
+                exclude: Some(vec![]),
+                ignore_files: None,
+            }),
+            ..Default::default()
+        };
         let files = discovery.discover_files(&config).unwrap();
         assert_eq!(files.len(), 4);
 
         // Test matching only src directory
-        config.include_patterns = vec!["src/**/*.fsh".to_string()];
+        let config = FshLintConfiguration {
+            files: Some(crate::FilesConfiguration {
+                include: Some(vec!["src/**/*.fsh".to_string()]),
+                exclude: None,
+                ignore_files: None,
+            }),
+            ..Default::default()
+        };
         let files = discovery.discover_files(&config).unwrap();
         assert_eq!(files.len(), 2);
-        assert!(files.iter().all(|f| f.starts_with("src")));
+        assert!(files.iter().all(|f| f.starts_with(root.join("src"))));
 
         // Test excluding build directory
-        config.include_patterns = vec!["**/*.fsh".to_string()];
-        config.exclude_patterns = vec!["build/**".to_string()];
+        let config = FshLintConfiguration {
+            files: Some(crate::FilesConfiguration {
+                include: Some(vec!["**/*.fsh".to_string()]),
+                exclude: Some(vec!["build/**".to_string()]),
+                ignore_files: None,
+            }),
+            ..Default::default()
+        };
         let files = discovery.discover_files(&config).unwrap();
         assert_eq!(files.len(), 3);
-        assert!(!files.iter().any(|f| f.starts_with("build")));
+        assert!(!files.iter().any(|f| f.starts_with(root.join("build"))));
 
         // Test multiple include patterns
-        config.include_patterns = vec!["src/**/*.fsh".to_string(), "test/**/*.fsh".to_string()];
-        config.exclude_patterns = vec![];
+        let config = FshLintConfiguration {
+            files: Some(crate::FilesConfiguration {
+                include: Some(vec![
+                    "src/**/*.fsh".to_string(),
+                    "test/**/*.fsh".to_string(),
+                ]),
+                exclude: Some(vec![]),
+                ignore_files: None,
+            }),
+            ..Default::default()
+        };
         let files = discovery.discover_files(&config).unwrap();
         assert_eq!(files.len(), 3);
     }
@@ -699,16 +769,24 @@ mod tests {
         fs::write(root.join(".fshlintignore"), "*.backup\nold/\n").unwrap();
 
         let discovery = DefaultFileDiscovery::new(root);
-        let mut config = Config::default();
-        config.include_patterns = vec!["**/*.fsh".to_string()];
-        config.exclude_patterns = vec![];
-        config.ignore_files = vec![".fshlintignore".to_string()];
+        let config = FshLintConfiguration {
+            files: Some(crate::FilesConfiguration {
+                include: Some(vec!["**/*.fsh".to_string()]),
+                exclude: Some(vec![]),
+                ignore_files: Some(vec![".fshlintignore".to_string()]),
+            }),
+            ..Default::default()
+        };
 
         let files = discovery.discover_files(&config).unwrap();
 
         // Should exclude files matching .gitignore patterns
-        assert!(!files.iter().any(|f| f.starts_with("temp")));
-        assert!(!files.iter().any(|f| f.starts_with("node_modules")));
+        assert!(!files.iter().any(|f| f.starts_with(root.join("temp"))));
+        assert!(
+            !files
+                .iter()
+                .any(|f| f.starts_with(root.join("node_modules")))
+        );
 
         // Should include files not matching ignore patterns
         assert!(files.iter().any(|f| f.file_name().unwrap() == "test.fsh"));
@@ -768,23 +846,42 @@ mod tests {
         }
 
         let discovery = DefaultFileDiscovery::new(root);
-        let mut config = Config::default();
 
         // Test discovering all FSH files
-        config.include_patterns = vec!["**/*.fsh".to_string()];
-        config.exclude_patterns = vec!["**/target/**".to_string()];
+        let config = FshLintConfiguration {
+            files: Some(crate::FilesConfiguration {
+                include: Some(vec!["**/*.fsh".to_string()]),
+                exclude: Some(vec!["**/target/**".to_string()]),
+                ignore_files: None,
+            }),
+            ..Default::default()
+        };
         let discovered = discovery.discover_files(&config).unwrap();
 
         assert_eq!(discovered.len(), 5); // Excludes target/generated/output.fsh
-        assert!(!discovered.iter().any(|f| f.starts_with("project/target")));
+        assert!(
+            !discovered
+                .iter()
+                .any(|f| f.starts_with(root.join("project/target")))
+        );
 
         // Test project-specific discovery
-        config.include_patterns = vec!["project/**/*.fsh".to_string()];
-        config.exclude_patterns = vec!["**/target/**".to_string(), "**/docs/**".to_string()];
+        let config = FshLintConfiguration {
+            files: Some(crate::FilesConfiguration {
+                include: Some(vec!["project/**/*.fsh".to_string()]),
+                exclude: Some(vec!["**/target/**".to_string(), "**/docs/**".to_string()]),
+                ignore_files: None,
+            }),
+            ..Default::default()
+        };
         let project_files = discovery.discover_files(&config).unwrap();
 
         assert_eq!(project_files.len(), 3);
-        assert!(project_files.iter().all(|f| f.starts_with("project")));
+        assert!(
+            project_files
+                .iter()
+                .all(|f| f.starts_with(root.join("project")))
+        );
         assert!(!project_files.iter().any(|f| {
             let path_str = f.to_string_lossy();
             path_str.contains("target") || path_str.contains("docs")
@@ -798,7 +895,7 @@ mod tests {
 
         // Test empty directory
         let discovery = DefaultFileDiscovery::new(root);
-        let mut config = Config::default();
+        let config = FshLintConfiguration::default();
         let files = discovery.discover_files(&config).unwrap();
         assert!(files.is_empty());
 
@@ -814,11 +911,15 @@ mod tests {
         assert!(files.is_empty());
 
         // Test case sensitivity - use empty include patterns to trigger walking mode
-        config.include_patterns = vec![]; // This will trigger discover_by_walking
+        let mut config_empty = config.clone();
+        config_empty
+            .files
+            .get_or_insert_with(Default::default)
+            .include = Some(vec![]); // This will trigger discover_by_walking
         fs::write(root.join("test1.FSH"), "Profile: Test1").unwrap();
         fs::write(root.join("test2.Fsh"), "Profile: Test2").unwrap();
 
-        let files = discovery.discover_files(&config).unwrap();
+        let files = discovery.discover_files(&config_empty).unwrap();
         // Should find both files (case-insensitive extension matching in walking mode)
         assert_eq!(files.len(), 2);
     }

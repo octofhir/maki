@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      changelog_notes:
+        description: 'Release notes (optional)'
+        required: false
+        type: string
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        id: bump
+        run: |
+          # Get current version from workspace Cargo.toml
+          CURRENT_VERSION=$(grep -m1 'version = ' Cargo.toml | sed 's/.*version = "\(.*\)".*/\1/')
+          echo "Current version: $CURRENT_VERSION"
+
+          # Parse version
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+          # Bump version based on input
+          case "${{ inputs.bump_type }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          # Update version in workspace Cargo.toml
+          sed -i "0,/^version = \".*\"/s//version = \"$NEW_VERSION\"/" Cargo.toml
+
+          # Update version in all crate Cargo.toml files
+          find crates -name "Cargo.toml" -exec sed -i "0,/^version = \".*\"/s//version = \"$NEW_VERSION\"/" {} \;
+
+          # Update CHANGELOG if notes provided
+          if [ -n "${{ inputs.changelog_notes }}" ]; then
+            DATE=$(date +%Y-%m-%d)
+            # Escape special characters in changelog notes for sed
+            NOTES=$(echo "${{ inputs.changelog_notes }}" | sed 's/[&/\]/\\&/g')
+            sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [$NEW_VERSION] - $DATE\n\n$NOTES\n/" CHANGELOG.md
+          else
+            DATE=$(date +%Y-%m-%d)
+            sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [$NEW_VERSION] - $DATE\n/" CHANGELOG.md
+          fi
+
+      - name: Commit and tag
+        run: |
+          git add Cargo.toml crates/*/Cargo.toml CHANGELOG.md Cargo.lock
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }} [ci skip]"
+          git tag "v${{ steps.bump.outputs.new_version }}"
+          git push origin main
+          git push origin "v${{ steps.bump.outputs.new_version }}"
+
+  trigger-build:
+    needs: prepare-release
+    uses: ./.github/workflows/build-binaries.yml
+    with:
+      version: ${{ needs.prepare-release.outputs.new_version }}
+    secrets: inherit

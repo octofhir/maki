@@ -1,0 +1,18 @@
+[package]
+name = "fsh-lint-bench"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+criterion = { workspace = true }
+fsh-lint-core = { path = "../fsh-lint-core" }
+fsh-lint-rules = { path = "../fsh-lint-rules" }
+
+[[bench]]
+name = "lint_benchmark"
+harness = false

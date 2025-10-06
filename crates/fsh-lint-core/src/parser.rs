@@ -1,27 +1,23 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use chumsky::span::Span;
-
 use crate::Result;
-use crate::ast::FSHDocument;
-use crate::lexer::{LexSpan, lex};
-use crate::parser_chumsky::parse_tokens;
+use crate::cst::FshSyntaxNode;
 
 /// Outcome of parsing FSH content.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ParseResult {
     /// Original source that was parsed.
     pub source: Arc<str>,
-    /// Parsed document AST.
-    pub document: Option<FSHDocument>,
+    /// Parsed CST root node.
+    pub cst: FshSyntaxNode,
     /// Combined lexer and parser errors.
     pub errors: Vec<ParseError>,
 }
 
 impl ParseResult {
     pub fn is_valid(&self) -> bool {
-        self.document.is_some() && self.errors.is_empty()
+        self.errors.is_empty()
     }
 
     pub fn source(&self) -> &str {
@@ -31,42 +27,69 @@ impl ParseResult {
     pub fn errors(&self) -> &[ParseError] {
         &self.errors
     }
+
+    pub fn cst(&self) -> &FshSyntaxNode {
+        &self.cst
+    }
 }
 
 pub trait Parser {
     fn parse(&mut self, content: &str) -> Result<ParseResult>;
 }
 
+/// Async-first FSH parser - stateless and concurrent-safe
+///
+/// The parser is designed to be used in async contexts with `Arc` sharing.
+/// It's stateless, so no locks are needed - just wrap in Arc<Mutex<>> if
+/// needed for the trait's &mut self requirement.
 #[derive(Default)]
 pub struct FshParser;
 
 impl FshParser {
     pub fn new() -> Self {
-        Self::default()
+        Self
+    }
+
+    /// Parse FSH content (stateless, thread-safe)
+    ///
+    /// Core parsing logic as pure function.
+    /// Can be called safely from multiple threads/tasks.
+    pub fn parse_content(content: &str) -> Result<ParseResult> {
+        let source: Arc<str> = Arc::from(content);
+
+        // Use CST parser exclusively
+        let (cst, lex_errors) = crate::cst::parse_fsh(&source);
+
+        // Convert lexer errors to ParseError
+        let mut errors = Vec::new();
+        for error in lex_errors {
+            errors.push(ParseError::from_span(
+                &source,
+                error.message,
+                error.span.start..error.span.end,
+                ParseErrorKind::Lexer,
+            ));
+        }
+
+        Ok(ParseResult {
+            source,
+            cst,
+            errors,
+        })
+    }
+
+    /// Parse FSH content asynchronously
+    ///
+    /// Async wrapper for parse_content.
+    /// Zero overhead, just API compatibility for async contexts.
+    pub async fn parse_async(content: &str) -> Result<ParseResult> {
+        Self::parse_content(content)
     }
 }
 
 impl Parser for FshParser {
     fn parse(&mut self, content: &str) -> Result<ParseResult> {
-        let source: Arc<str> = Arc::from(content);
-
-        let (tokens, lex_errors) = lex(&source);
-        let eof = LexSpan::new((), source.len()..source.len());
-        let (document, parse_errors) = parse_tokens(&tokens, eof);
-
-        let mut errors = Vec::new();
-        for error in lex_errors {
-            errors.push(ParseError::from_lexer_error(&source, error));
-        }
-        for error in parse_errors {
-            errors.push(ParseError::from_parser_error(&source, error));
-        }
-
-        Ok(ParseResult {
-            source,
-            document,
-            errors,
-        })
+        Self::parse_content(content)
     }
 }
 
@@ -125,8 +148,8 @@ impl CachedFshParser {
 
 impl Parser for CachedFshParser {
     fn parse(&mut self, content: &str) -> Result<ParseResult> {
-        let result = self.parse_with_cache(content)?;
-        Ok((*result).clone())
+        // CST cannot be cloned, parse directly
+        FshParser::parse_content(content)
     }
 }
 
@@ -163,28 +186,7 @@ pub enum ParseErrorKind {
 }
 
 impl ParseError {
-    fn from_lexer_error(source: &str, error: crate::lexer::LexerError) -> Self {
-        Self::from_span(
-            source,
-            error.message,
-            error.span.start..error.span.end,
-            ParseErrorKind::Lexer,
-        )
-    }
-
-    fn from_parser_error(
-        source: &str,
-        error: chumsky::error::Rich<'_, crate::lexer::Token>,
-    ) -> Self {
-        let message = error.to_string();
-        let span = error.span();
-        Self::from_span(
-            source,
-            message,
-            span.start..span.end,
-            ParseErrorKind::Parser,
-        )
-    }
+    // Old error conversion functions removed - using CST lexer errors directly
 
     fn from_span(source: &str, message: String, span: Range<usize>, kind: ParseErrorKind) -> Self {
         let (line, column) = offset_to_line_col(source, span.start);

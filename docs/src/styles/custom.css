@@ -1,0 +1,73 @@
+/* Custom styles for FSH Lint docs */
+
+:root {
+  --sl-color-accent: #f97316;  /* Orange accent */
+  --sl-color-accent-low: #fed7aa;
+  --sl-color-accent-high: #ea580c;
+}
+
+/* Code blocks */
+.expressive-code {
+  margin: 1.5rem 0;
+}
+
+/* Callouts */
+.sl-aside {
+  margin: 1.5rem 0;
+}
+
+/* Cards */
+.card-grid {
+  gap: 1rem;
+}
+
+/* Hero section */
+.hero {
+  padding: 4rem 0;
+}
+
+/* Custom diagnostic example styling */
+.diagnostic-example {
+  background: var(--sl-color-gray-6);
+  border-left: 4px solid var(--sl-color-accent);
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 0.5rem;
+  font-family: var(--sl-font-mono);
+  font-size: 0.9em;
+}
+
+/* Link buttons */
+.sl-link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--sl-color-accent);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  font-weight: 600;
+  margin-top: 1rem;
+  transition: background 0.2s;
+}
+
+.sl-link-button:hover {
+  background: var(--sl-color-accent-high);
+}
+
+/* Hero action buttons - fix icon alignment */
+.hero .action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hero .action svg {
+  vertical-align: middle;
+}
+
+/* Card icons - fix alignment */
+.card-grid .card svg {
+  vertical-align: middle;
+}

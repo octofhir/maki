@@ -3,10 +3,10 @@
 //! This module handles different output formats and provides rich reporting capabilities
 
 use colored::*;
-use fsh_lint_core::{Result, diagnostics::Diagnostic};
+use fsh_lint_core::{
+    DiagnosticRenderer, OutputFormat as CoreOutputFormat, Result, diagnostics::Diagnostic,
+};
 use serde_json;
-use std::collections::HashMap;
-use std::path::PathBuf;
 
 use crate::OutputFormat;
 
@@ -86,77 +86,19 @@ impl OutputFormatter {
         if diagnostics.is_empty() {
             println!("{} No issues found", "✅".green());
         } else {
-            // Group diagnostics by file
-            let mut by_file: HashMap<PathBuf, Vec<&Diagnostic>> = HashMap::new();
-            for diagnostic in diagnostics {
-                by_file
-                    .entry(diagnostic.location.file.clone())
-                    .or_default()
-                    .push(diagnostic);
-            }
+            // Use the new DiagnosticRenderer from core
+            let renderer = if self.use_colors {
+                DiagnosticRenderer::new()
+            } else {
+                DiagnosticRenderer::no_colors()
+            };
 
-            for (file, file_diagnostics) in by_file {
-                println!("\n{}", file.display().to_string().bold());
-
-                for diagnostic in file_diagnostics {
-                    self.print_diagnostic_human(diagnostic)?;
-                }
-            }
+            // Render diagnostics with summary (includes unsafe fix note if needed)
+            println!("{}", renderer.render_diagnostics_with_summary(diagnostics));
         }
 
         // Print summary
         self.print_summary_human(summary)?;
-        Ok(())
-    }
-
-    fn print_diagnostic_human(&self, diagnostic: &Diagnostic) -> Result<()> {
-        let severity_icon = match diagnostic.severity {
-            fsh_lint_core::diagnostics::Severity::Error => "❌".red(),
-            fsh_lint_core::diagnostics::Severity::Warning => "⚠️".yellow(),
-            fsh_lint_core::diagnostics::Severity::Info => "ℹ️".blue(),
-            fsh_lint_core::diagnostics::Severity::Hint => "💡".cyan(),
-        };
-
-        let location = format!(
-            "{}:{}:{}",
-            diagnostic.location.line,
-            diagnostic.location.column,
-            diagnostic
-                .location
-                .end_column
-                .unwrap_or(diagnostic.location.column)
-        );
-
-        println!(
-            "  {} {} {} {}",
-            severity_icon,
-            location.dimmed(),
-            diagnostic.message,
-            format!("({})", diagnostic.rule_id).dimmed()
-        );
-
-        // Show code context if available
-        if let Some(ref context) = diagnostic.code_snippet {
-            println!("    {}", context.dimmed());
-
-            // Show caret indicator
-            let spaces = " ".repeat(diagnostic.location.column.saturating_sub(1));
-            let carets = "^".repeat(
-                diagnostic
-                    .location
-                    .end_column
-                    .unwrap_or(diagnostic.location.column)
-                    - diagnostic.location.column
-                    + 1,
-            );
-            println!("    {}{}", spaces, carets.red());
-        }
-
-        // Show suggestions if available
-        for suggestion in &diagnostic.suggestions {
-            println!("    {} {}", "💡".cyan(), suggestion.message.dimmed());
-        }
-
         Ok(())
     }
 
@@ -193,14 +135,18 @@ impl OutputFormatter {
     }
 
     fn print_json_format(&self, diagnostics: &[Diagnostic], summary: &LintSummary) -> Result<()> {
-        let json_diagnostics: Vec<serde_json::Value> = diagnostics
-            .iter()
-            .map(|d| self.diagnostic_to_json(d))
-            .collect();
+        // Use DiagnosticRenderer for JSON output of diagnostics
+        let renderer = DiagnosticRenderer::with_format(CoreOutputFormat::JsonPretty);
+        let diagnostics_json: serde_json::Value =
+            serde_json::from_str(&renderer.render_diagnostics(diagnostics)).map_err(|e| {
+                fsh_lint_core::FshLintError::ConfigError {
+                    message: format!("Failed to parse diagnostics JSON: {}", e),
+                }
+            })?;
 
         let result = serde_json::json!({
             "files_checked": summary.files_checked,
-            "issues": json_diagnostics,
+            "issues": diagnostics_json,
             "summary": {
                 "errors": summary.errors,
                 "warnings": summary.warnings,
@@ -305,37 +251,6 @@ impl OutputFormatter {
         Ok(())
     }
 
-    fn diagnostic_to_json(&self, diagnostic: &Diagnostic) -> serde_json::Value {
-        serde_json::json!({
-            "rule_id": diagnostic.rule_id,
-            "severity": match diagnostic.severity {
-                fsh_lint_core::diagnostics::Severity::Error => "error",
-                fsh_lint_core::diagnostics::Severity::Warning => "warning",
-                fsh_lint_core::diagnostics::Severity::Info => "info",
-                fsh_lint_core::diagnostics::Severity::Hint => "hint",
-            },
-            "message": diagnostic.message,
-            "location": {
-                "file": diagnostic.location.file.display().to_string(),
-                "line": diagnostic.location.line,
-                "column": diagnostic.location.column,
-                "end_column": diagnostic.location.end_column,
-                "code_snippet": diagnostic.code_snippet
-            },
-            "suggestions": diagnostic.suggestions.iter().map(|s| serde_json::json!({
-                "message": s.message,
-                "replacement": s.replacement,
-                "location": {
-                    "file": s.location.file.display().to_string(),
-                    "line": s.location.line,
-                    "column": s.location.column,
-                    "end_column": s.location.end_column
-                },
-                "is_safe": s.is_safe
-            })).collect::<Vec<_>>()
-        })
-    }
-
     fn diagnostic_to_sarif(&self, diagnostic: &Diagnostic) -> serde_json::Value {
         let level = match diagnostic.severity {
             fsh_lint_core::diagnostics::Severity::Error => "error",
@@ -430,26 +345,6 @@ impl ProgressReporter {
 
 /// Utility functions for output formatting
 pub mod utils {
-    use super::*;
-
-    /// Format file size in human-readable format
-    pub fn format_file_size(bytes: u64) -> String {
-        const UNITS: &[&str] = &["B", "KB", "MB", "GB"];
-        let mut size = bytes as f64;
-        let mut unit_index = 0;
-
-        while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-            size /= 1024.0;
-            unit_index += 1;
-        }
-
-        if unit_index == 0 {
-            format!("{} {}", bytes, UNITS[unit_index])
-        } else {
-            format!("{:.1} {}", size, UNITS[unit_index])
-        }
-    }
-
     /// Format duration in human-readable format
     pub fn format_duration(duration: std::time::Duration) -> String {
         let total_ms = duration.as_millis();
@@ -462,17 +357,6 @@ pub mod utils {
             let minutes = total_ms / 60_000;
             let seconds = (total_ms % 60_000) as f64 / 1000.0;
             format!("{}m {:.1}s", minutes, seconds)
-        }
-    }
-
-    /// Truncate text to fit within specified width
-    pub fn truncate_text(text: &str, max_width: usize) -> String {
-        if text.len() <= max_width {
-            text.to_string()
-        } else if max_width <= 3 {
-            "...".to_string()
-        } else {
-            format!("{}...", &text[..max_width - 3])
         }
     }
 }

@@ -2,7 +2,7 @@
 
 use fsh_lint_core::{
     autofix::{AutofixEngine, ConflictType, DefaultAutofixEngine, Fix, FixConfig},
-    diagnostics::{Diagnostic, Location, Severity, Suggestion},
+    diagnostics::{Applicability, CodeSuggestion, Diagnostic, Location, Severity},
     rules::{AutofixTemplate, FixSafety},
 };
 use std::collections::HashMap;
@@ -13,18 +13,16 @@ use tempfile::TempDir;
 fn create_test_diagnostic_with_suggestions() -> Diagnostic {
     let location = Location::new(PathBuf::from("test.fsh"), 1, 1, 0, 5);
 
-    let safe_suggestion = Suggestion::new(
+    let safe_suggestion = CodeSuggestion::safe(
         "Replace with correct syntax",
         "fixed_text",
         location.clone(),
-        true,
     );
 
-    let unsafe_suggestion = Suggestion::new(
+    let unsafe_suggestion = CodeSuggestion::unsafe_fix(
         "Complex replacement",
         "complex_replacement_text",
         Location::new(PathBuf::from("test.fsh"), 2, 1, 10, 8),
-        false,
     );
 
     Diagnostic::new("test-rule", Severity::Error, "Test error", location)
@@ -47,7 +45,7 @@ fn test_fix_creation_and_properties() {
         "Test fix".to_string(),
         location,
         "replacement".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "test-rule".to_string(),
     )
     .with_priority(10);
@@ -70,7 +68,7 @@ fn test_fix_conflicts_detection() {
         "Fix 1".to_string(),
         Location::new(file.clone(), 1, 1, 0, 10),
         "text1".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "rule1".to_string(),
     );
 
@@ -79,7 +77,7 @@ fn test_fix_conflicts_detection() {
         "Fix 2".to_string(),
         Location::new(file.clone(), 1, 5, 5, 10),
         "text2".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "rule2".to_string(),
     );
 
@@ -89,7 +87,7 @@ fn test_fix_conflicts_detection() {
         "Fix 3".to_string(),
         Location::new(file.clone(), 1, 20, 20, 5),
         "text3".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "rule3".to_string(),
     );
 
@@ -153,7 +151,7 @@ fn test_conflict_resolution() {
         "Fix 1".to_string(),
         Location::new(file.clone(), 1, 1, 0, 10),
         "text1".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "rule1".to_string(),
     )
     .with_priority(1);
@@ -163,7 +161,7 @@ fn test_conflict_resolution() {
         "Fix 2".to_string(),
         Location::new(file.clone(), 1, 5, 5, 10),
         "text2".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "rule2".to_string(),
     )
     .with_priority(2);
@@ -173,7 +171,7 @@ fn test_conflict_resolution() {
         "Fix 3".to_string(),
         Location::new(file.clone(), 1, 20, 20, 5),
         "text3".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "rule3".to_string(),
     )
     .with_priority(1);
@@ -197,7 +195,7 @@ fn test_fix_validation() {
         "Valid fix".to_string(),
         Location::new(PathBuf::from("test.fsh"), 1, 1, 0, 5),
         "replacement".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "test-rule".to_string(),
     );
 
@@ -207,7 +205,7 @@ fn test_fix_validation() {
         "Invalid fix".to_string(),
         Location::new(PathBuf::new(), 1, 1, 0, 0),
         "".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "test-rule".to_string(),
     );
 
@@ -226,11 +224,14 @@ fn test_dry_run_mode() {
         "Test fix".to_string(),
         Location::new(file_path.clone(), 1, 1, 0, 8),
         "modified".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "test-rule".to_string(),
     );
 
-    let config = FixConfig::new().dry_run();
+    let config = FixConfig {
+        dry_run: true,
+        ..FixConfig::default()
+    };
     let results = engine.apply_fixes(&[fix], &config).unwrap();
 
     assert_eq!(results.len(), 1);
@@ -258,7 +259,7 @@ fn test_unsafe_fix_filtering() {
         "Safe fix".to_string(),
         Location::new(file_path.clone(), 1, 1, 0, 8),
         "safe_mod".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "safe-rule".to_string(),
     );
 
@@ -267,12 +268,15 @@ fn test_unsafe_fix_filtering() {
         "Unsafe fix".to_string(),
         Location::new(file_path.clone(), 1, 10, 9, 7),
         "unsafe_mod".to_string(),
-        FixSafety::Unsafe,
+        Applicability::MaybeIncorrect,
         "unsafe-rule".to_string(),
     );
 
     // Test with unsafe fixes disabled (default)
-    let config = FixConfig::new().dry_run();
+    let config = FixConfig {
+        dry_run: true,
+        ..FixConfig::default()
+    };
     let results = engine
         .apply_fixes(&[safe_fix.clone(), unsafe_fix.clone()], &config)
         .unwrap();
@@ -281,7 +285,11 @@ fn test_unsafe_fix_filtering() {
     assert_eq!(results[0].applied_count, 1); // Only safe fix applied
 
     // Test with unsafe fixes enabled
-    let config = FixConfig::new().with_unsafe_fixes().dry_run();
+    let config = FixConfig {
+        apply_unsafe: true,
+        dry_run: true,
+        ..FixConfig::default()
+    };
     let results = engine
         .apply_fixes(&[safe_fix, unsafe_fix], &config)
         .unwrap();
@@ -307,11 +315,14 @@ fn test_fix_application_with_syntax_validation() {
         "Add missing semicolon".to_string(),
         Location::new(file_path.clone(), 3, 17, 42, 0),
         ";".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "syntax-rule".to_string(),
     );
 
-    let config = FixConfig::new().dry_run();
+    let config = FixConfig {
+        dry_run: true,
+        ..FixConfig::default()
+    };
     let results = engine.apply_fixes(&[valid_fix], &config).unwrap();
 
     assert_eq!(results.len(), 1);
@@ -330,7 +341,7 @@ fn test_fix_preview_generation() {
         "Preview fix".to_string(),
         Location::new(file_path.clone(), 1, 1, 0, 8),
         "modified".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "preview-rule".to_string(),
     );
 
@@ -356,12 +367,12 @@ fn test_rollback_plan_creation_and_execution() {
         "Rollback test fix".to_string(),
         Location::new(file_path.clone(), 1, 1, 0, 8),
         "modified".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "rollback-rule".to_string(),
     );
 
     // Apply fix (not in dry-run mode)
-    let config = FixConfig::new();
+    let config = FixConfig::default();
     let results = engine.apply_fixes(&[fix], &config).unwrap();
 
     assert_eq!(results.len(), 1);
@@ -389,7 +400,7 @@ fn test_batch_fix_application() {
         "Batch fix 1".to_string(),
         Location::new(file1, 1, 1, 0, 8),
         "modified1".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "batch-rule1".to_string(),
     );
 
@@ -398,11 +409,14 @@ fn test_batch_fix_application() {
         "Batch fix 2".to_string(),
         Location::new(file2, 1, 1, 0, 8),
         "modified2".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "batch-rule2".to_string(),
     );
 
-    let config = FixConfig::new().dry_run();
+    let config = FixConfig {
+        dry_run: true,
+        ..FixConfig::default()
+    };
     let results = engine
         .apply_fixes_batch(&[fix1, fix2], &config, None)
         .unwrap();
@@ -478,7 +492,7 @@ fn test_complex_conflict_detection() {
         "Fix 1".to_string(),
         Location::new(file.clone(), 1, 1, 0, 5),
         "text1".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "same-rule".to_string(),
     );
 
@@ -487,7 +501,7 @@ fn test_complex_conflict_detection() {
         "Fix 2".to_string(),
         Location::new(file.clone(), 2, 1, 10, 5),
         "text2".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "same-rule".to_string(),
     );
 
@@ -496,7 +510,7 @@ fn test_complex_conflict_detection() {
         "Fix 3".to_string(),
         Location::new(file.clone(), 10, 1, 100, 5),
         "text3".to_string(),
-        FixSafety::Safe,
+        Applicability::Always,
         "different-rule".to_string(),
     );
 
@@ -510,11 +524,13 @@ fn test_complex_conflict_detection() {
 
 #[test]
 fn test_fix_config_builder() {
-    let config = FixConfig::new()
-        .with_unsafe_fixes()
-        .dry_run()
-        .with_max_fixes(5)
-        .without_validation();
+    let config = FixConfig {
+        apply_unsafe: true,
+        dry_run: true,
+        max_fixes_per_file: Some(5),
+        validate_syntax: false,
+        ..FixConfig::default()
+    };
 
     assert!(config.apply_unsafe);
     assert!(config.dry_run);

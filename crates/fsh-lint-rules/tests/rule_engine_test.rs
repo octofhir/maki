@@ -32,6 +32,7 @@ fn create_test_rule(id: &str, name: &str, pattern: &str, severity: Severity) -> 
         description: format!("Test rule: {}", name),
         gritql_pattern: pattern.to_string(),
         autofix: None,
+        is_ast_rule: false, // GritQL-based rule
         metadata: RuleMetadata {
             id: rule_id,
             name: name.to_string(),
@@ -75,8 +76,16 @@ fn create_test_rule_pack(name: &str, version: &str, rules: Vec<Rule>) -> RulePac
 
 /// Helper function to create a mock semantic model for testing
 fn create_mock_semantic_model() -> SemanticModel {
+    use fsh_lint_core::ast::FSHDocument;
+
+    let source = "Profile: Test\nParent: Patient".to_string();
+    let document = FSHDocument::new(0..source.len());
+
     SemanticModel {
         source_file: PathBuf::from("test.fsh"),
+        document,
+        source: source.clone(),
+        source_map: fsh_lint_core::SourceMap::new(&source),
         resources: Vec::new(),
         symbols: SymbolTable::default(),
         references: Vec::new(),

@@ -10,7 +10,7 @@ use clap_complete::{Shell, generate};
 use fsh_lint_core::{Result, init_tracing};
 use std::io;
 use std::path::PathBuf;
-use tracing::{error, info};
+use tracing::error;
 
 #[derive(Parser)]
 #[command(name = "fsh-lint")]
@@ -84,21 +84,21 @@ enum Commands {
         )]
         format: OutputFormat,
 
-        /// Apply safe automatic fixes
-        #[arg(long, help = "Apply safe automatic fixes to issues")]
-        fix: bool,
+        /// Write fixes to files (applies safe fixes by default)
+        #[arg(long, help = "Write fixes to files")]
+        write: bool,
 
         /// Show fixes without applying them
         #[arg(
             long,
-            help = "Show proposed fixes without applying them",
-            conflicts_with = "fix"
+            help = "Show proposed fixes without applying them (dry run)",
+            conflicts_with = "write"
         )]
-        fix_dry_run: bool,
+        dry_run: bool,
 
-        /// Apply unsafe fixes (requires explicit confirmation)
-        #[arg(long, help = "Apply unsafe fixes (use with caution)")]
-        fix_unsafe: bool,
+        /// Apply unsafe fixes (use with --write)
+        #[arg(long, help = "Apply unsafe fixes (requires --write, use with caution)")]
+        r#unsafe: bool,
 
         /// Minimum severity level to report
         #[arg(
@@ -133,21 +133,31 @@ enum Commands {
 
     /// Format FSH files according to style guidelines
     #[command(alias = "format")]
+    /// Format and fix FSH files
     Fmt {
         /// Files or directories to format
         #[arg(help = "Files or directories to format (default: current directory)")]
         paths: Vec<PathBuf>,
 
+        /// Write fixes to files (default behavior for format command)
+        #[arg(long, help = "Write fixes to files")]
+        write: bool,
+
         /// Check formatting without modifying files
         #[arg(
             long,
-            help = "Check if files are formatted correctly without modifying them"
+            help = "Check if files are formatted correctly without modifying them",
+            conflicts_with = "write"
         )]
         check: bool,
 
-        /// Show diff of formatting changes
+        /// Show diff of proposed changes without applying them (dry run)
         #[arg(long, help = "Show diff of proposed formatting changes")]
         diff: bool,
+
+        /// Apply unsafe fixes (use with --write)
+        #[arg(long, help = "Apply unsafe fixes (use with caution)")]
+        r#unsafe: bool,
 
         /// Include/exclude patterns (glob syntax)
         #[arg(
@@ -313,10 +323,11 @@ async fn main() -> Result<()> {
 
     // Initialize tracing based on verbosity
     let log_level = match cli.verbose {
-        0 => "fsh_lint=warn",  // Only warnings and errors by default
-        1 => "fsh_lint=info",  // Info on first -v
-        2 => "fsh_lint=debug", // Debug on -vv
-        _ => "fsh_lint=trace", // Trace on -vvv+
+        0 => "fsh_lint=error", // Only errors by default
+        1 => "fsh_lint=warn",  // Warnings on first -v
+        2 => "fsh_lint=info",  // Info on -vv
+        3 => "fsh_lint=debug", // Debug on -vvv
+        _ => "fsh_lint=trace", // Trace on -vvvv+
     };
     unsafe {
         std::env::set_var("RUST_LOG", log_level);
@@ -354,9 +365,9 @@ async fn run_command(cli: Cli) -> Result<()> {
         Some(Commands::Lint {
             paths,
             format,
-            fix,
-            fix_dry_run,
-            fix_unsafe,
+            write,
+            dry_run,
+            r#unsafe,
             min_severity,
             include,
             exclude,
@@ -371,9 +382,9 @@ async fn run_command(cli: Cli) -> Result<()> {
             commands::lint_command(
                 paths,
                 format,
-                fix,
-                fix_dry_run,
-                fix_unsafe,
+                write,
+                dry_run,
+                r#unsafe,
                 min_severity,
                 include,
                 exclude,
@@ -386,8 +397,10 @@ async fn run_command(cli: Cli) -> Result<()> {
 
         Some(Commands::Fmt {
             paths,
+            write,
             check,
             diff,
+            r#unsafe,
             include,
             exclude,
             line_width,
@@ -398,9 +411,20 @@ async fn run_command(cli: Cli) -> Result<()> {
             } else {
                 paths
             };
-            println!("Formatting functionality is not yet implemented.");
-            println!("This will format FSH files according to style guidelines.");
-            Ok(())
+
+            commands::format_command(
+                paths,
+                write,
+                check,
+                diff,
+                r#unsafe,
+                include,
+                exclude,
+                line_width,
+                indent_size,
+                cli.config,
+            )
+            .await
         }
 
         Some(Commands::Rules {

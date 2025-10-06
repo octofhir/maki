@@ -14,9 +14,6 @@ use std::path::PathBuf;
 use crate::rules::{AutofixTemplate, FixSafety};
 use crate::{Applicability, CodeSuggestion, Diagnostic, FshLintError, Location, Result};
 
-#[allow(deprecated)]
-use crate::Suggestion;
-
 /// Represents a fix that can be applied to source code
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fix {
@@ -311,6 +308,12 @@ impl Default for AutofixEngineConfig {
     }
 }
 
+impl Default for DefaultAutofixEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DefaultAutofixEngine {
     /// Create a new autofix engine with default configuration
     pub fn new() -> Self {
@@ -369,10 +372,10 @@ impl DefaultAutofixEngine {
 
     /// Check if a fix only changes formatting/whitespace
     fn is_formatting_only_fix(&self, fix: &Fix) -> bool {
-        let original_trimmed = fix
+        let _original_trimmed = fix
             .location
             .span
-            .map(|(start, end)| {
+            .map(|(_start, _end)| {
                 // Would need access to source code here
                 // For now, use a heuristic
                 true
@@ -429,7 +432,7 @@ impl DefaultAutofixEngine {
 
             fixes_by_file
                 .entry(fix.location.file.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(fix);
         }
 
@@ -492,7 +495,7 @@ impl DefaultAutofixEngine {
         for fix in fixes {
             fixes_by_file
                 .entry(fix.location.file.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(fix);
         }
 
@@ -552,61 +555,15 @@ impl DefaultAutofixEngine {
 
             if orig_line != mod_line {
                 if !orig_line.is_empty() {
-                    diff.push_str(&format!("- {}\n", orig_line));
+                    diff.push_str(&format!("- {orig_line}\n"));
                 }
                 if !mod_line.is_empty() {
-                    diff.push_str(&format!("+ {}\n", mod_line));
+                    diff.push_str(&format!("+ {mod_line}\n"));
                 }
             }
         }
 
         diff
-    }
-
-    /// Classify fix safety based on the type of change
-    fn classify_fix_safety(&self, fix: &Fix, diagnostic: &Diagnostic) -> FixSafety {
-        // Safe fixes are those that:
-        // 1. Only change whitespace or formatting
-        // 2. Add missing semicolons or commas
-        // 3. Fix obvious typos in keywords
-        // 4. Remove unused imports/declarations
-
-        let replacement = &fix.replacement;
-        let original_length = fix.location.length;
-
-        // If the fix only involves whitespace changes, it's safe
-        if replacement.trim().is_empty() && original_length > 0 {
-            return FixSafety::Safe;
-        }
-
-        // If the fix is adding a small amount of text (like semicolons), it's likely safe
-        if original_length == 0 && replacement.len() <= 2 {
-            return FixSafety::Safe;
-        }
-
-        // Check if the diagnostic suggests this is a safe fix
-        if let Some(suggestion) = diagnostic.suggestions.first() {
-            if suggestion.is_safe {
-                return FixSafety::Safe;
-            }
-        }
-
-        // Default to unsafe for substantial changes
-        FixSafety::Unsafe
-    }
-
-    /// Sort fixes by priority and location for optimal application order
-    fn sort_fixes_for_application(&self, fixes: &mut [Fix]) {
-        fixes.sort_by(|a, b| {
-            // First sort by file
-            a.location
-                .file
-                .cmp(&b.location.file)
-                // Then by priority (higher priority first)
-                .then_with(|| b.priority.cmp(&a.priority))
-                // Then by location (later positions first to avoid offset shifts)
-                .then_with(|| b.location.offset.cmp(&a.location.offset))
-        });
     }
 }
 impl AutofixEngine for DefaultAutofixEngine {
@@ -672,7 +629,7 @@ impl AutofixEngine for DefaultAutofixEngine {
         for fix in fixes {
             fixes_by_file
                 .entry(fix.location.file.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(fix);
         }
 
@@ -702,7 +659,7 @@ impl AutofixEngine for DefaultAutofixEngine {
 
             fixes_by_file
                 .entry(fix.location.file.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(fix);
         }
 
@@ -758,7 +715,7 @@ impl AutofixEngine for DefaultAutofixEngine {
         // Validate syntax if requested
         if config.validate_syntax && applied_count > 0 {
             if let Err(e) = self.validate_syntax(&modified_content, file) {
-                errors.push(format!("Syntax validation failed: {}", e));
+                errors.push(format!("Syntax validation failed: {e}"));
             }
         }
 
@@ -828,7 +785,7 @@ impl AutofixEngine for DefaultAutofixEngine {
 
                     if let Some(backup_file) = backup_files.first() {
                         let original_content = std::fs::read_to_string(backup_file.path())
-                            .map_err(|e| FshLintError::io_error(&backup_file.path(), e))?;
+                            .map_err(|e| FshLintError::io_error(backup_file.path(), e))?;
 
                         original_contents.insert(result.file.clone(), original_content);
                     }
@@ -860,39 +817,6 @@ impl DefaultAutofixEngine {
         replacement = replacement.replace("{{column}}", &diagnostic.location.column.to_string());
 
         Ok(replacement)
-    }
-
-    /// Resolve conflicts within a single file
-    fn resolve_file_conflicts(&self, fixes: &[&Fix]) -> Vec<Fix> {
-        let mut resolved = Vec::new();
-        let mut used_ranges = Vec::new();
-
-        // Sort by priority (higher first), then by offset
-        let mut sorted_fixes = fixes.to_vec();
-        sorted_fixes.sort_by(|a, b| {
-            b.priority
-                .cmp(&a.priority)
-                .then_with(|| a.location.offset.cmp(&b.location.offset))
-        });
-
-        for fix in sorted_fixes {
-            let fix_range = (
-                fix.location.offset,
-                fix.location.offset + fix.location.length,
-            );
-
-            // Check if this fix conflicts with any already selected fix
-            let conflicts = used_ranges
-                .iter()
-                .any(|&(start, end)| !(fix_range.1 <= start || end <= fix_range.0));
-
-            if !conflicts {
-                resolved.push((*fix).clone());
-                used_ranges.push(fix_range);
-            }
-        }
-
-        resolved
     }
 
     /// Resolve conflicts using conflict groups
@@ -1105,7 +1029,7 @@ impl DefaultAutofixEngine {
     /// Generate fix from suggestion with enhanced validation
     fn generate_fix_from_suggestion(
         &self,
-        suggestion: &Suggestion,
+        suggestion: &CodeSuggestion,
         diagnostic: &Diagnostic,
         fix_id: String,
     ) -> Result<Fix> {
@@ -1123,45 +1047,14 @@ impl DefaultAutofixEngine {
             ));
         }
 
-        let safety = if suggestion.is_safe {
-            FixSafety::Safe
-        } else {
-            FixSafety::Unsafe
-        };
-
         Ok(Fix::new(
             fix_id,
             suggestion.message.clone(),
             suggestion.location.clone(),
             suggestion.replacement.clone(),
-            match safety {
-                FixSafety::Safe => Applicability::Always,
-                FixSafety::Unsafe => Applicability::MaybeIncorrect,
-            },
+            suggestion.applicability,
             diagnostic.rule_id.clone(),
         ))
-    }
-
-    /// Enhanced fix safety classification
-    fn classify_fix_safety_enhanced(
-        &self,
-        suggestion: &Suggestion,
-        diagnostic: &Diagnostic,
-    ) -> FixSafety {
-        let replacement = &suggestion.replacement;
-
-        // Safe patterns
-        if self.is_safe_replacement_pattern(replacement) {
-            return FixSafety::Safe;
-        }
-
-        // Check diagnostic severity - errors are more likely to have safe fixes
-        if diagnostic.severity == crate::Severity::Error && replacement.len() < 50 {
-            return FixSafety::Safe;
-        }
-
-        // Default to unsafe for complex changes
-        FixSafety::Unsafe
     }
 
     /// Check if replacement follows safe patterns
@@ -1259,7 +1152,7 @@ impl RollbackPlan {
         use std::fs;
 
         let serialized = serde_json::to_string_pretty(self).map_err(|e| {
-            FshLintError::autofix_error(format!("Failed to serialize rollback plan: {}", e))
+            FshLintError::autofix_error(format!("Failed to serialize rollback plan: {e}"))
         })?;
 
         fs::write(path, serialized).map_err(|e| FshLintError::io_error(path, e))?;
@@ -1274,7 +1167,7 @@ impl RollbackPlan {
         let content = fs::read_to_string(path).map_err(|e| FshLintError::io_error(path, e))?;
 
         let plan: RollbackPlan = serde_json::from_str(&content).map_err(|e| {
-            FshLintError::autofix_error(format!("Failed to deserialize rollback plan: {}", e))
+            FshLintError::autofix_error(format!("Failed to deserialize rollback plan: {e}"))
         })?;
 
         Ok(plan)
@@ -1284,17 +1177,16 @@ impl RollbackPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Severity, Suggestion};
+    use crate::Severity;
     use std::path::PathBuf;
 
     fn create_test_diagnostic() -> Diagnostic {
         let location = Location::new(PathBuf::from("test.fsh"), 1, 1, 0, 5);
 
-        let suggestion = Suggestion::new(
+        let suggestion = CodeSuggestion::safe(
             "Replace with correct syntax",
             "fixed_text",
             location.clone(),
-            true,
         );
 
         Diagnostic::new("test-rule", Severity::Error, "Test error", location)
@@ -1309,7 +1201,7 @@ mod tests {
             "Test fix".to_string(),
             location,
             "replacement".to_string(),
-            FixSafety::Safe,
+            Applicability::Always,
             "test-rule".to_string(),
         );
 
@@ -1329,7 +1221,7 @@ mod tests {
             "Fix 1".to_string(),
             location1,
             "text1".to_string(),
-            FixSafety::Safe,
+            Applicability::Always,
             "rule1".to_string(),
         );
         let fix2 = Fix::new(
@@ -1337,7 +1229,7 @@ mod tests {
             "Fix 2".to_string(),
             location2,
             "text2".to_string(),
-            FixSafety::Safe,
+            Applicability::Always,
             "rule2".to_string(),
         );
         let fix3 = Fix::new(
@@ -1345,7 +1237,7 @@ mod tests {
             "Fix 3".to_string(),
             location3,
             "text3".to_string(),
-            FixSafety::Safe,
+            Applicability::Always,
             "rule3".to_string(),
         );
 
@@ -1376,7 +1268,7 @@ mod tests {
             "Fix 1".to_string(),
             location1,
             "text1".to_string(),
-            FixSafety::Safe,
+            Applicability::Always,
             "rule1".to_string(),
         )
         .with_priority(1);
@@ -1385,7 +1277,7 @@ mod tests {
             "Fix 2".to_string(),
             location2,
             "text2".to_string(),
-            FixSafety::Safe,
+            Applicability::Always,
             "rule2".to_string(),
         )
         .with_priority(2);
@@ -1399,11 +1291,13 @@ mod tests {
 
     #[test]
     fn test_fix_config() {
-        let config = FixConfig::new()
-            .with_unsafe_fixes()
-            .dry_run()
-            .with_max_fixes(10)
-            .without_validation();
+        let config = FixConfig {
+            apply_unsafe: true,
+            dry_run: true,
+            max_fixes_per_file: Some(10),
+            validate_syntax: false,
+            ..FixConfig::default()
+        };
 
         assert!(config.apply_unsafe);
         assert!(config.dry_run);

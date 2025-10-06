@@ -1,0 +1,87 @@
+---
+title: FSH Lint
+description: Fast and powerful linter for FHIR Shorthand
+template: splash
+hero:
+  tagline: Catch errors early with blazing-fast FSH linting
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Get Started
+      link: /fsh-lint-rs/getting-started/introduction/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/octofhir/fsh-lint-rs
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Features
+
+<CardGrid>
+  <Card title="⚡ Blazing Fast" icon="rocket">
+    Built in Rust for maximum performance. Lint thousands of FSH files in seconds.
+  </Card>
+
+  <Card title="🔍 Comprehensive Rules" icon="puzzle">
+    Extensive rule set covering FHIR and FSH best practices, from correctness to style.
+  </Card>
+
+  <Card title="🎨 Beautiful Errors" icon="approve-check">
+    Rich, colorful diagnostics with code frames, diffs, and actionable suggestions.
+  </Card>
+
+  <Card title="🔧 Extensible" icon="setting">
+    Write custom validation rules using powerful GritQL patterns.
+  </Card>
+
+  <Card title="⚙️ Configurable" icon="seti:config">
+    Fine-tune every aspect with flexible JSON/JSONC configuration.
+  </Card>
+
+  <Card title="🚀 CI/CD Ready" icon="github">
+    First-class support for GitHub Actions, GitLab CI, and other platforms.
+  </Card>
+</CardGrid>
+
+## Quick Example
+
+```bash
+# Install
+cargo install fsh-lint
+
+# Initialize configuration
+fsh-lint init
+
+# Lint your FSH files
+fsh-lint lint **/*.fsh
+```
+
+## Rich Diagnostics
+
+```
+error[correctness/duplicate-definition]: Duplicate profile definition
+
+  > 15 │ Profile: PatientProfile
+       │          ^^^^^^^^^^^^^^ Profile 'PatientProfile' is already defined
+    16 │ * name 1..1 MS
+    17 │ * gender 1..1
+
+  i Safe fix: Rename this profile to avoid duplication
+
+    15 │ - Profile: PatientProfile
+       │            ^^^^^^^^^^^^^^^^
+    15 │ + Profile: PatientProfile2
+       │            ^^^^^^^^^^^^^^^^^
+```
+
+## What's FSH?
+
+FHIR Shorthand (FSH) is a domain-specific language for defining FHIR Implementation Guides.
+FSH Lint helps you catch errors early and maintain high-quality FHIR profiles.
+
+<div style="margin-top: 2rem;">
+  <a href="/fsh-lint-rs/getting-started/introduction/" class="sl-link-button">Learn More →</a>
+</div>

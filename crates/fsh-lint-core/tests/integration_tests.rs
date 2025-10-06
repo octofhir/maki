@@ -3,8 +3,7 @@
 //! These tests verify the end-to-end functionality of the linter,
 //! including rule execution, diagnostic generation, and autofix application.
 
-use fsh_lint_core::{Diagnostic, Severity};
-use std::path::PathBuf;
+use fsh_lint_core::Severity;
 
 /// Mock test demonstrating integration test structure
 #[test]
@@ -34,7 +33,7 @@ fn test_rule_execution_order() {
     // 3. Style rules
     // 4. Documentation rules
 
-    let execution_order = vec![
+    let execution_order = [
         "blocking: required-field-present",
         "blocking: invalid-cardinality",
         "blocking: binding-strength-present",
@@ -107,8 +106,8 @@ fn test_diagnostic_severity_levels() {
         .count();
 
     println!("\nSeverity distribution:");
-    println!("  Errors: {}", errors);
-    println!("  Warnings: {}", warnings);
+    println!("  Errors: {errors}");
+    println!("  Warnings: {warnings}");
 
     assert_eq!(errors, 5, "Expected 5 error-level rules");
     assert_eq!(warnings, 2, "Expected 2 warning-level rules");
@@ -177,8 +176,8 @@ fn test_autofix_safety_classification() {
         .count();
 
     println!("\nAutofix distribution:");
-    println!("  Safe: {}", safe_autofixes);
-    println!("  Unsafe: {}", unsafe_autofixes);
+    println!("  Safe: {safe_autofixes}");
+    println!("  Unsafe: {unsafe_autofixes}");
 
     assert!(safe_autofixes >= 3, "Expected at least 3 safe autofixes");
 }
@@ -199,7 +198,7 @@ fn test_example_files_validation() {
 
     println!("Example files for testing:");
     for (file, desc) in &examples {
-        println!("  {} - {}", file, desc);
+        println!("  {file} - {desc}");
     }
 
     assert_eq!(examples.len(), 7, "Expected 7 example files");
@@ -209,7 +208,7 @@ fn test_example_files_validation() {
 fn test_cli_integration_scenarios() {
     // Document CLI integration test scenarios
 
-    let scenarios = vec![
+    let scenarios = [
         "cargo run -- lint examples/*.fsh",
         "cargo run -- lint --config strict examples/",
         "cargo run -- lint --format json examples/test.fsh",
@@ -279,7 +278,7 @@ fn test_output_formats() {
 
     println!("Supported output formats:");
     for (format, desc) in &formats {
-        println!("  {} - {}", format, desc);
+        println!("  {format} - {desc}");
     }
 
     assert!(formats.len() >= 3, "Expected at least 3 output formats");
@@ -335,7 +334,7 @@ fn test_system_readiness() {
     ];
 
     for (component, status) in &components {
-        println!("{}: {}", component, status);
+        println!("{component}: {status}");
     }
 
     println!("\nImplemented Rules: 7");

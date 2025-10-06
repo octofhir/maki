@@ -4,18 +4,17 @@
 //! This crate provides the fundamental components for parsing, analyzing,
 //! and linting FSH files.
 
-pub mod ast;
 pub mod autofix;
 pub mod cache;
 pub mod config;
+pub mod console; // Terminal console utilities for rich output
+pub mod cst; // Concrete Syntax Tree (lossless, Rowan-based)
 pub mod diagnostics;
 pub mod discovery;
 pub mod error;
 pub mod executor;
 pub mod formatter;
-pub mod lexer;
 pub mod parser;
-mod parser_chumsky;
 pub mod result;
 pub mod rules;
 pub mod semantic;
@@ -28,12 +27,18 @@ pub use autofix::{
 pub use cache::{
     Cache, CacheManager, CacheManagerStats, CacheStats, ContentHash, ParseResultCache,
 };
-pub use config::Config;
+// Configuration system
+pub use config::{
+    ConfigLoader, FilesConfiguration, FormatterConfiguration, FshLintConfiguration,
+    LinterConfiguration, RuleSeverity, RulesConfiguration,
+};
+// Console utilities for rich terminal output
+pub use console::{Color, Console};
 pub use diagnostics::{
     Advices, Applicability, CodeSuggestion, DefaultDiagnosticCollector, DefaultOutputFormatter,
     Diagnostic, DiagnosticCategory, DiagnosticCollector, DiagnosticFormatter,
-    DiagnosticOutputFormatter, Label, ListAdvice, Location, LogAdvice, LogCategory, Severity,
-    SourceMap, Suggestion, Visit,
+    DiagnosticOutputFormatter, DiagnosticRenderer, DiffRenderer, Label, ListAdvice, Location,
+    LogAdvice, LogCategory, OutputFormat, Severity, SourceMap, Visit,
 };
 pub use discovery::{
     DefaultFileDiscovery, FileChangeEvent, FileChangeKind, FileDiscovery, FileWatcher,

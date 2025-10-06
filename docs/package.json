@@ -1,0 +1,26 @@
+{
+  "name": "fsh-lint-docs",
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro check && astro build",
+    "build:full": "pnpm run generate-all && astro check && astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "generate-schema": "cd .. && cargo run --bin fsh-lint-devtools -- generate-schema -o docs/public/schema/v1.json",
+    "generate-config": "cd .. && cargo run --bin fsh-lint-devtools -- generate-config -o docs/examples/config.json",
+    "generate-rule-docs": "cd .. && cargo run --bin fsh-lint-devtools -- generate-rule-docs -o docs/src/content/docs/rules",
+    "generate-all": "cd .. && cargo run --bin fsh-lint-devtools -- generate-all -o docs"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.36.0",
+    "astro": "^5.6.1",
+    "sharp": "^0.34.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "typescript": "^5.9.3"
+  }
+}

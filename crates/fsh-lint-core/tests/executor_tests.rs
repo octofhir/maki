@@ -6,12 +6,12 @@ use std::time::Duration;
 
 use tempfile::TempDir;
 
-use fsh_lint_core::ast::FSHDocument;
+use fsh_lint_core::cst::FshSyntaxNode;
 use fsh_lint_core::parser::{ParseResult, Parser};
 use fsh_lint_core::{
-    CompiledRule, Config, DefaultExecutor, Diagnostic, ExecutionContext, Executor, FshLintError,
-    Location, ProgressCallback, ProgressInfo, ResourceStats, Result, RuleEngine, SemanticAnalyzer,
-    SemanticModel, Severity,
+    CompiledRule, DefaultExecutor, Diagnostic, ExecutionContext, Executor, FshLintConfiguration,
+    FshLintError, Location, ProgressCallback, ProgressInfo, ResourceStats, Result, RuleEngine,
+    SemanticAnalyzer, SemanticModel, Severity,
 };
 
 /// Mock parser for testing
@@ -48,13 +48,17 @@ impl Parser for MockParser {
         if self.should_fail {
             return Err(FshLintError::ParseError {
                 message: "Mock parse error".to_string(),
-                location: Location::default(),
+                location: Box::new(Location::default()),
             });
         }
 
+        // Parse using the real CST parser for test consistency
+        let source: Arc<str> = Arc::from(content);
+        let (cst, _) = fsh_lint_core::cst::parse_fsh(&source);
+
         Ok(ParseResult {
-            source: Arc::<str>::from(content.to_owned()),
-            document: Some(FSHDocument::new(0..content.len())),
+            source,
+            cst,
             errors: Vec::new(),
         })
     }
@@ -88,7 +92,7 @@ impl MockSemanticAnalyzer {
 impl SemanticAnalyzer for MockSemanticAnalyzer {
     fn analyze(
         &self,
-        _document: &FSHDocument,
+        _cst: &FshSyntaxNode,
         _source: &str,
         file_path: PathBuf,
     ) -> Result<SemanticModel> {
@@ -155,7 +159,7 @@ impl RuleEngine for MockRuleEngine {
         (0..self.diagnostics_per_file)
             .map(|i| {
                 Diagnostic::new(
-                    format!("test-rule-{}", i),
+                    format!("test-rule-{i}"),
                     Severity::Warning,
                     format!(
                         "Test diagnostic {} for file {}",
@@ -187,10 +191,10 @@ fn create_test_files(count: usize) -> (TempDir, Vec<PathBuf>) {
     let mut files = Vec::new();
 
     for i in 0..count {
-        let file_path = temp_dir.path().join(format!("test_{}.fsh", i));
+        let file_path = temp_dir.path().join(format!("test_{i}.fsh"));
         std::fs::write(
             &file_path,
-            format!("// Test FSH file {}\nProfile: TestProfile{}", i, i),
+            format!("// Test FSH file {i}\nProfile: TestProfile{i}"),
         )
         .unwrap();
         files.push(file_path);
@@ -203,7 +207,7 @@ fn create_test_files(count: usize) -> (TempDir, Vec<PathBuf>) {
 fn test_parallel_execution_basic() {
     let (_temp_dir, files) = create_test_files(5);
 
-    let config = Config::default();
+    let config = FshLintConfiguration::default();
     let context = ExecutionContext::new(config, vec![]);
 
     let parser = Box::new(MockParser::new());
@@ -226,7 +230,7 @@ fn test_parallel_execution_basic() {
 fn test_parallel_execution_deterministic_ordering() {
     let (_temp_dir, files) = create_test_files(10);
 
-    let config = Config::default();
+    let config = FshLintConfiguration::default();
     let context = ExecutionContext::new(config, vec![]);
 
     let parser = Box::new(MockParser::new().with_delay(Duration::from_millis(10)));
@@ -253,7 +257,7 @@ fn test_parallel_execution_deterministic_ordering() {
 fn test_single_file_execution() {
     let (_temp_dir, files) = create_test_files(1);
 
-    let config = Config::default();
+    let config = FshLintConfiguration::default();
     let context = ExecutionContext::new(config, vec![]);
 
     let parser = Box::new(MockParser::new());
@@ -280,7 +284,7 @@ fn test_progress_reporting() {
         progress_reports_clone.lock().unwrap().push(info);
     });
 
-    let config = Config::default();
+    let config = FshLintConfiguration::default();
     let context = ExecutionContext::new(config, vec![]).with_progress_callback(progress_callback);
 
     let parser = Box::new(MockParser::new());
@@ -304,7 +308,7 @@ fn test_progress_reporting() {
 fn test_resource_monitoring() {
     let (_temp_dir, files) = create_test_files(3);
 
-    let config = Config::default();
+    let config = FshLintConfiguration::default();
     let context = ExecutionContext::new(config, vec![])
         .with_resource_monitoring(Duration::from_millis(10))
         .with_backpressure_control(4, Some(1024 * 1024 * 1024)); // 1GB limit
@@ -325,7 +329,7 @@ fn test_resource_monitoring() {
 fn test_memory_limit_enforcement() {
     let (_temp_dir, files) = create_test_files(2);
 
-    let config = Config::default();
+    let config = FshLintConfiguration::default();
     let context = ExecutionContext::new(config, vec![]).with_memory_limit(1); // Very low limit to trigger the check
 
     let parser = Box::new(MockParser::new());
@@ -343,7 +347,7 @@ fn test_memory_limit_enforcement() {
 fn test_parse_error_handling() {
     let (_temp_dir, files) = create_test_files(3);
 
-    let config = Config::default();
+    let config = FshLintConfiguration::default();
     let context = ExecutionContext::new(config, vec![]);
 
     let parser = Box::new(MockParser::new().with_failure());
@@ -359,7 +363,7 @@ fn test_parse_error_handling() {
         assert!(result.error.is_some());
         match result.error.unwrap() {
             FshLintError::ParseError { .. } => {} // Expected
-            other => panic!("Expected ParseError, got {:?}", other),
+            other => panic!("Expected ParseError, got {other:?}"),
         }
     }
 }
@@ -368,7 +372,7 @@ fn test_parse_error_handling() {
 fn test_semantic_error_handling() {
     let (_temp_dir, files) = create_test_files(2);
 
-    let config = Config::default();
+    let config = FshLintConfiguration::default();
     let context = ExecutionContext::new(config, vec![]);
 
     let parser = Box::new(MockParser::new());
@@ -384,14 +388,14 @@ fn test_semantic_error_handling() {
         assert!(result.error.is_some());
         match result.error.unwrap() {
             FshLintError::SemanticError { .. } => {} // Expected
-            other => panic!("Expected SemanticError, got {:?}", other),
+            other => panic!("Expected SemanticError, got {other:?}"),
         }
     }
 }
 
 #[test]
 fn test_parallelism_configuration() {
-    let config = Config::default();
+    let config = FshLintConfiguration::default();
     let context = ExecutionContext::new(config, vec![]).with_thread_pool_size(2);
 
     let parser = Box::new(MockParser::new());
@@ -410,7 +414,7 @@ fn test_parallelism_configuration() {
 fn test_diagnostic_sorting() {
     let (_temp_dir, files) = create_test_files(1);
 
-    let config = Config::default();
+    let config = FshLintConfiguration::default();
     let context = ExecutionContext::new(config, vec![]);
 
     let parser = Box::new(MockParser::new());
@@ -443,7 +447,7 @@ fn test_diagnostic_sorting() {
 
 #[test]
 fn test_execution_context_builder() {
-    let config = Config::default();
+    let config = FshLintConfiguration::default();
     let rules = vec![];
 
     let context = ExecutionContext::new(config, rules)

@@ -75,8 +75,7 @@ fn parse_node_type(type_str: &str) -> Result<NodeType> {
         "PathRule" | "Path" => Ok(NodeType::PathRule),
         "*" | "Any" => Ok(NodeType::Any),
         other => Err(FshLintError::config_error(format!(
-            "Unknown node type: {}",
-            other
+            "Unknown node type: {other}"
         ))),
     }
 }
@@ -98,7 +97,8 @@ fn parse_predicates(pred_text: &str) -> Result<Vec<Predicate>> {
 /// Parse a block of predicates (multiple lines with and/or)
 fn parse_predicate_block(block: &str) -> Result<Vec<Predicate>> {
     // Split by newlines and parse each as a predicate expression
-    let lines: Vec<&str> = block.lines()
+    let lines: Vec<&str> = block
+        .lines()
         .map(|l| l.trim())
         .filter(|l| !l.is_empty() && !l.starts_with("//"))
         .collect();
@@ -129,12 +129,16 @@ fn parse_predicate_expression(expr: &str) -> Result<Predicate> {
     // Check for negation first (highest precedence)
     if expr.starts_with("not ") {
         let negated = &expr[4..].trim();
-        return Ok(Predicate::Not(Box::new(parse_predicate_expression(negated)?)));
+        return Ok(Predicate::Not(Box::new(parse_predicate_expression(
+            negated,
+        )?)));
     }
 
     if expr.starts_with("!") {
         let negated = &expr[1..].trim();
-        return Ok(Predicate::Not(Box::new(parse_predicate_expression(negated)?)));
+        return Ok(Predicate::Not(Box::new(parse_predicate_expression(
+            negated,
+        )?)));
     }
 
     // Check for logical operators (OR has lower precedence than AND)
@@ -166,7 +170,9 @@ fn parse_or_expression(expr: &str) -> Result<Predicate> {
             } else {
                 &part[1..]
             };
-            predicates.push(Predicate::Not(Box::new(parse_single_predicate(negated.trim())?)));
+            predicates.push(Predicate::Not(Box::new(parse_single_predicate(
+                negated.trim(),
+            )?)));
         } else {
             predicates.push(parse_single_predicate(part)?);
         }
@@ -189,7 +195,9 @@ fn parse_and_expression(expr: &str) -> Result<Predicate> {
             } else {
                 &part[1..]
             };
-            predicates.push(Predicate::Not(Box::new(parse_single_predicate(negated.trim())?)));
+            predicates.push(Predicate::Not(Box::new(parse_single_predicate(
+                negated.trim(),
+            )?)));
         } else {
             predicates.push(parse_single_predicate(part)?);
         }
@@ -250,8 +258,7 @@ fn parse_single_predicate(pred: &str) -> Result<Predicate> {
     }
 
     Err(FshLintError::config_error(format!(
-        "Invalid predicate syntax: {}",
-        pred
+        "Invalid predicate syntax: {pred}"
     )))
 }
 
@@ -277,19 +284,21 @@ fn extract_function_arg(expr: &str, func_name: &str) -> Result<String> {
 
     if depth != 0 {
         return Err(FshLintError::config_error(format!(
-            "Unmatched parentheses in {}()",
-            func_name
+            "Unmatched parentheses in {func_name}()"
         )));
     }
 
     if start >= end {
         return Err(FshLintError::config_error(format!(
-            "Empty argument in {}()",
-            func_name
+            "Empty argument in {func_name}()"
         )));
     }
 
-    Ok(chars[start..end].iter().collect::<String>().trim().to_string())
+    Ok(chars[start..end]
+        .iter()
+        .collect::<String>()
+        .trim()
+        .to_string())
 }
 
 /// Extract string value from quoted string
@@ -401,22 +410,23 @@ mod tests {
         let pattern = parse_pattern("Profile where not missing(parent)").unwrap();
 
         match &pattern.predicates[0] {
-            Predicate::Not(pred) => {
-                match **pred {
-                    Predicate::FieldMissing { ref field } => assert_eq!(field, "parent"),
-                    _ => panic!("Expected FieldMissing inside Not"),
-                }
-            }
+            Predicate::Not(pred) => match **pred {
+                Predicate::FieldMissing { ref field } => assert_eq!(field, "parent"),
+                _ => panic!("Expected FieldMissing inside Not"),
+            },
             _ => panic!("Expected Not predicate"),
         }
     }
 
     #[test]
     fn test_parse_block_syntax() {
-        let pattern = parse_pattern(r#"Profile where {
+        let pattern = parse_pattern(
+            r#"Profile where {
             missing(parent)
             missing(id)
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         // Should be wrapped in And
         match &pattern.predicates[0] {

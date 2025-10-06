@@ -21,7 +21,7 @@ fn blocking_rules_validate_critical_requirements() {
 
     for rule in &rules {
         assert_rule_basics(rule);
-        assert!(rule.id.starts_with("builtin/correctness/"));
+        assert!(rule.id.starts_with("correctness/")); // No builtin/ prefix
         assert_eq!(rule.severity, Severity::Error);
         assert!(rule.metadata.tags.contains(&"blocking".to_string()));
     }
@@ -53,13 +53,13 @@ fn blocking_rules_validate_critical_requirements() {
 }
 
 #[test]
-fn correctness_rules_have_biome_style_metadata() {
+fn correctness_rules_have_required_metadata() {
     let rules = BuiltinRules::correctness_rules();
     assert_eq!(rules.len(), 13); // Updated: added profile-assignment-present and extension-context-missing
 
     for rule in &rules {
         assert_rule_basics(rule);
-        assert!(rule.id.starts_with("builtin/correctness/"));
+        assert!(rule.id.starts_with("correctness/")); // No builtin/ prefix
         assert_eq!(rule.metadata.category, RuleCategory::Correctness);
         assert!(rule.metadata.tags.contains(&"correctness".to_string()));
     }
@@ -96,7 +96,7 @@ fn suspicious_rules_detect_risky_patterns() {
 
     for rule in &rules {
         assert_rule_basics(rule);
-        assert!(rule.id.starts_with("builtin/suspicious/"));
+        assert!(rule.id.starts_with("suspicious/")); // No builtin/ prefix
         assert_eq!(rule.metadata.category, RuleCategory::Suspicious);
         assert!(rule.metadata.tags.contains(&"suspicious".to_string()));
     }
@@ -112,14 +112,15 @@ fn suspicious_rules_detect_risky_patterns() {
 #[test]
 fn style_rules_focus_on_readability() {
     let rules = BuiltinRules::style_rules();
-    assert_eq!(rules.len(), 1);
+    assert_eq!(rules.len(), 2); // Updated count
 
-    let rule = &rules[0];
-    assert_rule_basics(rule);
-    assert!(rule.id.starts_with("builtin/style/"));
-    assert_eq!(rule.metadata.category, RuleCategory::Style);
-    assert!(rule.metadata.tags.contains(&"style".to_string()));
-    assert_eq!(rule.severity, Severity::Warning);
+    for rule in &rules {
+        assert_rule_basics(rule);
+        assert!(rule.id.starts_with("style/")); // No builtin/ prefix
+        assert_eq!(rule.metadata.category, RuleCategory::Style);
+        assert!(rule.metadata.tags.contains(&"style".to_string()));
+        assert_eq!(rule.severity, Severity::Warning);
+    }
 }
 
 #[test]
@@ -129,7 +130,7 @@ fn documentation_rules_cover_metadata_requirements() {
 
     for rule in &rules {
         assert_rule_basics(rule);
-        assert!(rule.id.starts_with("builtin/documentation/"));
+        assert!(rule.id.starts_with("documentation/")); // No builtin/ prefix
         assert_eq!(rule.metadata.category, RuleCategory::Documentation);
         assert!(rule.metadata.tags.contains(&"documentation".to_string()));
     }

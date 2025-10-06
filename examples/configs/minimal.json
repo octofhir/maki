@@ -1,0 +1,10 @@
+{
+  "$schema": "https://octofhir.github.io/fsh-lint-rs/schema/v1.json",
+  "root": true,
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  }
+}

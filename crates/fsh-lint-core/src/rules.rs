@@ -305,8 +305,7 @@ impl Rule {
             return Err(FshLintError::RuleError {
                 rule_id: self.id.clone(),
                 message: format!(
-                    "Rule slug '{}' must be lower-case and use hyphenated segments",
-                    rule_slug
+                    "Rule slug '{rule_slug}' must be lower-case and use hyphenated segments"
                 ),
             });
         }
@@ -316,8 +315,7 @@ impl Rule {
             return Err(FshLintError::RuleError {
                 rule_id: self.id.clone(),
                 message: format!(
-                    "Category slug '{}' must be lower-case and use hyphenated segments",
-                    category_slug
+                    "Category slug '{category_slug}' must be lower-case and use hyphenated segments"
                 ),
             });
         }
@@ -327,8 +325,7 @@ impl Rule {
             return Err(FshLintError::RuleError {
                 rule_id: self.id.clone(),
                 message: format!(
-                    "Rule ID category '{}' must match metadata category '{}'",
-                    category_slug, expected_slug
+                    "Rule ID category '{category_slug}' must match metadata category '{expected_slug}'"
                 ),
             });
         }
@@ -338,8 +335,7 @@ impl Rule {
                 return Err(FshLintError::RuleError {
                     rule_id: self.id.clone(),
                     message: format!(
-                        "Namespace segment '{}' must be lower-case and use hyphenated segments",
-                        namespace
+                        "Namespace segment '{namespace}' must be lower-case and use hyphenated segments"
                     ),
                 });
             }
@@ -356,8 +352,7 @@ impl Rule {
                 return Err(FshLintError::RuleError {
                     rule_id: self.id.clone(),
                     message: format!(
-                        "Custom category slug '{}' must be lower-case and use hyphenated segments",
-                        name
+                        "Custom category slug '{name}' must be lower-case and use hyphenated segments"
                     ),
                 });
             }

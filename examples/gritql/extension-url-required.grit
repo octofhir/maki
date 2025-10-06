@@ -1,0 +1,45 @@
+// GritQL Rule: Extensions Must Define a URL
+//
+// **Category**: Correctness
+// **Severity**: Error
+// **Autofix**: None (manual review required)
+//
+// This rule ensures that all Extension definitions include a canonical URL via
+// the `^url` assignment. The URL is required for proper FHIR validation and
+// implementation guide generation.
+//
+// ## Why This Matters
+//
+// Without a canonical URL, extensions cannot be properly referenced or validated:
+// - IG Publisher will fail to generate proper documentation
+// - FHIR validators cannot validate instances using the extension
+// - Other profiles cannot reference the extension correctly
+//
+// ## Examples
+//
+// ❌ Bad:
+// ```fsh
+// Extension: PatientNickname
+// * value[x] only string
+// // Missing: * ^url = "http://example.org/fhir/StructureDefinition/patient-nickname"
+// ```
+//
+// ✅ Good:
+// ```fsh
+// Extension: PatientNickname
+// * ^url = "http://example.org/fhir/StructureDefinition/patient-nickname"
+// * value[x] only string
+// ```
+//
+// ## GritQL Pattern Explanation
+//
+// 1. Match Extension declarations
+// 2. Check if the extension body contains ^url assignment
+// 3. Report violation if ^url is missing
+//
+// This pattern uses GritQL's `not contains` to find extensions without URLs.
+
+Extension: $name where {
+    // Ensure extension has ^url assignment
+    not contains "^url"
+}

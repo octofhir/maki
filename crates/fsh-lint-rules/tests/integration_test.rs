@@ -14,6 +14,7 @@ fn test_rule_system_integration() {
         description: "A test rule for integration testing".to_string(),
         gritql_pattern: "test_pattern_for_integration".to_string(),
         autofix: None,
+        is_ast_rule: false,
         metadata: RuleMetadata {
             id: "test/correctness/integration-test-rule".to_string(),
             name: "Integration Test Rule".to_string(),
@@ -65,6 +66,7 @@ fn test_rule_loading_from_file() {
         description: "A test rule loaded from file".to_string(),
         gritql_pattern: "file_test_pattern".to_string(),
         autofix: None,
+        is_ast_rule: false,
         metadata: RuleMetadata {
             id: "test/documentation/file-test-rule".to_string(),
             name: "File Test Rule".to_string(),
@@ -107,6 +109,7 @@ fn test_rule_loading_from_directory() {
             description: format!("Test rule {} from directory", i),
             gritql_pattern: format!("dir_test_pattern_{}", i),
             autofix: None,
+            is_ast_rule: false,
             metadata: RuleMetadata {
                 id: format!("test/style/dir-test-rule-{}", i),
                 name: format!("Directory Test Rule {}", i),
@@ -147,6 +150,7 @@ fn test_rule_validation_errors() {
         description: "Test rule".to_string(),
         gritql_pattern: "test_pattern".to_string(),
         autofix: None,
+        is_ast_rule: false,
         metadata: RuleMetadata {
             id: "".to_string(),
             name: "Test Rule".to_string(),

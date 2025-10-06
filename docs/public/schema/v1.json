@@ -1,0 +1,264 @@
+{
+  "$defs": {
+    "FilesConfiguration": {
+      "description": "Files configuration",
+      "properties": {
+        "exclude": {
+          "description": "Glob patterns for files to exclude",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "ignoreFiles": {
+          "description": "Additional ignore files to respect (beyond .gitignore)",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "include": {
+          "description": "Glob patterns for files to include",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "FormatterConfiguration": {
+      "description": "Formatter configuration",
+      "properties": {
+        "alignCarets": {
+          "description": "Align caret expressions for readability",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "enabled": {
+          "description": "Enable or disable the formatter",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "indentSize": {
+          "description": "Number of spaces for indentation",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "lineWidth": {
+          "description": "Maximum line width before wrapping",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "LinterConfiguration": {
+      "description": "Linter configuration",
+      "properties": {
+        "enabled": {
+          "description": "Enable or disable the linter",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "ruleDirectories": {
+          "description": "Paths to directories containing .grit rule files",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "rules": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RulesConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Rule severity configuration"
+        }
+      },
+      "type": "object"
+    },
+    "RuleSeverity": {
+      "description": "Rule severity levels",
+      "oneOf": [
+        {
+          "const": "off",
+          "description": "Disable the rule",
+          "type": "string"
+        },
+        {
+          "const": "info",
+          "description": "Informational message",
+          "type": "string"
+        },
+        {
+          "const": "warn",
+          "description": "Warning (doesn't fail build)",
+          "type": "string"
+        },
+        {
+          "const": "error",
+          "description": "Error (fails build)",
+          "type": "string"
+        }
+      ]
+    },
+    "RulesConfiguration": {
+      "description": "Rules configuration",
+      "properties": {
+        "all": {
+          "description": "Enable all rules",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "blocking": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RuleSeverity"
+          },
+          "description": "Blocking rules configuration",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "correctness": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RuleSeverity"
+          },
+          "description": "Correctness rules configuration",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "documentation": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RuleSeverity"
+          },
+          "description": "Documentation rules configuration",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "recommended": {
+          "description": "Enable all recommended rules",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "style": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RuleSeverity"
+          },
+          "description": "Style rules configuration",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "suspicious": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RuleSeverity"
+          },
+          "description": "Suspicious rules configuration",
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$id": "https://octofhir.github.io/fsh-lint-rs/schema/v1.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Configuration file schema for fsh-lint - validates fsh-lint.json and fsh-lint.jsonc files",
+  "properties": {
+    "extends": {
+      "description": "Inherit from other config files (relative or absolute paths)",
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "files": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FilesConfiguration"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "File inclusion/exclusion patterns"
+    },
+    "formatter": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FormatterConfiguration"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Code formatter settings"
+    },
+    "linter": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LinterConfiguration"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Linter settings and rules"
+    },
+    "root": {
+      "description": "Stop config file discovery at this directory",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  },
+  "title": "FSH Lint Configuration",
+  "type": "object"
+}

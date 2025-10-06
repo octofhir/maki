@@ -17,6 +17,7 @@ fn create_test_rule(id: &str, name: &str) -> Rule {
         description: format!("Test rule: {}", name),
         gritql_pattern: format!("test_pattern_{}", id),
         autofix: None,
+        is_ast_rule: false,
         metadata: RuleMetadata {
             id: rule_id,
             name: name.to_string(),

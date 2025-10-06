@@ -10,7 +10,7 @@ pub enum FshLintError {
     #[error("Parse error: {message} at {location}")]
     ParseError {
         message: String,
-        location: crate::diagnostics::Location,
+        location: Box<crate::diagnostics::Location>,
     },
 
     /// Configuration loading or validation errors
@@ -120,7 +120,7 @@ impl FshLintError {
     pub fn parse_error(message: impl Into<String>, location: crate::diagnostics::Location) -> Self {
         Self::ParseError {
             message: message.into(),
-            location,
+            location: Box::new(location),
         }
     }
 
@@ -165,7 +165,14 @@ impl FshLintError {
     pub fn parser_error(message: impl Into<String>) -> Self {
         Self::ParseError {
             message: message.into(),
-            location: crate::diagnostics::Location::default(),
+            location: Box::new(crate::diagnostics::Location::default()),
+        }
+    }
+
+    /// Create an internal error
+    pub fn internal_error(message: impl Into<String>) -> Self {
+        Self::InternalError {
+            message: message.into(),
         }
     }
 }

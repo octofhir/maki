@@ -1,6 +1,6 @@
 //! Golden file regression tests for the FSH formatter
 
-use fsh_lint_core::{AstFormatter, CachedFshParser, Formatter, config::FormatterConfig};
+use fsh_lint_core::{AstFormatter, CachedFshParser, Formatter, config::FormatterConfiguration};
 use std::fs;
 use std::path::Path;
 
@@ -11,11 +11,12 @@ fn create_formatter() -> AstFormatter<CachedFshParser> {
 }
 
 /// Create test configuration
-fn create_config() -> FormatterConfig {
-    FormatterConfig {
-        indent_size: 2,
-        max_line_width: 100,
-        align_carets: true,
+fn create_config() -> FormatterConfiguration {
+    FormatterConfiguration {
+        enabled: Some(true),
+        indent_size: Some(2),
+        line_width: Some(100),
+        align_carets: Some(true),
     }
 }
 
@@ -25,9 +26,9 @@ fn run_golden_test(test_name: &str) {
     let config = create_config();
 
     // Read the golden file
-    let golden_path = format!("tests/golden_files/{}.fsh", test_name);
+    let golden_path = format!("tests/golden_files/{test_name}.fsh");
     let golden_content = fs::read_to_string(&golden_path)
-        .unwrap_or_else(|_| panic!("Failed to read golden file: {}", golden_path));
+        .unwrap_or_else(|_| panic!("Failed to read golden file: {golden_path}"));
 
     // Create a "messy" version by removing proper spacing
     let messy_content = create_messy_version(&golden_content);
@@ -40,9 +41,9 @@ fn run_golden_test(test_name: &str) {
     let actual = normalize_content(&result.content);
 
     if expected != actual {
-        println!("Golden file test failed for: {}", test_name);
-        println!("Expected:\n{}", expected);
-        println!("Actual:\n{}", actual);
+        println!("Golden file test failed for: {test_name}");
+        println!("Expected:\n{expected}");
+        println!("Actual:\n{actual}");
         panic!("Golden file test failed");
     }
 
@@ -50,8 +51,7 @@ fn run_golden_test(test_name: &str) {
     let second_result = formatter.format_string(&result.content, &config).unwrap();
     assert!(
         !second_result.changed,
-        "Formatting should be idempotent for {}",
-        test_name
+        "Formatting should be idempotent for {test_name}"
     );
 }
 
@@ -59,7 +59,7 @@ fn run_golden_test(test_name: &str) {
 fn create_messy_version(content: &str) -> String {
     content
         .lines()
-        .map(|line| format!("{}  ", line))
+        .map(|line| format!("{line}  "))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -124,13 +124,12 @@ fn test_all_golden_files_parse() {
             let content = fs::read_to_string(&path).unwrap();
             let result = formatter.format_string(&content, &config);
 
-            assert!(result.is_ok(), "Failed to format golden file: {:?}", path);
+            assert!(result.is_ok(), "Failed to format golden file: {path:?}");
 
             let formatted = result.unwrap();
             assert!(
                 !formatted.content.is_empty(),
-                "Formatted content is empty for: {:?}",
-                path
+                "Formatted content is empty for: {path:?}"
             );
         }
     }
@@ -147,10 +146,10 @@ fn test_formatter_performance() {
     for i in 0..100 {
         large_content.push_str(&format!(
             r#"
-Profile: TestProfile{}
+Profile: TestProfile{i}
 Parent: Patient
-Id: test-profile-{}
-Title: "Test Profile {}"
+Id: test-profile-{i}
+Title: "Test Profile {i}"
 Description: "A test profile for performance testing"
 * name 1..1 MS
 * name.family 1..1
@@ -164,8 +163,7 @@ Description: "A test profile for performance testing"
 * ^date = "2024-01-01"
 * ^publisher = "Test Organization"
 
-"#,
-            i, i, i
+"#
         ));
     }
 
@@ -182,8 +180,7 @@ Description: "A test profile for performance testing"
     // Should complete within reasonable time (adjust threshold as needed)
     assert!(
         duration.as_secs() < 5,
-        "Formatting took too long: {:?}",
-        duration
+        "Formatting took too long: {duration:?}"
     );
     assert!(!result.content.is_empty());
 }
@@ -201,10 +198,11 @@ Parent: Patient
 
     // Test different indent sizes
     for indent_size in [2, 4, 8] {
-        let config = FormatterConfig {
-            indent_size,
-            max_line_width: 100,
-            align_carets: true,
+        let config = FormatterConfiguration {
+            enabled: Some(true),
+            indent_size: Some(indent_size),
+            line_width: Some(100),
+            align_carets: Some(true),
         };
 
         let result = formatter.format_string(content, &config).unwrap();
@@ -215,10 +213,11 @@ Parent: Patient
 
     // Test different line widths
     for max_line_width in [40, 80, 120] {
-        let config = FormatterConfig {
-            indent_size: 2,
-            max_line_width,
-            align_carets: true,
+        let config = FormatterConfiguration {
+            enabled: Some(true),
+            indent_size: Some(2),
+            line_width: Some(max_line_width),
+            align_carets: Some(true),
         };
 
         let result = formatter.format_string(content, &config).unwrap();
@@ -227,10 +226,11 @@ Parent: Patient
 
     // Test caret alignment on/off
     for align_carets in [true, false] {
-        let config = FormatterConfig {
-            indent_size: 2,
-            max_line_width: 100,
-            align_carets,
+        let config = FormatterConfiguration {
+            enabled: Some(true),
+            indent_size: Some(2),
+            line_width: Some(100),
+            align_carets: Some(align_carets),
         };
 
         let result = formatter.format_string(content, &config).unwrap();

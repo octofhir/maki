@@ -12,7 +12,8 @@ use rayon::prelude::*;
 use tracing::{Level, debug, error, info, span, warn};
 
 use crate::{
-    CompiledRule, Config, Diagnostic, FshLintError, Parser, Result, RuleEngine, SemanticAnalyzer,
+    CompiledRule, Diagnostic, FshLintConfiguration, FshLintError, Parser, Result, RuleEngine,
+    SemanticAnalyzer,
 };
 
 /// Progress reporting callback type
@@ -66,8 +67,6 @@ pub struct ResourceStats {
 pub struct ResourceMonitor {
     /// Memory usage samples
     memory_samples: Arc<Mutex<Vec<u64>>>,
-    /// Start time for monitoring
-    start_time: Instant,
     /// Monitoring interval
     interval: Duration,
 }
@@ -77,7 +76,6 @@ impl ResourceMonitor {
     pub fn new(interval: Duration) -> Self {
         Self {
             memory_samples: Arc::new(Mutex::new(Vec::new())),
-            start_time: Instant::now(),
             interval,
         }
     }
@@ -215,7 +213,7 @@ impl BackpressureController {
 /// Execution context containing configuration and shared resources
 pub struct ExecutionContext {
     /// Linting configuration
-    pub config: Config,
+    pub config: FshLintConfiguration,
     /// Compiled rules for execution
     pub rules: Vec<CompiledRule>,
     /// Thread pool configuration
@@ -234,7 +232,7 @@ pub struct ExecutionContext {
 
 impl ExecutionContext {
     /// Create a new execution context
-    pub fn new(config: Config, rules: Vec<CompiledRule>) -> Self {
+    pub fn new(config: FshLintConfiguration, rules: Vec<CompiledRule>) -> Self {
         Self {
             config,
             rules,
@@ -385,46 +383,35 @@ impl DefaultExecutor {
         let parse_result = parse_result;
         let parse_source = parse_result.source;
         let parse_errors = parse_result.errors;
-        let document = parse_result.document;
+        let cst = parse_result.cst;
 
         let mut parse_diagnostics = Vec::new();
         for parse_error in parse_errors {
             parse_diagnostics.push(Diagnostic::from_parse_error(parse_error, file_path));
         }
 
-        let document = match document {
-            Some(doc) => doc,
-            None => {
-                return FileExecutionResult {
-                    file_path: file_path.to_path_buf(),
-                    diagnostics: parse_diagnostics,
-                    execution_time: start_time.elapsed(),
-                    error: None,
-                };
-            }
-        };
+        // Perform semantic analysis using CST
+        let mut diagnostics = parse_diagnostics;
 
-        // Perform semantic analysis
-        let semantic_model = match self.semantic_analyzer.analyze(
-            &document,
-            parse_source.as_ref(),
-            file_path.to_path_buf(),
-        ) {
-            Ok(model) => model,
-            Err(error) => {
-                error!("Failed to analyze file {}: {}", file_path.display(), error);
-                return FileExecutionResult {
-                    file_path: file_path.to_path_buf(),
-                    diagnostics: vec![],
-                    execution_time: start_time.elapsed(),
-                    error: Some(error),
-                };
-            }
-        };
+        let semantic_result =
+            self.semantic_analyzer
+                .analyze(&cst, &parse_source, file_path.to_path_buf());
 
-        // Execute rules
-        let mut diagnostics = self.rule_engine.execute_rules(&semantic_model);
-        diagnostics.extend(parse_diagnostics.into_iter());
+        match semantic_result {
+            Ok(semantic_model) => {
+                // Execute rules against the semantic model
+                let rule_diagnostics = self.rule_engine.execute_rules(&semantic_model);
+                diagnostics.extend(rule_diagnostics);
+            }
+            Err(e) => {
+                error!(
+                    "Semantic analysis failed for {}: {}",
+                    file_path.display(),
+                    e
+                );
+                // Continue with parse diagnostics only
+            }
+        }
 
         // Sort diagnostics for deterministic output
         diagnostics.sort_by(|a, b| {
@@ -495,11 +482,11 @@ impl Executor for DefaultExecutor {
         info!("Starting parallel execution of {} files", total_files);
 
         // Start resource monitoring if enabled
-        let _monitoring_stats = if let Some(ref monitor) = self.context.resource_monitor {
-            Some(monitor.start_monitoring())
-        } else {
-            None
-        };
+        let _monitoring_stats = self
+            .context
+            .resource_monitor
+            .as_ref()
+            .map(|monitor| monitor.start_monitoring());
 
         // Configure initial thread pool (only if not already initialized)
         if let Some(threads) = self.context.thread_pool_size {
@@ -527,9 +514,7 @@ impl Executor for DefaultExecutor {
             .map(|(index, file_path)| {
                 // Check memory usage and adjust parallelism periodically
                 if index % 10 == 0 {
-                    if let Err(e) = self.check_memory_usage() {
-                        return Err(e);
-                    }
+                    self.check_memory_usage()?;
 
                     // Adjust parallelism based on resource usage
                     if let (Some(monitor), Some(controller)) = (
@@ -701,7 +686,6 @@ impl ParseErrorExt for Diagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn test_progress_info_completion_percentage() {
@@ -731,7 +715,7 @@ mod tests {
 
     #[test]
     fn test_execution_context_builder() {
-        let config = Config::default();
+        let config = FshLintConfiguration::default();
         let rules = vec![];
 
         let context = ExecutionContext::new(config, rules)

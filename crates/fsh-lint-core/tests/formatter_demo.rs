@@ -2,7 +2,9 @@
 //! Run with: cargo test --test formatter_demo -- --nocapture
 
 use fsh_lint_core::formatter::RichDiagnosticFormatter;
-use fsh_lint_core::{Diagnostic, DiagnosticCategory, Location, Severity, Suggestion};
+use fsh_lint_core::{
+    Applicability, CodeSuggestion, Diagnostic, DiagnosticCategory, Location, Severity,
+};
 use std::path::PathBuf;
 
 #[test]
@@ -35,7 +37,7 @@ Title: "Problematic Patient Profile"
             length: 4,
             span: Some((150, 154)),
         },
-        suggestions: vec![Suggestion {
+        suggestions: vec![CodeSuggestion {
             message: "swap to 0..1".to_string(),
             replacement: "0..1".to_string(),
             location: Location {
@@ -48,7 +50,8 @@ Title: "Problematic Patient Profile"
                 length: 4,
                 span: Some((150, 154)),
             },
-            is_safe: false, // Unsafe - semantic change
+            applicability: Applicability::MaybeIncorrect, // Unsafe - semantic change
+            labels: vec![],
         }],
         code_snippet: Some("* identifier 1..0".to_string()),
         code: Some("FSH001".to_string()),
@@ -61,9 +64,9 @@ Title: "Problematic Patient Profile"
     let output = formatter.format_diagnostic(&diagnostic, source);
 
     println!("\n{}", "=".repeat(80));
-    println!("Rich Diagnostic Output Demo (Biome/Rust compiler style)");
+    println!("Rich Diagnostic Output Demo");
     println!("{}", "=".repeat(80));
-    println!("{}", output);
+    println!("{output}");
     println!("{}", "=".repeat(80));
 
     // Verify output contains expected elements
@@ -99,7 +102,7 @@ Parent: Patient
             span: Some((50, 75)),
         },
         suggestions: vec![
-            Suggestion {
+            CodeSuggestion {
                 message: "add Id field".to_string(),
                 replacement: "Id: incomplete-patient".to_string(),
                 location: Location {
@@ -112,9 +115,10 @@ Parent: Patient
                     length: 0,
                     span: Some((75, 75)),
                 },
-                is_safe: true, // Safe to add
+                applicability: Applicability::Always, // Safe to add
+                labels: vec![],
             },
-            Suggestion {
+            CodeSuggestion {
                 message: "add Title field".to_string(),
                 replacement: "Title: \"Incomplete Patient Profile\"".to_string(),
                 location: Location {
@@ -127,7 +131,8 @@ Parent: Patient
                     length: 0,
                     span: Some((75, 75)),
                 },
-                is_safe: true,
+                applicability: Applicability::Always,
+                labels: vec![],
             },
         ],
         code_snippet: Some("Profile: IncompletePatient".to_string()),
@@ -142,7 +147,7 @@ Parent: Patient
     println!("\n{}", "=".repeat(80));
     println!("Warning Diagnostic Demo");
     println!("{}", "=".repeat(80));
-    println!("{}", output);
+    println!("{output}");
     println!("{}", "=".repeat(80));
 
     assert!(output.contains("warning[FSH023]"));
@@ -209,7 +214,7 @@ Parent: Patient
     println!("\n{}", "=".repeat(80));
     println!("Multiple Diagnostics Demo");
     println!("{}", "=".repeat(80));
-    println!("{}", output);
+    println!("{output}");
     println!("{}", "=".repeat(80));
 
     assert!(output.contains("error[FSH001]"));

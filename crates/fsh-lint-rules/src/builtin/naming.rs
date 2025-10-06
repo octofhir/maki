@@ -2,6 +2,7 @@
 //!
 //! Enforces FSH naming conventions for better code consistency and readability.
 
+use fsh_lint_core::cst::ast::{AstNode, Document};
 use fsh_lint_core::{Diagnostic, SemanticModel, Severity};
 
 /// Rule ID for naming convention violations
@@ -11,39 +12,16 @@ pub const NAMING_CONVENTION: &str = "style/naming-convention";
 pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
+    let Some(document) = Document::cast(model.cst.clone()) else {
+        return diagnostics;
+    };
+
     // Check Profile names (should be PascalCase)
-    for profile in &model.document.profiles {
-        if !is_pascal_case(&profile.name.value) {
-            let location = model.source_map.span_to_diagnostic_location(
-                &profile.name.span,
-                &model.source,
-                &model.source_file,
-            );
-
-            diagnostics.push(
-                Diagnostic::new(
-                    NAMING_CONVENTION,
-                    Severity::Warning,
-                    &format!(
-                        "Profile name '{}' should use PascalCase (e.g., 'MyProfile' or 'MySpecialProfile')",
-                        profile.name.value
-                    ),
-                    location.clone(),
-                )
-                .with_suggestion(fsh_lint_core::Suggestion {
-                    message: "Convert to PascalCase".to_string(),
-                    replacement: to_pascal_case(&profile.name.value),
-                    location,
-                    is_safe: false, // Name changes affect references
-                }),
-            );
-        }
-
-        // Check ID naming (should be kebab-case)
-        if let Some(id) = &profile.id {
-            if !is_kebab_case(&id.value) {
-                let location = model.source_map.span_to_diagnostic_location(
-                    &id.span,
+    for profile in document.profiles() {
+        if let Some(name) = profile.name() {
+            if !is_pascal_case(&name) {
+                let location = model.source_map.node_to_diagnostic_location(
+                    profile.syntax(),
                     &model.source,
                     &model.source_file,
                 );
@@ -52,55 +30,58 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
                     Diagnostic::new(
                         NAMING_CONVENTION,
                         Severity::Warning,
-                        &format!(
-                            "Profile ID '{}' should use kebab-case (e.g., 'my-profile-id')",
-                            id.value
+                        format!(
+                            "Profile name '{name}' should use PascalCase (e.g., 'MyProfile' or 'MySpecialProfile')"
                         ),
                         location.clone(),
                     )
-                    .with_suggestion(fsh_lint_core::Suggestion {
-                        message: "Convert to kebab-case".to_string(),
-                        replacement: to_kebab_case(&id.value),
+                    .with_suggestion(fsh_lint_core::CodeSuggestion::unsafe_fix(
+                        "Convert to PascalCase",
+                        to_pascal_case(&name),
                         location,
-                        is_safe: false,
-                    }),
+                    )),
                 );
+            }
+        }
+
+        // Check ID naming (should be kebab-case)
+        if let Some(id_clause) = profile.id() {
+            if let Some(id) = id_clause.value() {
+                if !is_kebab_case(&id) {
+                    let location = model.source_map.node_to_diagnostic_location(
+                        profile.syntax(),
+                        &model.source,
+                        &model.source_file,
+                    );
+
+                    diagnostics.push(
+                        Diagnostic::new(
+                            NAMING_CONVENTION,
+                            Severity::Warning,
+                            format!(
+                                "Profile ID '{id}' should use kebab-case (e.g., 'my-profile-id')"
+                            ),
+                            location.clone(),
+                        )
+                        .with_suggestion(
+                            fsh_lint_core::CodeSuggestion::unsafe_fix(
+                                "Convert to kebab-case",
+                                to_kebab_case(&id),
+                                location,
+                            ),
+                        ),
+                    );
+                }
             }
         }
     }
 
     // Check Extension names (should be PascalCase)
-    for extension in &model.document.extensions {
-        if !is_pascal_case(&extension.name.value) {
-            let location = model.source_map.span_to_diagnostic_location(
-                &extension.name.span,
-                &model.source,
-                &model.source_file,
-            );
-
-            diagnostics.push(
-                Diagnostic::new(
-                    NAMING_CONVENTION,
-                    Severity::Warning,
-                    &format!(
-                        "Extension name '{}' should use PascalCase (e.g., 'MyExtension')",
-                        extension.name.value
-                    ),
-                    location.clone(),
-                )
-                .with_suggestion(fsh_lint_core::Suggestion {
-                    message: "Convert to PascalCase".to_string(),
-                    replacement: to_pascal_case(&extension.name.value),
-                    location,
-                    is_safe: false,
-                }),
-            );
-        }
-
-        if let Some(id) = &extension.id {
-            if !is_kebab_case(&id.value) {
-                let location = model.source_map.span_to_diagnostic_location(
-                    &id.span,
+    for extension in document.extensions() {
+        if let Some(name) = extension.name() {
+            if !is_pascal_case(&name) {
+                let location = model.source_map.node_to_diagnostic_location(
+                    extension.syntax(),
                     &model.source,
                     &model.source_file,
                 );
@@ -109,55 +90,59 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
                     Diagnostic::new(
                         NAMING_CONVENTION,
                         Severity::Warning,
-                        &format!(
-                            "Extension ID '{}' should use kebab-case (e.g., 'my-extension-id')",
-                            id.value
+                        format!(
+                            "Extension name '{name}' should use PascalCase (e.g., 'MyExtension')"
                         ),
                         location.clone(),
                     )
-                    .with_suggestion(fsh_lint_core::Suggestion {
-                        message: "Convert to kebab-case".to_string(),
-                        replacement: to_kebab_case(&id.value),
-                        location,
-                        is_safe: false,
-                    }),
+                    .with_suggestion(
+                        fsh_lint_core::CodeSuggestion::unsafe_fix(
+                            "Convert to PascalCase",
+                            to_pascal_case(&name),
+                            location,
+                        ),
+                    ),
                 );
+            }
+        }
+
+        if let Some(id_clause) = extension.id() {
+            if let Some(id) = id_clause.value() {
+                if !is_kebab_case(&id) {
+                    let location = model.source_map.node_to_diagnostic_location(
+                        extension.syntax(),
+                        &model.source,
+                        &model.source_file,
+                    );
+
+                    diagnostics.push(
+                        Diagnostic::new(
+                            NAMING_CONVENTION,
+                            Severity::Warning,
+                            format!(
+                                "Extension ID '{id}' should use kebab-case (e.g., 'my-extension-id')"
+                            ),
+                            location.clone(),
+                        )
+                        .with_suggestion(
+                            fsh_lint_core::CodeSuggestion::unsafe_fix(
+                                "Convert to kebab-case",
+                                to_kebab_case(&id),
+                                location,
+                            ),
+                        ),
+                    );
+                }
             }
         }
     }
 
     // Check ValueSet names (should be PascalCase)
-    for value_set in &model.document.value_sets {
-        if !is_pascal_case(&value_set.name.value) {
-            let location = model.source_map.span_to_diagnostic_location(
-                &value_set.name.span,
-                &model.source,
-                &model.source_file,
-            );
-
-            diagnostics.push(
-                Diagnostic::new(
-                    NAMING_CONVENTION,
-                    Severity::Warning,
-                    &format!(
-                        "ValueSet name '{}' should use PascalCase (e.g., 'MyValueSet')",
-                        value_set.name.value
-                    ),
-                    location.clone(),
-                )
-                .with_suggestion(fsh_lint_core::Suggestion {
-                    message: "Convert to PascalCase".to_string(),
-                    replacement: to_pascal_case(&value_set.name.value),
-                    location,
-                    is_safe: false,
-                }),
-            );
-        }
-
-        if let Some(id) = &value_set.id {
-            if !is_kebab_case(&id.value) {
-                let location = model.source_map.span_to_diagnostic_location(
-                    &id.span,
+    for value_set in document.value_sets() {
+        if let Some(name) = value_set.name() {
+            if !is_pascal_case(&name) {
+                let location = model.source_map.node_to_diagnostic_location(
+                    value_set.syntax(),
                     &model.source,
                     &model.source_file,
                 );
@@ -166,55 +151,59 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
                     Diagnostic::new(
                         NAMING_CONVENTION,
                         Severity::Warning,
-                        &format!(
-                            "ValueSet ID '{}' should use kebab-case (e.g., 'my-value-set-id')",
-                            id.value
+                        format!(
+                            "ValueSet name '{name}' should use PascalCase (e.g., 'MyValueSet')"
                         ),
                         location.clone(),
                     )
-                    .with_suggestion(fsh_lint_core::Suggestion {
-                        message: "Convert to kebab-case".to_string(),
-                        replacement: to_kebab_case(&id.value),
-                        location,
-                        is_safe: false,
-                    }),
+                    .with_suggestion(
+                        fsh_lint_core::CodeSuggestion::unsafe_fix(
+                            "Convert to PascalCase",
+                            to_pascal_case(&name),
+                            location,
+                        ),
+                    ),
                 );
+            }
+        }
+
+        if let Some(id_clause) = value_set.id() {
+            if let Some(id) = id_clause.value() {
+                if !is_kebab_case(&id) {
+                    let location = model.source_map.node_to_diagnostic_location(
+                        value_set.syntax(),
+                        &model.source,
+                        &model.source_file,
+                    );
+
+                    diagnostics.push(
+                        Diagnostic::new(
+                            NAMING_CONVENTION,
+                            Severity::Warning,
+                            format!(
+                                "ValueSet ID '{id}' should use kebab-case (e.g., 'my-value-set-id')"
+                            ),
+                            location.clone(),
+                        )
+                        .with_suggestion(
+                            fsh_lint_core::CodeSuggestion::unsafe_fix(
+                                "Convert to kebab-case",
+                                to_kebab_case(&id),
+                                location,
+                            ),
+                        ),
+                    );
+                }
             }
         }
     }
 
     // Check CodeSystem names (should be PascalCase)
-    for code_system in &model.document.code_systems {
-        if !is_pascal_case(&code_system.name.value) {
-            let location = model.source_map.span_to_diagnostic_location(
-                &code_system.name.span,
-                &model.source,
-                &model.source_file,
-            );
-
-            diagnostics.push(
-                Diagnostic::new(
-                    NAMING_CONVENTION,
-                    Severity::Warning,
-                    &format!(
-                        "CodeSystem name '{}' should use PascalCase (e.g., 'MyCodeSystem')",
-                        code_system.name.value
-                    ),
-                    location.clone(),
-                )
-                .with_suggestion(fsh_lint_core::Suggestion {
-                    message: "Convert to PascalCase".to_string(),
-                    replacement: to_pascal_case(&code_system.name.value),
-                    location,
-                    is_safe: false,
-                }),
-            );
-        }
-
-        if let Some(id) = &code_system.id {
-            if !is_kebab_case(&id.value) {
-                let location = model.source_map.span_to_diagnostic_location(
-                    &id.span,
+    for code_system in document.code_systems() {
+        if let Some(name) = code_system.name() {
+            if !is_pascal_case(&name) {
+                let location = model.source_map.node_to_diagnostic_location(
+                    code_system.syntax(),
                     &model.source,
                     &model.source_file,
                 );
@@ -223,19 +212,47 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
                     Diagnostic::new(
                         NAMING_CONVENTION,
                         Severity::Warning,
-                        &format!(
-                            "CodeSystem ID '{}' should use kebab-case (e.g., 'my-code-system-id')",
-                            id.value
+                        format!(
+                            "CodeSystem name '{name}' should use PascalCase (e.g., 'MyCodeSystem')"
                         ),
                         location.clone(),
                     )
-                    .with_suggestion(fsh_lint_core::Suggestion {
-                        message: "Convert to kebab-case".to_string(),
-                        replacement: to_kebab_case(&id.value),
-                        location,
-                        is_safe: false,
-                    }),
+                    .with_suggestion(
+                        fsh_lint_core::CodeSuggestion::unsafe_fix(
+                            "Convert to PascalCase",
+                            to_pascal_case(&name),
+                            location,
+                        ),
+                    ),
                 );
+            }
+        }
+
+        if let Some(id_clause) = code_system.id() {
+            if let Some(id) = id_clause.value() {
+                if !is_kebab_case(&id) {
+                    let location = model.source_map.node_to_diagnostic_location(
+                        code_system.syntax(),
+                        &model.source,
+                        &model.source_file,
+                    );
+
+                    diagnostics.push(
+                        Diagnostic::new(
+                            NAMING_CONVENTION,
+                            Severity::Warning,
+                            format!(
+                                "CodeSystem ID '{id}' should use kebab-case (e.g., 'my-code-system-id')"
+                            ),
+                            location.clone(),
+                        )
+                        .with_suggestion(fsh_lint_core::CodeSuggestion::unsafe_fix(
+                            "Convert to kebab-case",
+                            to_kebab_case(&id),
+                            location,
+                        )),
+                    );
+                }
             }
         }
     }
@@ -275,7 +292,8 @@ fn is_kebab_case(s: &str) -> bool {
     }
 
     // Should only contain lowercase letters, numbers, and hyphens
-    s.chars().all(|c| c.is_lowercase() || c.is_numeric() || c == '-')
+    s.chars()
+        .all(|c| c.is_lowercase() || c.is_numeric() || c == '-')
 }
 
 /// Convert a string to PascalCase
@@ -322,8 +340,8 @@ fn to_kebab_case(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsh_lint_core::ast::{CodeSystem, Extension, FSHDocument, Profile, Spanned, ValueSet};
     use fsh_lint_core::SemanticModel;
+    use fsh_lint_core::ast::{CodeSystem, Extension, FSHDocument, Profile, Spanned, ValueSet};
     use std::path::PathBuf;
 
     fn create_test_model(source: &str) -> SemanticModel {
@@ -400,7 +418,11 @@ mod tests {
         });
 
         let diagnostics = check_naming_conventions(&model);
-        assert_eq!(diagnostics.len(), 0, "Good naming should produce no diagnostics");
+        assert_eq!(
+            diagnostics.len(),
+            0,
+            "Good naming should produce no diagnostics"
+        );
     }
 
     #[test]
@@ -468,8 +490,16 @@ mod tests {
         assert_eq!(diagnostics.len(), 2, "Should flag both bad name and bad ID");
 
         // Check that both violations are reported
-        assert!(diagnostics.iter().any(|d| d.message.contains("Extension name")));
-        assert!(diagnostics.iter().any(|d| d.message.contains("Extension ID")));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.message.contains("Extension name"))
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.message.contains("Extension ID"))
+        );
     }
 
     #[test]
@@ -499,6 +529,10 @@ mod tests {
         });
 
         let diagnostics = check_naming_conventions(&model);
-        assert_eq!(diagnostics.len(), 2, "Should flag both bad ValueSet and CodeSystem names");
+        assert_eq!(
+            diagnostics.len(),
+            2,
+            "Should flag both bad ValueSet and CodeSystem names"
+        );
     }
 }

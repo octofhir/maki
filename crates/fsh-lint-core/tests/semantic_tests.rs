@@ -3,8 +3,7 @@
 use fsh_lint_core::{
     Cardinality, Constraint, ConstraintType, DefaultSemanticAnalyzer, Element, ElementFlag,
     FhirResource, Location, Reference, ReferenceType, ResourceMetadata, ResourceType,
-    SemanticAnalyzer, SemanticAnalyzerConfig, SemanticModel, Severity, Symbol, SymbolType,
-    TypeInfo,
+    SemanticAnalyzer, SemanticAnalyzerConfig, SemanticModel, Severity, SymbolType, TypeInfo,
 };
 use std::path::PathBuf;
 
@@ -262,8 +261,7 @@ fn test_cardinality_parsing() {
             .expect("Failed to parse cardinality");
         assert_eq!(
             result, expected,
-            "Failed for cardinality: {}",
-            cardinality_str
+            "Failed for cardinality: {cardinality_str}"
         );
     }
 }
@@ -293,7 +291,7 @@ fn test_reference_target_extraction() {
         let result = analyzer
             .extract_reference_targets(type_name)
             .expect("Failed to extract reference targets");
-        assert_eq!(result, expected, "Failed for type: {}", type_name);
+        assert_eq!(result, expected, "Failed for type: {type_name}");
     }
 }
 
@@ -485,14 +483,13 @@ fn test_resource_id_validation() {
     ];
 
     for id in valid_ids {
-        assert!(analyzer.is_valid_resource_id(id), "Should be valid: {}", id);
+        assert!(analyzer.is_valid_resource_id(id), "Should be valid: {id}");
     }
 
     for id in invalid_ids {
         assert!(
             !analyzer.is_valid_resource_id(id),
-            "Should be invalid: {}",
-            id
+            "Should be invalid: {id}"
         );
     }
 }
@@ -512,16 +509,14 @@ fn test_element_path_validation() {
     for path in valid_paths {
         assert!(
             analyzer.is_valid_element_path(path),
-            "Should be valid: {}",
-            path
+            "Should be valid: {path}"
         );
     }
 
     for path in invalid_paths {
         assert!(
             !analyzer.is_valid_element_path(path),
-            "Should be invalid: {}",
-            path
+            "Should be invalid: {path}"
         );
     }
 }
@@ -543,8 +538,7 @@ fn test_fhir_type_validation() {
     for type_name in valid_types {
         assert!(
             analyzer.is_valid_fhir_type(type_name),
-            "Should be valid: {}",
-            type_name
+            "Should be valid: {type_name}"
         );
     }
 }

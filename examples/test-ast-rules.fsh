@@ -20,7 +20,7 @@ Title: "Test Profile Missing Binding Strength"
 * gender from GenderValueSet  // Should trigger binding-strength-present rule
 
 // Test 4: Missing metadata (description)
-Profile: TestProfileMissingDescription
+Profile:       TestProfileMissingDescription
 Parent: Patient
 Id: "test-profile-desc"
 Title: "Test Profile Missing Description"

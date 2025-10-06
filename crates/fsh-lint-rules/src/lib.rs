@@ -13,10 +13,13 @@ pub mod pattern_parser;
 pub use builtin::BuiltinRules;
 pub use engine::{
     DefaultRuleEngine, RuleDiscoveryConfig, RuleEngineStatistics, RulePack, RulePackDependency,
-    RulePackMetadata, RulePrecedence, RuleRegistry,
+    RulePackMetadata, RulePrecedence, RuleRegistry, ThreadSafeRuleRegistry,
 };
-pub use gritql::{CompiledGritQLPattern, GritQLCompiler, GritQLMatch, matches_to_diagnostics};
-pub use gritql_ast::{AstPattern, AstMatch, NodeType, Predicate, execute_pattern, matches_to_diagnostics as ast_matches_to_diagnostics};
+pub use gritql::{CompiledGritQLPattern, GritQLCompiler, GritQLMatch};
+pub use gritql_ast::{
+    AstMatch, AstPattern, NodeType, Predicate, execute_pattern,
+    matches_to_diagnostics as ast_matches_to_diagnostics,
+};
 pub use pattern_parser::parse_pattern;
 
 /// Initialize the built-in rules registry

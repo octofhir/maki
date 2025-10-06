@@ -1,0 +1,27 @@
+{
+  "$schema": "https://octofhir.github.io/fsh-lint-rs/schema/v1.json",
+  "root": true,
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  },
+  "formatter": {
+    "enabled": true,
+    "indentSize": 2,
+    "lineWidth": 100,
+    "alignCarets": true
+  },
+  "files": {
+    "include": ["**/*.fsh"],
+    "exclude": [
+      "**/node_modules/**",
+      "**/temp/**",
+      "**/*.generated.fsh",
+      "**/target/**",
+      "**/build/**"
+    ],
+    "ignoreFiles": [".fshlintignore"]
+  }
+}

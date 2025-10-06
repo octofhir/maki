@@ -1,0 +1,86 @@
+{
+  "name": "GritQL",
+  "scopeName": "source.gritql",
+  "id": "gritql",
+  "fileTypes": ["grit", "gritql"],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#variables"
+    },
+    {
+      "include": "#patterns"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.gritql",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.gritql",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.gritql",
+          "match": "\\b(where|or|and|not|contains|matches|maybe|some|every|bubble)\\b"
+        },
+        {
+          "name": "keyword.other.gritql",
+          "match": "\\b(language|pattern|predicate|function|file)\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.gritql",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.gritql",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.backtick.gritql",
+          "begin": "`",
+          "end": "`"
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.other.gritql",
+          "match": "\\$[a-zA-Z_][a-zA-Z0-9_]*"
+        }
+      ]
+    },
+    "patterns": {
+      "patterns": [
+        {
+          "name": "entity.name.function.gritql",
+          "match": "[a-zA-Z_][a-zA-Z0-9_]*(?=\\()"
+        }
+      ]
+    }
+  }
+}

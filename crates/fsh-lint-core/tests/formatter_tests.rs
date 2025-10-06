@@ -1,11 +1,10 @@
 //! Comprehensive tests for the FSH formatter
 
 use fsh_lint_core::{
-    AstFormatter, CachedFshParser, CaretAlignment, FormatMode, Formatter, FormatterManager, Range,
-    config::FormatterConfig,
+    AstFormatter, CachedFshParser, FormatMode, Formatter, FormatterConfiguration, FormatterManager,
+    Range,
 };
 use std::fs;
-use std::path::Path;
 use tempfile::TempDir;
 
 /// Create a test formatter with cached parser
@@ -21,11 +20,12 @@ fn create_test_manager() -> FormatterManager<CachedFshParser> {
 }
 
 /// Create test formatter configuration
-fn create_test_config() -> FormatterConfig {
-    FormatterConfig {
-        indent_size: 2,
-        max_line_width: 100,
-        align_carets: true,
+fn create_test_config() -> FormatterConfiguration {
+    FormatterConfiguration {
+        indent_size: Some(2),
+        line_width: Some(100),
+        align_carets: Some(true),
+        enabled: Some(true),
     }
 }
 
@@ -88,7 +88,7 @@ Parent: Patient
 fn test_format_without_caret_alignment() {
     let mut formatter = create_test_formatter();
     let mut config = create_test_config();
-    config.align_carets = false;
+    config.align_carets = Some(false);
 
     let input = r#"Profile: MyPatient
 Parent: Patient
@@ -257,7 +257,7 @@ Parent: Patient
 fn test_format_line_width_handling() {
     let mut formatter = create_test_formatter();
     let mut config = create_test_config();
-    config.max_line_width = 40; // Short line width
+    config.line_width = Some(40); // Short line width
 
     let input = r#"Profile: MyVeryLongPatientProfileNameThatExceedsLineWidth
 Parent: Patient
@@ -272,7 +272,7 @@ Parent: Patient
     let lines: Vec<&str> = result.content.lines().collect();
     let long_lines: Vec<&str> = lines
         .iter()
-        .filter(|line| line.len() > config.max_line_width + 10)
+        .filter(|line| line.len() > config.line_width.unwrap_or(100) + 10)
         .cloned()
         .collect();
 
@@ -291,11 +291,11 @@ Parent: Patient
 * name.family 1..1"#;
 
     // Test with 2-space indentation
-    config.indent_size = 2;
+    config.indent_size = Some(2);
     let result2 = formatter.format_string(input, &config).unwrap();
 
     // Test with 4-space indentation
-    config.indent_size = 4;
+    config.indent_size = Some(4);
     let result4 = formatter.format_string(input, &config).unwrap();
 
     // Results may be the same if formatter doesn't actually format (no real parser)
@@ -421,16 +421,15 @@ Parent:Patient
     let diff = formatter.format_diff(input, &config).unwrap();
 
     // Should not crash - may not have changes without real parser
-    assert!(diff.change_count() >= 0);
+    // Just verify diff was created successfully
 
     // Check that we have different types of changes
-    let added = diff.changes_of_type(fsh_lint_core::DiffChangeType::Added);
-    let removed = diff.changes_of_type(fsh_lint_core::DiffChangeType::Removed);
-    let modified = diff.changes_of_type(fsh_lint_core::DiffChangeType::Modified);
-    let unchanged = diff.changes_of_type(fsh_lint_core::DiffChangeType::Unchanged);
+    let _added = diff.changes_of_type(fsh_lint_core::DiffChangeType::Added);
+    let _removed = diff.changes_of_type(fsh_lint_core::DiffChangeType::Removed);
+    let _modified = diff.changes_of_type(fsh_lint_core::DiffChangeType::Modified);
+    let _unchanged = diff.changes_of_type(fsh_lint_core::DiffChangeType::Unchanged);
 
-    // Should not crash - changes may be zero if no real parser
-    assert!(added.len() + removed.len() + modified.len() >= 0);
+    // Test passes if we get here without crashing
 }
 
 #[test]
@@ -508,7 +507,7 @@ fn test_range_operations() {
 }
 
 /// Golden file test helper
-fn run_golden_file_test(test_name: &str, input: &str, config: &FormatterConfig) {
+fn run_golden_file_test(test_name: &str, input: &str, config: &FormatterConfiguration) {
     let mut formatter = create_test_formatter();
     let result = formatter.format_string(input, config).unwrap();
 
@@ -520,8 +519,7 @@ fn run_golden_file_test(test_name: &str, input: &str, config: &FormatterConfig) 
     let second_result = formatter.format_string(&result.content, config).unwrap();
     assert_eq!(
         result.content, second_result.content,
-        "Formatting should be idempotent for test: {}",
-        test_name
+        "Formatting should be idempotent for test: {test_name}"
     );
 }
 

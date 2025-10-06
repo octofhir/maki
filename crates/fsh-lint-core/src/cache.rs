@@ -535,11 +535,11 @@ mod tests {
         use std::time::Instant;
 
         let manager = CacheManager::new();
-        let mut parser = FshParser::new().unwrap();
+        let mut parser = FshParser::new();
 
         // Add entry to cache
         let hash = ContentHash::from_content("test content");
-        let result = parser.parse("test content", None).unwrap();
+        let result = parser.parse("test content").unwrap();
         manager.parse_cache().insert(hash, result);
         assert_eq!(manager.stats().parse_cache.size, 1);
 

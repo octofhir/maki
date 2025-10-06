@@ -1,0 +1,18 @@
+---
+source: crates/fsh-lint-core/src/cst/formatter_insta_tests.rs
+assertion_line: 13
+expression: formatted
+---
+Profile: USCorePatientProfile
+Parent: Patient
+Id: us-core-patient
+Title: "US Core Patient Profile"
+Description: "Defines constraints and extensions on the Patient resource for the minimal set of data to query and retrieve patient demographic information."
+
+*  = "5.0.0"
+*  = "active"
+*  = ""
+*  = "2022-04-20"
+*  = "HL7 International - Cross-Group Projects"
+*  = "url"
+*  = "http://www.hl7.org/Special/committees/cgp"

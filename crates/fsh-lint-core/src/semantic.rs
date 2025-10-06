@@ -1,15 +1,21 @@
-//! Semantic analysis layer operating on the Chumsky-based AST.
+//! Semantic analysis layer for FSH CST
+//!
+//! This module provides semantic analysis over the CST using the typed AST layer.
+//! It extracts FHIR resources, builds symbol tables, and tracks references.
 
-use crate::ast::{FSHDocument, Span, ValueSet};
+use crate::cst::{FshSyntaxNode, ast::*};
 use crate::{Diagnostic, FshLintError, Location, Result};
 use std::collections::HashMap;
+use std::ops::Range;
 use std::path::PathBuf;
+
+pub type Span = Range<usize>;
 
 /// Semantic model representing the FHIR-aware structure of FSH content
 #[derive(Debug, Clone)]
 pub struct SemanticModel {
-    /// Original FSH document AST (for AST-based rules)
-    pub document: FSHDocument,
+    /// CST root node
+    pub cst: FshSyntaxNode,
     /// FHIR resources defined in the FSH content
     pub resources: Vec<FhirResource>,
     /// Symbol table for cross-reference tracking
@@ -25,12 +31,14 @@ pub struct SemanticModel {
 }
 
 impl SemanticModel {
-    /// Create a new empty semantic model
+    /// Create a new empty semantic model (STUB)
     pub fn new(source_file: PathBuf) -> Self {
         let source = String::new();
         let source_map = crate::SourceMap::new(&source);
+        // Create empty CST
+        let (cst, _) = crate::cst::parse_fsh(&source);
         Self {
-            document: FSHDocument::new(0..0),
+            cst,
             resources: Vec::new(),
             symbols: SymbolTable::default(),
             references: Vec::new(),
@@ -40,11 +48,11 @@ impl SemanticModel {
         }
     }
 
-    /// Create a new semantic model from a document
-    pub fn from_document(document: FSHDocument, source: String, source_file: PathBuf) -> Self {
+    /// Create a new semantic model from CST
+    pub fn from_cst(cst: FshSyntaxNode, source: String, source_file: PathBuf) -> Self {
         let source_map = crate::SourceMap::new(&source);
         Self {
-            document,
+            cst,
             resources: Vec::new(),
             symbols: SymbolTable::default(),
             references: Vec::new(),
@@ -223,7 +231,7 @@ impl SymbolTable {
         self.symbols.insert(symbol_name.clone(), symbol);
         self.file_symbols
             .entry(file_path)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(symbol_name);
     }
 
@@ -299,11 +307,11 @@ pub enum ReferenceType {
     Invariant,
 }
 
-/// Semantic analyzer trait for extracting semantic information from AST
+/// Semantic analyzer trait for extracting semantic information from CST
 pub trait SemanticAnalyzer {
     fn analyze(
         &self,
-        document: &FSHDocument,
+        cst: &FshSyntaxNode,
         source: &str,
         file_path: PathBuf,
     ) -> Result<SemanticModel>;
@@ -332,7 +340,7 @@ impl Default for SemanticAnalyzerConfig {
 /// Default implementation of semantic analyzer
 #[derive(Debug, Default)]
 pub struct DefaultSemanticAnalyzer {
-    config: SemanticAnalyzerConfig,
+    _config: SemanticAnalyzerConfig,
 }
 
 impl DefaultSemanticAnalyzer {
@@ -341,7 +349,79 @@ impl DefaultSemanticAnalyzer {
     }
 
     pub fn with_config(config: SemanticAnalyzerConfig) -> Self {
-        Self { config }
+        Self { _config: config }
+    }
+
+    /// Async version of analyze
+    ///
+    /// Zero-overhead wrapper for async contexts.
+    pub async fn analyze_async(
+        &self,
+        cst: &FshSyntaxNode,
+        source: &str,
+        file_path: PathBuf,
+    ) -> Result<SemanticModel> {
+        self.analyze(cst, source, file_path)
+    }
+
+    fn build_profile_resource(
+        &self,
+        profile: &Profile,
+        source: &str,
+        file_path: &PathBuf,
+    ) -> FhirResource {
+        let name = profile.name().unwrap_or_else(|| "Unknown".to_string());
+        let id = profile
+            .id()
+            .and_then(|c| c.value())
+            .unwrap_or_else(|| name.clone());
+        let title = profile.title().and_then(|c| c.value());
+        let description = profile.description().and_then(|c| c.value());
+        let parent = profile.parent().and_then(|c| c.value());
+
+        let location = node_to_location(file_path, profile.syntax(), source);
+
+        FhirResource {
+            resource_type: ResourceType::Profile,
+            id,
+            name: Some(name),
+            title,
+            description,
+            parent,
+            elements: Vec::new(), // TODO: Extract elements from rules
+            location,
+            metadata: ResourceMetadata::default(),
+        }
+    }
+
+    fn build_extension_resource(
+        &self,
+        extension: &Extension,
+        source: &str,
+        file_path: &PathBuf,
+    ) -> FhirResource {
+        let name = extension.name().unwrap_or_else(|| "Unknown".to_string());
+        let id = extension
+            .id()
+            .and_then(|c| c.value())
+            .unwrap_or_else(|| name.clone());
+        let title = extension.title().and_then(|c| c.value());
+        let description = extension.description().and_then(|c| c.value());
+        let parent = extension.parent().and_then(|c| c.value());
+
+        let location = node_to_location(file_path, extension.syntax(), source);
+
+        FhirResource {
+            resource_type: ResourceType::Extension,
+            id,
+            name: Some(name),
+            title,
+            description,
+            parent,
+            elements: Vec::new(),
+            location,
+            metadata: ResourceMetadata::default(),
+        }
     }
 
     fn build_value_set_resource(
@@ -350,26 +430,55 @@ impl DefaultSemanticAnalyzer {
         source: &str,
         file_path: &PathBuf,
     ) -> FhirResource {
-        let metadata = ResourceMetadata {
-            title: value_set.title.as_ref().map(|s| s.value.clone()),
-            description: value_set.description.as_ref().map(|s| s.value.clone()),
-            ..ResourceMetadata::default()
-        };
+        let name = value_set.name().unwrap_or_else(|| "Unknown".to_string());
+        let id = value_set
+            .id()
+            .and_then(|c| c.value())
+            .unwrap_or_else(|| name.clone());
+        let title = value_set.title().and_then(|c| c.value());
+        let description = value_set.description().and_then(|c| c.value());
+
+        let location = node_to_location(file_path, value_set.syntax(), source);
 
         FhirResource {
             resource_type: ResourceType::ValueSet,
-            id: value_set
-                .id
-                .as_ref()
-                .map(|s| s.value.clone())
-                .unwrap_or_else(|| value_set.name.value.clone()),
-            name: Some(value_set.name.value.clone()),
-            title: metadata.title.clone(),
-            description: metadata.description.clone(),
+            id,
+            name: Some(name),
+            title,
+            description,
             parent: None,
             elements: Vec::new(),
-            location: span_to_location(file_path, &value_set.span, source),
-            metadata,
+            location,
+            metadata: ResourceMetadata::default(),
+        }
+    }
+
+    fn build_code_system_resource(
+        &self,
+        code_system: &CodeSystem,
+        source: &str,
+        file_path: &PathBuf,
+    ) -> FhirResource {
+        let name = code_system.name().unwrap_or_else(|| "Unknown".to_string());
+        let id = code_system
+            .id()
+            .and_then(|c| c.value())
+            .unwrap_or_else(|| name.clone());
+        let title = code_system.title().and_then(|c| c.value());
+        let description = code_system.description().and_then(|c| c.value());
+
+        let location = node_to_location(file_path, code_system.syntax(), source);
+
+        FhirResource {
+            resource_type: ResourceType::CodeSystem,
+            id,
+            name: Some(name),
+            title,
+            description,
+            parent: None,
+            elements: Vec::new(),
+            location,
+            metadata: ResourceMetadata::default(),
         }
     }
 
@@ -383,20 +492,19 @@ impl DefaultSemanticAnalyzer {
         let parts: Vec<_> = trimmed.split("..").collect();
         if parts.len() != 2 {
             return Err(FshLintError::semantic_error(format!(
-                "Invalid cardinality expression: {}",
-                text
+                "Invalid cardinality expression: {text}"
             )));
         }
 
         let min = parts[0].parse::<u32>().map_err(|_| {
-            FshLintError::semantic_error(format!("Invalid minimum cardinality in {}", text))
+            FshLintError::semantic_error(format!("Invalid minimum cardinality in {text}"))
         })?;
 
         let max = if parts[1] == "*" {
             None
         } else {
             Some(parts[1].parse::<u32>().map_err(|_| {
-                FshLintError::semantic_error(format!("Invalid maximum cardinality in {}", text))
+                FshLintError::semantic_error(format!("Invalid maximum cardinality in {text}"))
             })?)
         };
 
@@ -506,24 +614,44 @@ impl DefaultSemanticAnalyzer {
 impl SemanticAnalyzer for DefaultSemanticAnalyzer {
     fn analyze(
         &self,
-        document: &FSHDocument,
+        cst: &FshSyntaxNode,
         source: &str,
         file_path: PathBuf,
     ) -> Result<SemanticModel> {
-        let mut model = SemanticModel::from_document(
-            document.clone(),
-            source.to_string(),
-            file_path.clone(),
-        );
+        let mut model = SemanticModel::from_cst(cst.clone(), source.to_string(), file_path.clone());
 
-        for value_set in &document.value_sets {
-            let resource = self.build_value_set_resource(value_set, source, &file_path);
+        // Cast CST root to typed Document
+        let document = Document::cast(cst.clone()).ok_or_else(|| {
+            FshLintError::semantic_error("Root node is not a Document".to_string())
+        })?;
+
+        // Extract Profiles
+        for profile in document.profiles() {
+            let resource = self.build_profile_resource(&profile, source, &file_path);
             model.add_resource(resource);
         }
 
-        // TODO: support additional resource types when the parser produces them.
+        // Extract Extensions
+        for extension in document.extensions() {
+            let resource = self.build_extension_resource(&extension, source, &file_path);
+            model.add_resource(resource);
+        }
 
+        // Extract ValueSets
+        for value_set in document.value_sets() {
+            let resource = self.build_value_set_resource(&value_set, source, &file_path);
+            model.add_resource(resource);
+        }
+
+        // Extract CodeSystems
+        for code_system in document.code_systems() {
+            let resource = self.build_code_system_resource(&code_system, source, &file_path);
+            model.add_resource(resource);
+        }
+
+        // Extract references between resources
         self.extract_references(&mut model)?;
+
         Ok(model)
     }
 
@@ -620,6 +748,12 @@ impl DefaultSemanticAnalyzer {
 
         diagnostics
     }
+}
+
+fn node_to_location(file_path: &PathBuf, node: &FshSyntaxNode, source: &str) -> Location {
+    let range = node.text_range();
+    let span = usize::from(range.start())..usize::from(range.end());
+    span_to_location(file_path, &span, source)
 }
 
 fn span_to_location(file_path: &PathBuf, span: &Span, source: &str) -> Location {

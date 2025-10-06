@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 /// Metadata for a rule pack
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +83,7 @@ pub struct RuleDiscoveryConfig {
 }
 
 /// Registry for managing compiled rules
+#[derive(Debug)]
 pub struct RuleRegistry {
     rules: HashMap<String, CompiledRule>,
     rule_packs: HashMap<String, RulePack>,
@@ -93,6 +95,7 @@ pub struct RuleRegistry {
 /// Default implementation of the rule engine
 pub struct DefaultRuleEngine {
     registry: RuleRegistry,
+    gritql_loader: Option<crate::gritql::GritQLRuleLoader>,
 }
 
 impl RuleRegistry {
@@ -286,6 +289,7 @@ impl DefaultRuleEngine {
     pub fn new() -> Self {
         Self {
             registry: RuleRegistry::new(),
+            gritql_loader: None,
         }
     }
 
@@ -293,7 +297,32 @@ impl DefaultRuleEngine {
     pub fn with_config(config: RuleEngineConfig) -> Self {
         Self {
             registry: RuleRegistry::with_config(config),
+            gritql_loader: None,
         }
+    }
+
+    /// Create a new rule engine with GritQL rule directories
+    ///
+    /// # Arguments
+    ///
+    /// * `rule_directories` - Directories to search for .grit files
+    ///
+    /// # Returns
+    ///
+    /// A rule engine with loaded GritQL rules, or an error if loading fails
+    pub fn with_gritql_directories(rule_directories: Vec<String>) -> Result<Self> {
+        // Convert String paths to &Path
+        let paths: Vec<std::path::PathBuf> = rule_directories
+            .iter()
+            .map(std::path::PathBuf::from)
+            .collect();
+        let path_refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
+        let gritql_loader = crate::gritql::GritQLRuleLoader::load_from_directories(&path_refs)?;
+
+        Ok(Self {
+            registry: RuleRegistry::new(),
+            gritql_loader: Some(gritql_loader),
+        })
     }
 
     /// Get the rule registry
@@ -360,9 +389,7 @@ impl DefaultRuleEngine {
         let mut errors = Vec::new();
 
         for entry in walkdir::WalkDir::new(dir) {
-            let entry = entry.map_err(|e| {
-                FshLintError::io_error(dir, std::io::Error::new(std::io::ErrorKind::Other, e))
-            })?;
+            let entry = entry.map_err(|e| FshLintError::io_error(dir, std::io::Error::other(e)))?;
             let path = entry.path();
 
             // Only process rule files (JSON or TOML)
@@ -440,9 +467,7 @@ impl DefaultRuleEngine {
         };
 
         for entry in walker {
-            let entry = entry.map_err(|e| {
-                FshLintError::io_error(dir, std::io::Error::new(std::io::ErrorKind::Other, e))
-            })?;
+            let entry = entry.map_err(|e| FshLintError::io_error(dir, std::io::Error::other(e)))?;
             let path = entry.path();
 
             if path.is_file() && self.should_include_file(path, config) {
@@ -623,9 +648,7 @@ impl DefaultRuleEngine {
             // Execute AST-based builtin rules
             match rule.id() {
                 crate::builtin::cardinality::INVALID_CARDINALITY => {
-                    diagnostics.extend(crate::builtin::cardinality::check_cardinality(
-                        model,
-                    ));
+                    diagnostics.extend(crate::builtin::cardinality::check_cardinality(model));
                 }
                 crate::builtin::required_fields::REQUIRED_FIELD_PRESENT => {
                     diagnostics.extend(crate::builtin::required_fields::check_required_fields(
@@ -633,34 +656,22 @@ impl DefaultRuleEngine {
                     ));
                 }
                 crate::builtin::binding::BINDING_STRENGTH_PRESENT => {
-                    diagnostics.extend(crate::builtin::binding::check_binding_strength(
-                        model,
-                    ));
+                    diagnostics.extend(crate::builtin::binding::check_binding_strength(model));
                 }
                 crate::builtin::metadata::MISSING_METADATA => {
-                    diagnostics.extend(crate::builtin::metadata::check_missing_metadata(
-                        model,
-                    ));
+                    diagnostics.extend(crate::builtin::metadata::check_missing_metadata(model));
                 }
                 crate::builtin::duplicates::DUPLICATE_DEFINITION => {
-                    diagnostics.extend(crate::builtin::duplicates::check_duplicates(
-                        model,
-                    ));
+                    diagnostics.extend(crate::builtin::duplicates::check_duplicates(model));
                 }
                 crate::builtin::profile::PROFILE_ASSIGNMENT_PRESENT => {
-                    diagnostics.extend(crate::builtin::profile::check_profile_assignments(
-                        model,
-                    ));
+                    diagnostics.extend(crate::builtin::profile::check_profile_assignments(model));
                 }
                 crate::builtin::profile::EXTENSION_CONTEXT_MISSING => {
-                    diagnostics.extend(crate::builtin::profile::check_extension_context(
-                        model,
-                    ));
+                    diagnostics.extend(crate::builtin::profile::check_extension_context(model));
                 }
                 crate::builtin::naming::NAMING_CONVENTION => {
-                    diagnostics.extend(crate::builtin::naming::check_naming_conventions(
-                        model,
-                    ));
+                    diagnostics.extend(crate::builtin::naming::check_naming_conventions(model));
                 }
                 _ => {
                     tracing::warn!(
@@ -671,12 +682,42 @@ impl DefaultRuleEngine {
             }
         } else {
             // GritQL pattern-based rule
-            let _compiled_pattern = compiler.compile_pattern(rule.matcher.pattern(), rule.id())?;
+            let compiled_pattern = compiler.compile_pattern(rule.matcher.pattern(), rule.id())?;
 
-            // Note: GritQL pattern execution against semantic model will be implemented
-            // when tree-sitter-fsh integration is complete. For now, rules use semantic
-            // analysis directly through the rule implementations.
-            tracing::debug!("Rule '{}' pattern: {}", rule.id(), rule.matcher.pattern());
+            tracing::debug!("Executing GritQL rule '{}' with pattern", rule.id());
+
+            // Execute pattern and convert matches to diagnostics
+            match compiled_pattern.execute(&model.source, model.source_file.to_str().unwrap_or(""))
+            {
+                Ok(matches) => {
+                    for grit_match in matches {
+                        let location = fsh_lint_core::diagnostics::Location {
+                            file: model.source_file.clone(),
+                            line: grit_match.range.start_line,
+                            column: grit_match.range.start_column,
+                            end_line: Some(grit_match.range.end_line),
+                            end_column: Some(grit_match.range.end_column),
+                            offset: 0, // TODO: Calculate from source
+                            length: grit_match.matched_text.len(),
+                            span: None,
+                        };
+
+                        diagnostics.push(fsh_lint_core::Diagnostic::new(
+                            rule.id(),
+                            rule.metadata.severity,
+                            &rule.metadata.description,
+                            location,
+                        ));
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to execute GritQL pattern for rule '{}': {}",
+                        rule.id(),
+                        e
+                    );
+                }
+            }
         }
 
         Ok(diagnostics)
@@ -722,6 +763,7 @@ impl RuleEngineTrait for DefaultRuleEngine {
             }
         };
 
+        // Execute built-in rules
         for rule in self.registry.get_all() {
             // Apply rule-specific configuration if present
             if let Some(rule_config) = self.registry.config.rule_configs.get(rule.id()) {
@@ -747,6 +789,56 @@ impl RuleEngineTrait for DefaultRuleEngine {
                 Err(e) => {
                     tracing::error!("Failed to execute rule '{}': {}", rule.id(), e);
                     // Continue with other rules even if one fails
+                }
+            }
+        }
+
+        // Execute GritQL rules if loader is present
+        if let Some(ref loader) = self.gritql_loader {
+            tracing::debug!(
+                "Executing {} GritQL rules from custom directories",
+                loader.len()
+            );
+
+            // Execute each loaded GritQL rule
+            for loaded_rule in loader.all_rules() {
+                tracing::debug!("Executing GritQL rule: {}", loaded_rule.id());
+
+                // Execute pattern against the source file
+                match loaded_rule
+                    .pattern()
+                    .execute(&model.source, model.source_file.to_str().unwrap_or(""))
+                {
+                    Ok(matches) => {
+                        for grit_match in matches {
+                            let location = fsh_lint_core::diagnostics::Location {
+                                file: model.source_file.clone(),
+                                line: grit_match.range.start_line,
+                                column: grit_match.range.start_column,
+                                end_line: Some(grit_match.range.end_line),
+                                end_column: Some(grit_match.range.end_column),
+                                offset: 0, // TODO: Calculate from source
+                                length: grit_match.matched_text.len(),
+                                span: None,
+                            };
+
+                            // Create diagnostic from match
+                            // Use default severity of Warning for GritQL rules
+                            diagnostics.push(fsh_lint_core::Diagnostic::new(
+                                loaded_rule.id(),
+                                fsh_lint_core::Severity::Warning,
+                                format!("GritQL pattern matched: {}", loaded_rule.id()),
+                                location,
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to execute GritQL rule '{}': {}",
+                            loaded_rule.id(),
+                            e
+                        );
+                    }
                 }
             }
         }
@@ -826,7 +918,7 @@ impl DefaultRuleEngine {
         for rule in self.registry.get_all() {
             // Count rules by pack (if they belong to one)
             let pack_name = self
-                .find_rule_pack(&rule.id())
+                .find_rule_pack(rule.id())
                 .unwrap_or("individual".to_string());
             *rules_by_pack.entry(pack_name).or_insert(0) += 1;
 
@@ -902,6 +994,110 @@ impl Default for RuleDiscoveryConfig {
     }
 }
 
+/// Thread-safe wrapper for RuleRegistry optimized for concurrent LSP operations
+///
+/// This wrapper uses RwLock for concurrent read access with exclusive write access,
+/// making it ideal for LSP servers where:
+/// - Multiple document analysis requests can read rules concurrently
+/// - Rule updates (hot reload, configuration changes) require exclusive access
+///
+/// # Thread Safety
+/// - Multiple readers can access rules simultaneously (common case in LSP)
+/// - Writers get exclusive access for rule updates
+/// - All wrapped types (CompiledRule, RulePack) are Send + Sync
+///
+/// # Example for LSP
+/// ```rust,ignore
+/// let registry = Arc::new(ThreadSafeRuleRegistry::new(RuleRegistry::new()));
+///
+/// // Clone Arc for each LSP request handler
+/// let registry_clone = Arc::clone(&registry);
+/// tokio::spawn(async move {
+///     // Read access - non-blocking for other readers
+///     let rules = registry_clone.get_all_rules();
+///     // ... execute rules
+/// });
+/// ```
+#[derive(Debug)]
+pub struct ThreadSafeRuleRegistry {
+    inner: Arc<RwLock<RuleRegistry>>,
+}
+
+impl ThreadSafeRuleRegistry {
+    /// Create a new thread-safe registry wrapper
+    pub fn new(registry: RuleRegistry) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(registry)),
+        }
+    }
+
+    /// Create with default registry
+    pub fn default_registry() -> Self {
+        Self::new(RuleRegistry::new())
+    }
+
+    /// Get a rule by ID (read lock)
+    pub fn get_rule(&self, id: &str) -> Option<CompiledRule> {
+        self.inner.read().ok()?.get(id).cloned()
+    }
+
+    /// Get all rules (read lock)
+    pub fn get_all_rules(&self) -> Vec<CompiledRule> {
+        self.inner
+            .read()
+            .map(|registry| registry.get_all().into_iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Register a new rule (write lock)
+    pub fn register_rule(&self, rule: CompiledRule) -> Result<()> {
+        self.inner
+            .write()
+            .map_err(|e| FshLintError::config_error(format!("Lock poisoned: {e}")))?
+            .register(rule);
+        Ok(())
+    }
+
+    /// Register a rule pack (write lock)
+    pub fn register_pack(&self, pack: RulePack) -> Result<()> {
+        self.inner
+            .write()
+            .map_err(|e| FshLintError::config_error(format!("Lock poisoned: {e}")))?
+            .register_pack(pack)
+    }
+
+    /// Get rule count (read lock)
+    pub fn len(&self) -> usize {
+        self.inner
+            .read()
+            .map(|registry| registry.len())
+            .unwrap_or(0)
+    }
+
+    /// Check if registry is empty (read lock)
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Clone the inner Arc for sharing across threads/tasks
+    pub fn clone_arc(&self) -> Arc<RwLock<RuleRegistry>> {
+        Arc::clone(&self.inner)
+    }
+
+    /// Get a reference to the inner Arc
+    pub fn inner(&self) -> &Arc<RwLock<RuleRegistry>> {
+        &self.inner
+    }
+}
+
+impl Clone for ThreadSafeRuleRegistry {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+}
+
 /// Simple glob pattern matching
 fn glob_match(pattern: &str, text: &str) -> bool {
     // Simple implementation - in a real system you'd use a proper glob library
@@ -911,13 +1107,11 @@ fn glob_match(pattern: &str, text: &str) -> bool {
 
     if pattern.contains('*') {
         // Handle simple wildcard patterns
-        if pattern.starts_with("*.") {
-            let ext = &pattern[2..];
+        if let Some(ext) = pattern.strip_prefix("*.") {
             return text.ends_with(ext);
         }
 
-        if pattern.ends_with("/**") {
-            let prefix = &pattern[..pattern.len() - 3];
+        if let Some(prefix) = pattern.strip_suffix("/**") {
             return text.starts_with(prefix);
         }
 

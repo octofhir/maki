@@ -1,7 +1,7 @@
 use fsh_lint_core::{
-    DefaultDiagnosticCollector, DefaultOutputFormatter, Diagnostic, DiagnosticCategory,
-    DiagnosticCollector, DiagnosticFormatter, DiagnosticOutputFormatter, Location, Severity,
-    Suggestion,
+    Applicability, CodeSuggestion, DefaultDiagnosticCollector, DefaultOutputFormatter, Diagnostic,
+    DiagnosticCategory, DiagnosticCollector, DiagnosticFormatter, DiagnosticOutputFormatter,
+    Location, Severity,
 };
 use std::path::PathBuf;
 
@@ -29,11 +29,10 @@ fn test_diagnostic_creation() {
 fn test_diagnostic_with_suggestions() {
     let location = Location::new(PathBuf::from("test.fsh"), 10, 5, 100, 15);
 
-    let suggestion = Suggestion::new(
+    let suggestion = CodeSuggestion::safe(
         "Replace with correct syntax",
         "correct_syntax",
         location.clone(),
-        true,
     );
 
     let diagnostic = Diagnostic::new("test-rule", Severity::Warning, "Test warning", location)
@@ -61,7 +60,7 @@ fn test_severity_ordering() {
 fn test_location_display() {
     let location = Location::new(PathBuf::from("src/test.fsh"), 42, 10, 500, 20);
 
-    let display = format!("{}", location);
+    let display = format!("{location}");
     assert_eq!(display, "src/test.fsh:42:10");
 }
 
@@ -380,7 +379,7 @@ fn test_diagnostic_formatter_with_suggestions() {
     let formatter = DiagnosticFormatter::no_colors();
 
     let location = Location::new(PathBuf::from("test.fsh"), 10, 1, 100, 10);
-    let suggestion = Suggestion::new("Use correct syntax", "fixed_code", location.clone(), true);
+    let suggestion = CodeSuggestion::safe("Use correct syntax", "fixed_code", location.clone());
 
     let diagnostic = Diagnostic::new("test-rule", Severity::Warning, "Test warning", location)
         .with_suggestion(suggestion);
@@ -552,26 +551,35 @@ fn test_location_with_span() {
 #[test]
 fn test_suggestion_creation() {
     let location = Location::new(PathBuf::from("test.fsh"), 10, 5, 100, 10);
-    let suggestion = Suggestion::new(
+    let suggestion = CodeSuggestion::new(
         "Fix the syntax error",
         "corrected_syntax",
         location.clone(),
-        true,
+        Applicability::Always,
     );
 
     assert_eq!(suggestion.message, "Fix the syntax error");
     assert_eq!(suggestion.replacement, "corrected_syntax");
     assert_eq!(suggestion.location, location);
-    assert!(suggestion.is_safe);
+    assert_eq!(suggestion.applicability, Applicability::Always);
 }
 
 #[test]
 fn test_diagnostic_safe_fixes() {
     let location = Location::new(PathBuf::from("test.fsh"), 10, 5, 100, 10);
 
-    let safe_suggestion = Suggestion::new("Safe fix", "safe_replacement", location.clone(), true);
-    let unsafe_suggestion =
-        Suggestion::new("Unsafe fix", "unsafe_replacement", location.clone(), false);
+    let safe_suggestion = CodeSuggestion::new(
+        "Safe fix",
+        "safe_replacement",
+        location.clone(),
+        Applicability::Always,
+    );
+    let unsafe_suggestion = CodeSuggestion::new(
+        "Unsafe fix",
+        "unsafe_replacement",
+        location.clone(),
+        Applicability::MaybeIncorrect,
+    );
 
     let diagnostic = Diagnostic::new("test-rule", Severity::Warning, "Test warning", location)
         .with_suggestion(safe_suggestion)

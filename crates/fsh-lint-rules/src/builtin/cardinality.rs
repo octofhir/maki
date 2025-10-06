@@ -1,254 +1,130 @@
 //! Cardinality validation rules
 //!
-//! Validates cardinality constraints in FSH element rules.
+//! Validates cardinality constraints in FSH profiles and extensions.
 
-use fsh_lint_core::ast::{CardRule, Cardinality, CardinalityMax, LRRule, SDRule};
+use fsh_lint_core::cst::ast::{AstNode, CardRule, Document};
 use fsh_lint_core::{Diagnostic, SemanticModel, Severity};
 
-/// Rule ID for invalid cardinality
-pub const INVALID_CARDINALITY: &str = "correctness/invalid-cardinality";
+/// Rule ID for cardinality validation
+pub const VALID_CARDINALITY: &str = "blocking/valid-cardinality";
+pub const INVALID_CARDINALITY: &str = "blocking/invalid-cardinality";
 
-/// Check for invalid cardinality expressions in an FSH document
+/// Check cardinality rules
 pub fn check_cardinality(model: &SemanticModel) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
+    let Some(document) = Document::cast(model.cst.clone()) else {
+        return diagnostics;
+    };
+
     // Check profiles
-    for profile in &model.document.profiles {
-        for rule in &profile.rules {
-            if let SDRule::Card(card_rule) = rule {
-                if let Some(diag) = validate_card_rule(card_rule, model) {
-                    diagnostics.push(diag);
-                }
-            }
-        }
+    for profile in document.profiles() {
+        diagnostics.extend(check_resource_cardinality_rules(
+            profile.rules().filter_map(|r| match r {
+                fsh_lint_core::cst::ast::Rule::Card(c) => Some(c),
+                _ => None,
+            }),
+            model,
+        ));
     }
 
     // Check extensions
-    for extension in &model.document.extensions {
-        for rule in &extension.rules {
-            if let SDRule::Card(card_rule) = rule {
-                if let Some(diag) = validate_card_rule(card_rule, model) {
-                    diagnostics.push(diag);
-                }
-            }
-        }
-    }
-
-    // Check logicals
-    for logical in &model.document.logicals {
-        for rule in &logical.rules {
-            if let LRRule::SD(SDRule::Card(card_rule)) = rule {
-                if let Some(diag) = validate_card_rule(card_rule, model) {
-                    diagnostics.push(diag);
-                }
-            }
-        }
-    }
-
-    // Check resources
-    for resource in &model.document.resources {
-        for rule in &resource.rules {
-            if let LRRule::SD(SDRule::Card(card_rule)) = rule {
-                if let Some(diag) = validate_card_rule(card_rule, model) {
-                    diagnostics.push(diag);
-                }
-            }
-        }
+    for extension in document.extensions() {
+        diagnostics.extend(check_resource_cardinality_rules(
+            extension.rules().filter_map(|r| match r {
+                fsh_lint_core::cst::ast::Rule::Card(c) => Some(c),
+                _ => None,
+            }),
+            model,
+        ));
     }
 
     diagnostics
 }
 
-/// Validate a single cardinality rule
-fn validate_card_rule(card_rule: &CardRule, model: &SemanticModel) -> Option<Diagnostic> {
-    let cardinality = &card_rule.cardinality.value;
-    let span = &card_rule.cardinality.span;
+/// Check cardinality rules in a resource
+fn check_resource_cardinality_rules(
+    rules: impl Iterator<Item = CardRule>,
+    model: &SemanticModel,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
 
-    // Check for reversed bounds (min > max)
-    if let (Some(min), CardinalityMax::Number(max)) = (cardinality.min, &cardinality.max) {
-        if min > *max {
-            // Use SourceMap for precise location!
-            let location = model.source_map.span_to_diagnostic_location(
-                span,
-                &model.source,
-                &model.source_file,
-            );
-            let swapped = format!("{}..{}", max, min);
+    for rule in rules {
+        if let Some(cardinality_str) = rule.cardinality() {
+            // Parse cardinality: "min..max"
+            if let Some((min_str, max_str)) = cardinality_str.split_once("..") {
+                let min_result = min_str.trim().parse::<u32>();
+                let max_result = if max_str.trim() == "*" {
+                    Ok(None)
+                } else {
+                    max_str.trim().parse::<u32>().map(Some)
+                };
 
-            return Some(
-                Diagnostic::new(
-                    INVALID_CARDINALITY,
-                    Severity::Error,
-                    &format!(
-                        "Upper bound ({}) cannot be less than lower bound ({})",
-                        max, min
-                    ),
-                    location.clone(),
-                )
-                .with_suggestion(fsh_lint_core::Suggestion {
-                    message: format!("Swap bounds to {}", swapped),
-                    replacement: swapped,
-                    location: location.clone(),
-                    is_safe: false,
-                }),
-            );
+                match (min_result, max_result) {
+                    (Ok(min), Ok(max_opt)) => {
+                        // Check: upper bound cannot be less than lower bound
+                        if let Some(max) = max_opt {
+                            if max < min {
+                                let location = model.source_map.node_to_diagnostic_location(
+                                    rule.syntax(),
+                                    &model.source,
+                                    &model.source_file,
+                                );
+                                diagnostics.push(
+                                    Diagnostic::new(
+                                        INVALID_CARDINALITY,
+                                        Severity::Error,
+                                        format!(
+                                            "Invalid cardinality: upper bound ({max}) cannot be less than lower bound ({min})"
+                                        ),
+                                        location,
+                                    )
+                                    .with_code("invalid-cardinality".to_string()),
+                                );
+                            }
+                        }
+                    }
+                    _ => {
+                        // Invalid cardinality syntax (non-numeric or malformed)
+                        let location = model.source_map.node_to_diagnostic_location(
+                            rule.syntax(),
+                            &model.source,
+                            &model.source_file,
+                        );
+                        diagnostics.push(
+                            Diagnostic::new(
+                                INVALID_CARDINALITY,
+                                Severity::Error,
+                                format!(
+                                    "Invalid cardinality syntax: '{cardinality_str}'. Expected format: 'min..max' (e.g., '0..1', '1..*')"
+                                ),
+                                location,
+                            )
+                            .with_code("invalid-cardinality-syntax".to_string()),
+                        );
+                    }
+                }
+            } else {
+                // Malformed cardinality (no "..")
+                let location = model.source_map.node_to_diagnostic_location(
+                    rule.syntax(),
+                    &model.source,
+                    &model.source_file,
+                );
+                diagnostics.push(
+                    Diagnostic::new(
+                        INVALID_CARDINALITY,
+                        Severity::Error,
+                        format!(
+                            "Invalid cardinality format: '{cardinality_str}'. Expected 'min..max'"
+                        ),
+                        location,
+                    )
+                    .with_code("malformed-cardinality".to_string()),
+                );
+            }
         }
     }
 
-    // Note: Our parser already handles syntax validation, so we only need to check semantic issues
-    // Invalid syntax like "-1..5", "1..abc", etc. are caught during parsing
-
-    None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use fsh_lint_core::ast::{FSHDocument, Profile, Spanned};
-    use fsh_lint_core::SemanticModel;
-    use std::path::PathBuf;
-
-    #[test]
-    fn test_valid_cardinality() {
-        let source = "Profile: Test\n* name 0..1\n";
-        let source_map = fsh_lint_core::SourceMap::new(source);
-
-        let card_rule = CardRule {
-            path: Spanned::new("name".to_string(), 0..4),
-            cardinality: Spanned::new(
-                Cardinality {
-                    min: Some(0),
-                    max: CardinalityMax::Number(1),
-                },
-                5..9,
-            ),
-            flags: Vec::new(),
-            span: 0..9,
-        };
-
-        let model = SemanticModel {
-            document: FSHDocument::new(0..source.len()),
-            resources: Vec::new(),
-            symbols: Default::default(),
-            references: Vec::new(),
-            source_file: PathBuf::from("test.fsh"),
-            source_map,
-            source: source.to_string(),
-        };
-
-        let result = validate_card_rule(&card_rule, &model);
-        assert!(result.is_none(), "Valid cardinality 0..1 should not produce diagnostic");
-    }
-
-    #[test]
-    fn test_reversed_bounds() {
-        let source = "Profile: Test\n* name 5..2\n";
-        let source_map = fsh_lint_core::SourceMap::new(source);
-
-        let card_rule = CardRule {
-            path: Spanned::new("name".to_string(), 0..4),
-            cardinality: Spanned::new(
-                Cardinality {
-                    min: Some(5),
-                    max: CardinalityMax::Number(2),
-                },
-                5..9,
-            ),
-            flags: Vec::new(),
-            span: 0..9,
-        };
-
-        let model = SemanticModel {
-            document: FSHDocument::new(0..source.len()),
-            resources: Vec::new(),
-            symbols: Default::default(),
-            references: Vec::new(),
-            source_file: PathBuf::from("test.fsh"),
-            source_map,
-            source: source.to_string(),
-        };
-
-        let result = validate_card_rule(&card_rule, &model);
-        assert!(result.is_some(), "Reversed bounds 5..2 should produce diagnostic");
-
-        let diag = result.unwrap();
-        assert_eq!(diag.rule_id, INVALID_CARDINALITY);
-        assert_eq!(diag.severity, Severity::Error);
-        assert!(diag.message.contains("cannot be less than"));
-    }
-
-    #[test]
-    fn test_unbounded_max() {
-        let source = "Profile: Test\n* name 1..*\n";
-        let source_map = fsh_lint_core::SourceMap::new(source);
-
-        let card_rule = CardRule {
-            path: Spanned::new("name".to_string(), 0..4),
-            cardinality: Spanned::new(
-                Cardinality {
-                    min: Some(1),
-                    max: CardinalityMax::Star,
-                },
-                5..9,
-            ),
-            flags: Vec::new(),
-            span: 0..9,
-        };
-
-        let model = SemanticModel {
-            document: FSHDocument::new(0..source.len()),
-            resources: Vec::new(),
-            symbols: Default::default(),
-            references: Vec::new(),
-            source_file: PathBuf::from("test.fsh"),
-            source_map,
-            source: source.to_string(),
-        };
-
-        let result = validate_card_rule(&card_rule, &model);
-        assert!(result.is_none(), "Valid cardinality 1..* should not produce diagnostic");
-    }
-
-    #[test]
-    fn test_check_cardinality_in_profile() {
-        let source = "Profile: TestProfile\n* name 5..2\n";
-        let source_map = fsh_lint_core::SourceMap::new(source);
-
-        let mut doc = FSHDocument::new(0..source.len());
-
-        doc.profiles.push(Profile {
-            name: Spanned::new("TestProfile".to_string(), 0..11),
-            parent: None,
-            id: None,
-            title: None,
-            description: None,
-            rules: vec![SDRule::Card(CardRule {
-                path: Spanned::new("name".to_string(), 20..24),
-                cardinality: Spanned::new(
-                    Cardinality {
-                        min: Some(5),
-                        max: CardinalityMax::Number(2),
-                    },
-                    25..29,
-                ),
-                flags: Vec::new(),
-                span: 20..29,
-            })],
-            span: 0..50,
-        });
-
-        let model = SemanticModel {
-            document: doc,
-            resources: Vec::new(),
-            symbols: Default::default(),
-            references: Vec::new(),
-            source_file: PathBuf::from("test.fsh"),
-            source_map,
-            source: source.to_string(),
-        };
-
-        let diagnostics = check_cardinality(&model);
-        assert_eq!(diagnostics.len(), 1, "Should find 1 cardinality error");
-        assert_eq!(diagnostics[0].rule_id, INVALID_CARDINALITY);
-    }
+    diagnostics
 }

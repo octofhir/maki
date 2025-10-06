@@ -1,0 +1,41 @@
+// GritQL Rule: Profile Names Should Use PascalCase
+//
+// **Category**: Style
+// **Severity**: Warning
+// **Autofix**: None
+//
+// This rule enforces that Profile names start with an uppercase letter and follow
+// PascalCase convention (e.g., "MyPatientProfile" not "mypatientProfile").
+//
+// ## Why This Matters
+//
+// Consistent naming conventions improve code readability and make it easier for
+// teams to collaborate. PascalCase is the standard for FHIR profile names.
+//
+// ## Examples
+//
+// ❌ Bad:
+// ```fsh
+// Profile: myPatientProfile  // starts with lowercase
+// Parent: Patient
+// ```
+//
+// ✅ Good:
+// ```fsh
+// Profile: MyPatientProfile  // starts with uppercase
+// Parent: Patient
+// ```
+//
+// ## GritQL Pattern Explanation
+//
+// - Matches lines starting with "Profile:"
+// - Captures the profile name
+// - Checks if name starts with lowercase letter using regex
+//
+// Learn more about GritQL patterns:
+// https://docs.grit.io/language/patterns
+
+Profile: $name where {
+    // Match profile name that starts with lowercase letter
+    $name <: r"^[a-z]"
+}

@@ -1,0 +1,8 @@
+<!-- FSH Lint logo -->
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="100" cy="100" r="90" fill="#f97316"/>
+  <text x="100" y="125" font-size="80" font-weight="bold"
+        text-anchor="middle" fill="white" font-family="monospace">
+    FSH
+  </text>
+</svg>

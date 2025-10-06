@@ -110,7 +110,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-        is_ast_rule: false,
+            is_ast_rule: false,
         }
     }
 
@@ -149,7 +149,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-        is_ast_rule: false,
+            is_ast_rule: false,
         }
     }
 
@@ -191,7 +191,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-        is_ast_rule: false,
+            is_ast_rule: false,
         }
     }
 
@@ -242,7 +242,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-        is_ast_rule: false,
+            is_ast_rule: false,
         }
     }
 
@@ -285,7 +285,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-        is_ast_rule: false,
+            is_ast_rule: false,
         }
     }
 
@@ -327,7 +327,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-        is_ast_rule: false,
+            is_ast_rule: false,
         }
     }
 
@@ -366,7 +366,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-        is_ast_rule: false,
+            is_ast_rule: false,
         }
     }
 
@@ -474,7 +474,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-        is_ast_rule: false,
+            is_ast_rule: false,
         }
     }
 
@@ -555,7 +555,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-        is_ast_rule: false,
+            is_ast_rule: false,
         }
     }
 
@@ -641,7 +641,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-        is_ast_rule: false,
+            is_ast_rule: false,
         }
     }
 
@@ -720,7 +720,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-        is_ast_rule: false,
+            is_ast_rule: false,
         }
     }
 
@@ -763,7 +763,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-        is_ast_rule: false,
+            is_ast_rule: false,
         }
     }
 
@@ -793,7 +793,7 @@ impl BuiltinRules {
                 name: "Required Field Present".to_string(),
                 description: "Ensures that Profiles, CodeSystems, and ValueSets have required fields (Name, Id, Title)".to_string(),
                 severity: Severity::Error,
-                category: RuleCategory::Correctness,
+                category: RuleCategory::Custom("blocking".to_string()),
                 tags: vec![
                     "correctness".to_string(),
                     "blocking".to_string(),
@@ -802,7 +802,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/fsh-lint-rs/rules/correctness/required-field-present"
+                    "https://octofhir.github.io/fsh-lint-rs/rules/blocking/required-field-present"
                         .to_string(),
                 ),
             },
@@ -825,7 +825,7 @@ impl BuiltinRules {
                 name: "Invalid Cardinality".to_string(),
                 description: "Detects invalid cardinality expressions such as reversed bounds (1..0), invalid syntax, and non-numeric values".to_string(),
                 severity: Severity::Error,
-                category: RuleCategory::Correctness,
+                category: RuleCategory::Custom("blocking".to_string()),
                 tags: vec![
                     "correctness".to_string(),
                     "blocking".to_string(),
@@ -834,7 +834,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/fsh-lint-rs/rules/correctness/invalid-cardinality"
+                    "https://octofhir.github.io/fsh-lint-rs/rules/blocking/invalid-cardinality"
                         .to_string(),
                 ),
             },
@@ -857,7 +857,7 @@ impl BuiltinRules {
                 name: "Binding Strength Present".to_string(),
                 description: "Ensures that bindings to value sets specify strength (required, extensible, preferred, or example) and use valid strength values".to_string(),
                 severity: Severity::Error,
-                category: RuleCategory::Correctness,
+                category: RuleCategory::Custom("blocking".to_string()),
                 tags: vec![
                     "correctness".to_string(),
                     "blocking".to_string(),
@@ -866,7 +866,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/fsh-lint-rs/rules/correctness/binding-strength-present"
+                    "https://octofhir.github.io/fsh-lint-rs/rules/blocking/binding-strength-present"
                         .to_string(),
                 ),
             },
@@ -977,7 +977,7 @@ impl BuiltinRules {
                 name: "Duplicate Definition".to_string(),
                 description: "Prevents duplicate resource names, IDs, and canonical URLs which would cause conflicts".to_string(),
                 severity: Severity::Error,
-                category: RuleCategory::Correctness,
+                category: RuleCategory::Custom("blocking".to_string()),
                 tags: vec![
                     "correctness".to_string(),
                     "blocking".to_string(),
@@ -986,7 +986,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/fsh-lint-rs/rules/correctness/duplicate-definition"
+                    "https://octofhir.github.io/fsh-lint-rs/rules/blocking/duplicate-definition"
                         .to_string(),
                 ),
             },
