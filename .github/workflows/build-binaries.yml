@@ -107,7 +107,8 @@ jobs:
   create-release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Run when called from release workflow (has version input) OR triggered by tag push
+    if: inputs.version != '' || startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
@@ -140,8 +141,14 @@ jobs:
       - name: Extract release notes
         id: extract_notes
         run: |
-          # Extract the latest version's notes from CHANGELOG.md
-          VERSION="${GITHUB_REF#refs/tags/v}"
+          # Use version from workflow input or from git tag
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+
+          echo "Extracting release notes for version: $VERSION"
 
           # Get content between the version header and the next version header or end
           NOTES=$(awk "/## \[$VERSION\]/,/## \[|^---/" CHANGELOG.md | sed '1d;$d' | sed '/^---$/d' | sed '/^$/d')
@@ -156,6 +163,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ inputs.version || github.ref_name }}
+          name: Release v${{ inputs.version || github.ref_name }}
           files: |
             release/*
           body_path: release_notes.txt
