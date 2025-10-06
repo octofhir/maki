@@ -84,7 +84,7 @@ jobs:
 
       - name: Commit version bump
         run: |
-          git add Cargo.toml crates/*/Cargo.toml CHANGELOG.md Cargo.lock
+          git add Cargo.toml crates/*/Cargo.toml CHANGELOG.md
           git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }} [ci skip]"
           git push origin main
 
