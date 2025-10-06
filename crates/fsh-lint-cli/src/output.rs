@@ -6,7 +6,6 @@ use colored::*;
 use fsh_lint_core::{
     DiagnosticRenderer, OutputFormat as CoreOutputFormat, Result, diagnostics::Diagnostic,
 };
-use serde_json;
 
 use crate::OutputFormat;
 
@@ -140,7 +139,7 @@ impl OutputFormatter {
         let diagnostics_json: serde_json::Value =
             serde_json::from_str(&renderer.render_diagnostics(diagnostics)).map_err(|e| {
                 fsh_lint_core::FshLintError::ConfigError {
-                    message: format!("Failed to parse diagnostics JSON: {}", e),
+                    message: format!("Failed to parse diagnostics JSON: {e}"),
                 }
             })?;
 
@@ -161,7 +160,7 @@ impl OutputFormatter {
             "{}",
             serde_json::to_string_pretty(&result).map_err(|e| {
                 fsh_lint_core::FshLintError::ConfigError {
-                    message: format!("Failed to serialize JSON: {}", e),
+                    message: format!("Failed to serialize JSON: {e}"),
                 }
             })?
         );
@@ -198,7 +197,7 @@ impl OutputFormatter {
             "{}",
             serde_json::to_string_pretty(&sarif).map_err(|e| {
                 fsh_lint_core::FshLintError::ConfigError {
-                    message: format!("Failed to serialize SARIF: {}", e),
+                    message: format!("Failed to serialize SARIF: {e}"),
                 }
             })?
         );
@@ -338,7 +337,7 @@ impl ProgressReporter {
 
     pub fn finish(&self, message: &str) {
         if self.enabled {
-            eprintln!("\r{} Complete!", message);
+            eprintln!("\r{message} Complete!");
         }
     }
 }
@@ -350,13 +349,13 @@ pub mod utils {
         let total_ms = duration.as_millis();
 
         if total_ms < 1000 {
-            format!("{}ms", total_ms)
+            format!("{total_ms}ms")
         } else if total_ms < 60_000 {
             format!("{:.1}s", total_ms as f64 / 1000.0)
         } else {
             let minutes = total_ms / 60_000;
             let seconds = (total_ms % 60_000) as f64 / 1000.0;
-            format!("{}m {:.1}s", minutes, seconds)
+            format!("{minutes}m {seconds:.1}s")
         }
     }
 }

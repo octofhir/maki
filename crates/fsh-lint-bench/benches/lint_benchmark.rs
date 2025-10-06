@@ -67,10 +67,7 @@ fn bench_mcode_files(c: &mut Criterion) {
         .join("examples/mcode-ig");
 
     if !mcode_dir.exists() {
-        eprintln!(
-            "Skipping mCODE benchmarks - directory not found: {:?}",
-            mcode_dir
-        );
+        eprintln!("Skipping mCODE benchmarks - directory not found: {mcode_dir:?}");
         return;
     }
 
@@ -107,7 +104,7 @@ fn bench_mcode_files(c: &mut Criterion) {
         large_content.lines().count()
     );
 
-    group.bench_function(format!("parse_{}", file_name_str), |b| {
+    group.bench_function(format!("parse_{file_name_str}"), |b| {
         b.iter(|| {
             let mut parser = FshParser;
             black_box(parser.parse(&large_content))
@@ -134,7 +131,7 @@ fn bench_mcode_files(c: &mut Criterion) {
         b.iter(|| {
             let mut parser = FshParser;
             for content in &all_contents {
-                black_box(parser.parse(content));
+                let _ = black_box(parser.parse(content));
             }
         });
     });
@@ -152,13 +149,12 @@ fn bench_large_files(c: &mut Criterion) {
         for i in 0..size {
             large_content.push_str(&format!(
                 r#"
-Profile: TestProfile{}
+Profile: TestProfile{i}
 Parent: Patient
-Description: "Test profile number {}"
+Description: "Test profile number {i}"
 * name 1..1 MS
 * birthDate 0..1
-"#,
-                i, i
+"#
             ));
         }
 

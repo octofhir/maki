@@ -204,8 +204,34 @@ impl<'a> Parser<'a> {
         self.expect(FshSyntaxKind::Ident);
         self.consume_trivia_and_newlines();
 
-        // TODO: Parse ValueSet-specific rules
-        self.skip_until_definition();
+        // Parse metadata clauses and rules
+        while !self.at_end() && !self.at_definition_keyword() {
+            if self.at_trivia() {
+                self.consume_trivia();
+                continue;
+            }
+
+            match self.current_kind() {
+                // Metadata keywords
+                FshSyntaxKind::IdKw => self.parse_id_clause(),
+                FshSyntaxKind::TitleKw => self.parse_title_clause(),
+                FshSyntaxKind::DescriptionKw => self.parse_description_clause(),
+
+                // Comment or newline
+                FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
+                    self.add_current_token();
+                    self.advance();
+                }
+                FshSyntaxKind::Newline => {
+                    self.add_current_token();
+                    self.advance();
+                }
+
+                _ => {
+                    self.error_and_recover();
+                }
+            }
+        }
 
         self.builder.finish_node();
     }
@@ -220,8 +246,34 @@ impl<'a> Parser<'a> {
         self.expect(FshSyntaxKind::Ident);
         self.consume_trivia_and_newlines();
 
-        // TODO: Parse CodeSystem concepts
-        self.skip_until_definition();
+        // Parse metadata clauses
+        while !self.at_end() && !self.at_definition_keyword() {
+            if self.at_trivia() {
+                self.consume_trivia();
+                continue;
+            }
+
+            match self.current_kind() {
+                // Metadata keywords
+                FshSyntaxKind::IdKw => self.parse_id_clause(),
+                FshSyntaxKind::TitleKw => self.parse_title_clause(),
+                FshSyntaxKind::DescriptionKw => self.parse_description_clause(),
+
+                // Comment or newline
+                FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
+                    self.add_current_token();
+                    self.advance();
+                }
+                FshSyntaxKind::Newline => {
+                    self.add_current_token();
+                    self.advance();
+                }
+
+                _ => {
+                    self.error_and_recover();
+                }
+            }
+        }
 
         self.builder.finish_node();
     }
@@ -343,8 +395,13 @@ impl<'a> Parser<'a> {
             self.advance();
             self.consume_trivia();
 
-            // Alias value (URL or identifier)
-            if self.at(FshSyntaxKind::Ident) || self.at(FshSyntaxKind::String) {
+            // Alias value (URL or identifier) - consume all tokens until newline
+            // URLs like "http://example.com/path" are lexed as multiple tokens (ident, colon, slashes, etc.)
+            // We need to collect all of them into the alias value
+            while !self.at_end()
+                && !self.at(FshSyntaxKind::Newline)
+                && self.current().map(|t| t.kind) != Some(FshSyntaxKind::Whitespace)
+            {
                 self.add_current_token();
                 self.advance();
             }
@@ -990,13 +1047,11 @@ impl<'a> Parser<'a> {
                     self.advance();
 
                     // Content can be: integer, identifier, +, =
-                    if self.at(FshSyntaxKind::Ident) || self.at(FshSyntaxKind::Integer) {
-                        self.add_current_token();
-                        self.advance();
-                    } else if self.at(FshSyntaxKind::Plus) {
-                        self.add_current_token();
-                        self.advance();
-                    } else if self.at(FshSyntaxKind::Equals) {
+                    if self.at(FshSyntaxKind::Ident)
+                        || self.at(FshSyntaxKind::Integer)
+                        || self.at(FshSyntaxKind::Plus)
+                        || self.at(FshSyntaxKind::Equals)
+                    {
                         self.add_current_token();
                         self.advance();
                     }
@@ -1101,6 +1156,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[allow(dead_code)]
     fn skip_until_definition(&mut self) {
         while !self.at_end() && !self.at_definition_keyword() {
             self.add_current_token();

@@ -210,7 +210,7 @@ mod tests {
 
         // Test children iteration
         let children: Vec<_> = root.children().collect();
-        assert!(children.len() > 0, "Root should have children");
+        assert!(!children.is_empty(), "Root should have children");
 
         // Test parent navigation
         if let Some(first_child) = children.first() {
@@ -287,7 +287,7 @@ mod tests {
 
         if let Some(child) = root.children().next() {
             let ancestors: Vec<_> = child.ancestors().collect();
-            assert!(ancestors.len() > 0, "Child should have ancestors");
+            assert!(!ancestors.is_empty(), "Child should have ancestors");
         }
     }
 

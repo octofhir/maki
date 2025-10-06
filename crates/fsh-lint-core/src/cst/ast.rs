@@ -362,12 +362,68 @@ impl AstNode for Alias {
 
 impl Alias {
     pub fn name(&self) -> Option<String> {
-        get_ident_text(&self.syntax)
+        // First IDENT after "Alias:"
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+            .find(|t| t.kind() == FshSyntaxKind::Ident)
+            .map(|t| t.text().trim().to_string())
     }
 
     pub fn value(&self) -> Option<String> {
-        // Value can be IDENT or STRING
-        get_ident_text(&self.syntax).or_else(|| get_string_text(&self.syntax))
+        // Collect all tokens after "=" until end of alias node
+        // URLs are lexed as multiple tokens, so we need to concatenate them
+        let mut found_equals = false;
+        let mut value_parts = Vec::new();
+
+        for child in self.syntax.children_with_tokens() {
+            if let Some(token) = child.as_token() {
+                if token.kind() == FshSyntaxKind::Equals {
+                    found_equals = true;
+                    continue;
+                }
+
+                if found_equals {
+                    // Skip whitespace and newlines at the start
+                    if value_parts.is_empty()
+                        && (token.kind() == FshSyntaxKind::Whitespace
+                            || token.kind() == FshSyntaxKind::Newline)
+                    {
+                        continue;
+                    }
+
+                    // Stop at newline
+                    if token.kind() == FshSyntaxKind::Newline {
+                        break;
+                    }
+
+                    // Handle string literals specially
+                    if token.kind() == FshSyntaxKind::String {
+                        let text = token.text();
+                        if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+                            return Some(text[1..text.len() - 1].to_string());
+                        } else {
+                            return Some(text.to_string());
+                        }
+                    }
+
+                    // Collect all other tokens
+                    // CommentLine tokens in URLs need special handling - they contain "//" prefix
+                    if token.kind() == FshSyntaxKind::CommentLine {
+                        // This is actually part of a URL (http://...), not a real comment
+                        value_parts.push(token.text().to_string());
+                    } else if token.kind() != FshSyntaxKind::Whitespace {
+                        value_parts.push(token.text().to_string());
+                    }
+                }
+            }
+        }
+
+        if value_parts.is_empty() {
+            None
+        } else {
+            Some(value_parts.join(""))
+        }
     }
 }
 

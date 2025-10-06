@@ -116,7 +116,7 @@ fn test_cst_integration_parse_simple_profile() {
     let source = "Profile: MyPatient\nParent: Patient\nTitle: \"My Patient Profile\"";
     let (cst, errors) = parse_fsh(source);
 
-    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    assert!(errors.is_empty(), "Parse errors: {errors:?}");
 
     let tree = FshGritTree::new(cst, source.to_string());
     let root = tree.root_node();
@@ -221,7 +221,7 @@ fn test_syntax_kind_mapping() {
         let pattern = parser.parse().unwrap();
         let result = compiler.compile(&pattern);
 
-        assert_eq!(result.is_ok(), should_succeed, "Failed for kind: {}", kind);
+        assert_eq!(result.is_ok(), should_succeed, "Failed for kind: {kind}");
     }
 }
 
@@ -372,7 +372,7 @@ fn test_cst_adapter_node_methods() {
 
 #[test]
 fn test_comprehensive_fsh_parse_and_tree_creation() {
-    let fsh_samples = vec![
+    let fsh_samples = [
         "Profile: SimpleProfile\nParent: Patient",
         "Extension: MyExtension\nId: my-ext",
         "ValueSet: MyValueSet\nTitle: \"My VS\"",
@@ -384,9 +384,7 @@ fn test_comprehensive_fsh_parse_and_tree_creation() {
         let (cst, errors) = parse_fsh(source);
         assert!(
             errors.is_empty(),
-            "Parse errors for sample {}: {:?}",
-            idx,
-            errors
+            "Parse errors for sample {idx}: {errors:?}"
         );
 
         let tree = FshGritTree::new(cst, source.to_string());
@@ -394,8 +392,7 @@ fn test_comprehensive_fsh_parse_and_tree_creation() {
 
         assert!(
             !root.text_content().is_empty(),
-            "Empty text for sample {}",
-            idx
+            "Empty text for sample {idx}"
         );
         assert_eq!(tree.source().as_ref(), *source);
     }

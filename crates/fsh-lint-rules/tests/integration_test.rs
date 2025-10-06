@@ -104,16 +104,16 @@ fn test_rule_loading_from_directory() {
     // Create multiple rule files
     for i in 1..=3 {
         let rule = Rule {
-            id: format!("test/style/dir-test-rule-{}", i),
+            id: format!("test/style/dir-test-rule-{i}"),
             severity: Severity::Info,
-            description: format!("Test rule {} from directory", i),
-            gritql_pattern: format!("dir_test_pattern_{}", i),
+            description: format!("Test rule {i} from directory"),
+            gritql_pattern: format!("dir_test_pattern_{i}"),
             autofix: None,
             is_ast_rule: false,
             metadata: RuleMetadata {
-                id: format!("test/style/dir-test-rule-{}", i),
-                name: format!("Directory Test Rule {}", i),
-                description: format!("Test rule {} from directory", i),
+                id: format!("test/style/dir-test-rule-{i}"),
+                name: format!("Directory Test Rule {i}"),
+                description: format!("Test rule {i} from directory"),
                 severity: Severity::Info,
                 category: RuleCategory::Style,
                 tags: vec!["test".to_string(), "directory".to_string()],
@@ -122,7 +122,7 @@ fn test_rule_loading_from_directory() {
             },
         };
 
-        let rule_file = rules_dir.join(format!("rule-{}.json", i));
+        let rule_file = rules_dir.join(format!("rule-{i}.json"));
         let rule_json = serde_json::to_string_pretty(&rule).unwrap();
         fs::write(&rule_file, rule_json).unwrap();
     }
@@ -134,7 +134,7 @@ fn test_rule_loading_from_directory() {
     // Verify all rules were loaded
     assert_eq!(engine.registry().len(), 3);
     for i in 1..=3 {
-        let rule_id = format!("test/style/dir-test-rule-{}", i);
+        let rule_id = format!("test/style/dir-test-rule-{i}");
         assert!(engine.get_rule(&rule_id).is_some());
     }
 }

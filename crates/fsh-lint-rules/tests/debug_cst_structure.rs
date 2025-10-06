@@ -19,9 +19,7 @@ Parent: Patient
 
 fn print_node(node: &FshGritNode, indent: usize) {
     let indent_str = "  ".repeat(indent);
-    let text = node
-        .text()
-        .unwrap_or_else(|_| std::borrow::Cow::Borrowed("<error>"));
+    let text = node.text().unwrap_or(std::borrow::Cow::Borrowed("<error>"));
     let kind = node.kind();
     let byte_range = node.byte_range();
 

@@ -122,6 +122,7 @@ impl DiffRenderer {
                 ChangeTag::Delete | ChangeTag::Insert => {
                     // Show context before
                     let context_start = i.saturating_sub(context_lines);
+                    #[allow(clippy::needless_range_loop)]
                     for j in context_start..i {
                         output.push_str("  ");
                         output.push_str(
@@ -151,6 +152,7 @@ impl DiffRenderer {
 
                     // Show context after
                     let context_end = (i + context_lines + 1).min(changes.len());
+                    #[allow(clippy::needless_range_loop)]
                     for j in (i + 1)..context_end {
                         if changes[j].tag() == ChangeTag::Equal {
                             output.push_str("  ");

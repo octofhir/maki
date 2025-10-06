@@ -102,6 +102,7 @@ impl PatternCompiler {
         })))
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn compile_predicate_to_predicate(
         &mut self,
         predicate: &GritPredicate,

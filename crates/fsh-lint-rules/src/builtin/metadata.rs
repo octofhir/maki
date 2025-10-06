@@ -181,35 +181,33 @@ fn create_missing_metadata_diagnostic(
 mod tests {
     use super::*;
     use fsh_lint_core::SemanticModel;
-    use fsh_lint_core::cst::ast::{AstNode, FSHDocument, Spanned};
+    use fsh_lint_core::cst::{ast::AstNode, parse_fsh};
     use std::path::PathBuf;
 
-    fn create_test_model() -> SemanticModel {
-        let source = "Profile: Test\nDescription: \"Test\"".to_string();
-        let source_map = fsh_lint_core::SourceMap::new(&source);
+    fn create_test_model_from_source(source: &str) -> SemanticModel {
+        let (cst, _) = parse_fsh(source);
+        let source_map = fsh_lint_core::SourceMap::new(source);
         SemanticModel {
-            document: FSHDocument::new(0..source.len()),
+            cst,
             resources: Vec::new(),
             symbols: Default::default(),
             references: Vec::new(),
             source_file: PathBuf::from("test.fsh"),
             source_map,
-            source,
+            source: source.to_string(),
         }
     }
 
     #[test]
     fn test_profile_with_description() {
-        let model = create_test_model();
-        let profile = Profile {
-            name: Spanned::new("TestProfile".to_string(), 0..11),
-            parent: None,
-            id: Some(Spanned::new("test-profile".to_string(), 20..32)),
-            title: Some(Spanned::new("Test Profile".to_string(), 40..52)),
-            description: Some(Spanned::new("A test profile".to_string(), 60..74)),
-            rules: Vec::new(),
-            span: 0..100,
-        };
+        let source = r#"Profile: TestProfile
+Id: test-profile
+Title: "Test Profile"
+Description: "A test profile"
+"#;
+        let model = create_test_model_from_source(source);
+        let document = Document::cast(model.cst.clone()).expect("Should parse as document");
+        let profile = document.profiles().next().expect("Should have profile");
 
         let diagnostics = check_profile_metadata(&profile, &model);
         assert_eq!(
@@ -221,16 +219,13 @@ mod tests {
 
     #[test]
     fn test_profile_missing_description() {
-        let model = create_test_model();
-        let profile = Profile {
-            name: Spanned::new("TestProfile".to_string(), 0..11),
-            parent: None,
-            id: Some(Spanned::new("test-profile".to_string(), 20..32)),
-            title: Some(Spanned::new("Test Profile".to_string(), 40..52)),
-            description: None,
-            rules: Vec::new(),
-            span: 0..100,
-        };
+        let source = r#"Profile: TestProfile
+Id: test-profile
+Title: "Test Profile"
+"#;
+        let model = create_test_model_from_source(source);
+        let document = Document::cast(model.cst.clone()).expect("Should parse as document");
+        let profile = document.profiles().next().expect("Should have profile");
 
         let diagnostics = check_profile_metadata(&profile, &model);
         assert_eq!(diagnostics.len(), 1);
@@ -240,17 +235,13 @@ mod tests {
 
     #[test]
     fn test_extension_missing_description() {
-        let model = create_test_model();
-        let extension = Extension {
-            name: Spanned::new("TestExtension".to_string(), 0..13),
-            parent: None,
-            id: Some(Spanned::new("test-ext".to_string(), 20..28)),
-            title: Some(Spanned::new("Test Extension".to_string(), 35..49)),
-            description: None,
-            contexts: Vec::new(),
-            rules: Vec::new(),
-            span: 0..100,
-        };
+        let source = r#"Extension: TestExtension
+Id: test-ext
+Title: "Test Extension"
+"#;
+        let model = create_test_model_from_source(source);
+        let document = Document::cast(model.cst.clone()).expect("Should parse as document");
+        let extension = document.extensions().next().expect("Should have extension");
 
         let diagnostics = check_extension_metadata(&extension, &model);
         assert_eq!(diagnostics.len(), 1);
@@ -259,17 +250,13 @@ mod tests {
 
     #[test]
     fn test_value_set_missing_description() {
-        let model = create_test_model();
-        let value_set = ValueSet {
-            name: Spanned::new("TestVS".to_string(), 0..6),
-            parent: None,
-            id: Some(Spanned::new("test-vs".to_string(), 15..22)),
-            title: Some(Spanned::new("Test VS".to_string(), 30..37)),
-            description: None,
-            components: Vec::new(),
-            rules: Vec::new(),
-            span: 0..50,
-        };
+        let source = r#"ValueSet: TestVS
+Id: test-vs
+Title: "Test VS"
+"#;
+        let model = create_test_model_from_source(source);
+        let document = Document::cast(model.cst.clone()).expect("Should parse as document");
+        let value_set = document.value_sets().next().expect("Should have value set");
 
         let diagnostics = check_value_set_metadata(&value_set, &model);
         assert_eq!(diagnostics.len(), 1);
@@ -278,16 +265,16 @@ mod tests {
 
     #[test]
     fn test_code_system_missing_description() {
-        let model = create_test_model();
-        let code_system = CodeSystem {
-            name: Spanned::new("TestCS".to_string(), 0..6),
-            id: Some(Spanned::new("test-cs".to_string(), 15..22)),
-            title: Some(Spanned::new("Test CS".to_string(), 30..37)),
-            description: None,
-            concepts: Vec::new(),
-            rules: Vec::new(),
-            span: 0..50,
-        };
+        let source = r#"CodeSystem: TestCS
+Id: test-cs
+Title: "Test CS"
+"#;
+        let model = create_test_model_from_source(source);
+        let document = Document::cast(model.cst.clone()).expect("Should parse as document");
+        let code_system = document
+            .code_systems()
+            .next()
+            .expect("Should have code system");
 
         let diagnostics = check_code_system_metadata(&code_system, &model);
         assert_eq!(diagnostics.len(), 1);
@@ -296,42 +283,15 @@ mod tests {
 
     #[test]
     fn test_check_metadata_in_document() {
-        let source = "Profile: Test\nExtension: Ext".to_string();
-        let source_map = fsh_lint_core::SourceMap::new(&source);
-        let mut doc = FSHDocument::new(0..source.len());
+        let source = r#"Profile: TestProfile
+Id: test
+Title: "Test"
 
-        // Add profile without description
-        doc.profiles.push(Profile {
-            name: Spanned::new("TestProfile".to_string(), 0..11),
-            parent: None,
-            id: Some(Spanned::new("test".to_string(), 20..24)),
-            title: Some(Spanned::new("Test".to_string(), 30..34)),
-            description: None,
-            rules: Vec::new(),
-            span: 0..50,
-        });
-
-        // Add value set without description
-        doc.value_sets.push(ValueSet {
-            name: Spanned::new("TestVS".to_string(), 60..66),
-            parent: None,
-            id: Some(Spanned::new("test-vs".to_string(), 75..82)),
-            title: Some(Spanned::new("Test VS".to_string(), 90..97)),
-            description: None,
-            components: Vec::new(),
-            rules: Vec::new(),
-            span: 60..100,
-        });
-
-        let model = SemanticModel {
-            document: doc,
-            resources: Vec::new(),
-            symbols: Default::default(),
-            references: Vec::new(),
-            source_file: PathBuf::from("test.fsh"),
-            source_map,
-            source,
-        };
+ValueSet: TestVS
+Id: test-vs
+Title: "Test VS"
+"#;
+        let model = create_test_model_from_source(source);
 
         let diagnostics = check_missing_metadata(&model);
         assert_eq!(diagnostics.len(), 2, "Should find 2 missing descriptions");

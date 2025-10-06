@@ -211,6 +211,22 @@ impl FormatContext {
         }
     }
 
+    /// Handle newline tokens while limiting consecutive blank lines
+    fn handle_newline_token(&mut self, count: usize) {
+        const MAX_CONSECUTIVE_NEWLINES: usize = 2;
+
+        for _ in 0..count {
+            if self.consecutive_newlines >= MAX_CONSECUTIVE_NEWLINES {
+                break;
+            }
+
+            self.output.push('\n');
+            self.current_line_length = 0;
+            self.at_line_start = true;
+            self.consecutive_newlines += 1;
+        }
+    }
+
     /// Ensure we're at the start of a line
     fn ensure_newline(&mut self) {
         if !self.at_line_start {
@@ -338,8 +354,39 @@ impl<P: Parser> AstFormatter<P> {
 
             // Document root - just process children
             FshSyntaxKind::Document | FshSyntaxKind::Root => {
-                for child in node.children() {
-                    self.format_node(&child, ctx)?;
+                use rowan::NodeOrToken;
+
+                for child in node.children_with_tokens() {
+                    match child {
+                        NodeOrToken::Node(child_node) => {
+                            self.format_node(&child_node, ctx)?;
+                        }
+                        NodeOrToken::Token(token) => {
+                            use crate::cst::FshSyntaxKind;
+
+                            match token.kind() {
+                                FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
+                                    ctx.write_text(token.text().to_string());
+                                    if token.kind() == FshSyntaxKind::CommentLine {
+                                        ctx.newline();
+                                    }
+                                }
+                                FshSyntaxKind::Whitespace => {
+                                    if !ctx.at_line_start {
+                                        ctx.write_text(" ".to_string());
+                                    }
+                                }
+                                FshSyntaxKind::Newline => {
+                                    let count =
+                                        token.text().chars().filter(|c| *c == '\n').count().max(1);
+                                    ctx.handle_newline_token(count);
+                                }
+                                _ => {
+                                    ctx.write_text(token.text().to_string());
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -377,14 +424,12 @@ impl<P: Parser> AstFormatter<P> {
 
                         // Normalize whitespace and newlines
                         FshSyntaxKind::Whitespace => {
-                            // Skip whitespace - we'll add our own
+                            ctx.write_text(token.text().to_string());
                         }
 
                         FshSyntaxKind::Newline => {
-                            // Only add newline if we're not already at line start
-                            if !ctx.at_line_start {
-                                ctx.newline();
-                            }
+                            let count = token.text().chars().filter(|c| *c == '\n').count().max(1);
+                            ctx.handle_newline_token(count);
                         }
 
                         // Other tokens - write as-is
@@ -451,6 +496,86 @@ impl<P: Parser> Formatter for AstFormatter<P> {
             formatted: result.content,
             changes: vec![],
         })
+    }
+}
+
+impl<P: Parser> AstFormatter<P> {
+    /// Format a file and generate detailed diagnostics for each formatting issue
+    ///
+    /// Returns diagnostics showing specific formatting problems at exact locations
+    pub fn format_file_with_diagnostic(
+        &mut self,
+        path: &Path,
+        config: &FormatterConfiguration,
+    ) -> Result<Vec<crate::diagnostics::Diagnostic>> {
+        use crate::diagnostics::{CodeSuggestion, Diagnostic, Location, Severity};
+
+        let content = std::fs::read_to_string(path)?;
+        let result = self.format_string(&content, config)?;
+
+        if !result.changed {
+            // File is already formatted correctly
+            return Ok(Vec::new());
+        }
+
+        // Create a location spanning the entire file
+        let mut location = Location::new(path.to_path_buf(), 1, 1, 0, content.len());
+
+        // Set end location to last line
+        let line_count = content.lines().count().max(1);
+        location.end_line = Some(line_count);
+        location.end_column = Some(content.lines().last().map(|l| l.len() + 1).unwrap_or(1));
+
+        // Create suggestion with the fully formatted content
+        // The diagnostic renderer will automatically skip showing huge diffs (>5KB)
+        // and just show "Use --write to apply this fix" instead
+        let suggestion = CodeSuggestion::safe(
+            "Run `fsh-lint fmt --write` to apply formatting",
+            result.content.clone(),
+            location.clone(),
+        );
+
+        let diagnostic = Diagnostic::new(
+            "formatter/needs-formatting",
+            Severity::Info,
+            "File needs formatting",
+            location,
+        )
+        .with_suggestion(suggestion)
+        .with_source("formatter");
+
+        Ok(vec![diagnostic])
+    }
+
+    /// Format multiple files and generate diagnostics for files that need formatting
+    pub fn format_files_with_diagnostics(
+        &mut self,
+        paths: &[&Path],
+        config: &FormatterConfiguration,
+    ) -> Result<Vec<crate::diagnostics::Diagnostic>> {
+        let mut diagnostics = Vec::new();
+
+        for path in paths {
+            diagnostics.extend(self.format_file_with_diagnostic(path, config)?);
+        }
+
+        Ok(diagnostics)
+    }
+
+    /// Get formatted content for a file (used when applying formatting fixes)
+    pub fn get_formatted_content(
+        &mut self,
+        path: &Path,
+        config: &FormatterConfiguration,
+    ) -> Result<Option<String>> {
+        let content = std::fs::read_to_string(path)?;
+        let result = self.format_string(&content, config)?;
+
+        if result.changed {
+            Ok(Some(result.content))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -741,6 +866,7 @@ impl RichDiagnosticFormatter {
 
         // Show context lines after error
         let end_line = (line_num + 1 + self.context_lines).min(lines.len());
+        #[allow(clippy::needless_range_loop)]
         for i in (line_num + 1)..end_line {
             output.push_str(&self.format_context_line(i + 1, lines[i], line_width));
         }

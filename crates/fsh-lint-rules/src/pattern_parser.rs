@@ -127,17 +127,15 @@ fn parse_predicate_expression(expr: &str) -> Result<Predicate> {
     let expr = expr.trim();
 
     // Check for negation first (highest precedence)
-    if expr.starts_with("not ") {
-        let negated = &expr[4..].trim();
+    if let Some(negated) = expr.strip_prefix("not ") {
         return Ok(Predicate::Not(Box::new(parse_predicate_expression(
-            negated,
+            negated.trim(),
         )?)));
     }
 
-    if expr.starts_with("!") {
-        let negated = &expr[1..].trim();
+    if let Some(negated) = expr.strip_prefix("!") {
         return Ok(Predicate::Not(Box::new(parse_predicate_expression(
-            negated,
+            negated.trim(),
         )?)));
     }
 
@@ -166,9 +164,9 @@ fn parse_or_expression(expr: &str) -> Result<Predicate> {
             predicates.push(parse_and_expression(part)?);
         } else if part.starts_with("not ") || part.starts_with("!") {
             let negated = if part.starts_with("not ") {
-                &part[4..]
+                part.strip_prefix("not ").unwrap()
             } else {
-                &part[1..]
+                part.strip_prefix("!").unwrap()
             };
             predicates.push(Predicate::Not(Box::new(parse_single_predicate(
                 negated.trim(),
@@ -191,9 +189,9 @@ fn parse_and_expression(expr: &str) -> Result<Predicate> {
         // Each part can be a NOT expression or a single predicate
         if part.starts_with("not ") || part.starts_with("!") {
             let negated = if part.starts_with("not ") {
-                &part[4..]
+                part.strip_prefix("not ").unwrap()
             } else {
-                &part[1..]
+                part.strip_prefix("!").unwrap()
             };
             predicates.push(Predicate::Not(Box::new(parse_single_predicate(
                 negated.trim(),
@@ -401,7 +399,7 @@ mod tests {
             Predicate::And(preds) => {
                 assert_eq!(preds.len(), 2);
             }
-            pred => panic!("Expected And predicate, got {:?}", pred),
+            pred => panic!("Expected And predicate, got {pred:?}"),
         }
     }
 

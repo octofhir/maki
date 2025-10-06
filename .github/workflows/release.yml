@@ -82,13 +82,11 @@ jobs:
             sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [$NEW_VERSION] - $DATE\n/" CHANGELOG.md
           fi
 
-      - name: Commit and tag
+      - name: Commit version bump
         run: |
           git add Cargo.toml crates/*/Cargo.toml CHANGELOG.md Cargo.lock
           git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }} [ci skip]"
-          git tag "v${{ steps.bump.outputs.new_version }}"
           git push origin main
-          git push origin "v${{ steps.bump.outputs.new_version }}"
 
   trigger-build:
     needs: prepare-release

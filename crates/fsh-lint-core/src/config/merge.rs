@@ -222,11 +222,13 @@ mod tests {
             documentation: None,
         };
 
-        let mut override_config = RulesConfiguration::default();
-        override_config.correctness = Some(HashMap::from([
-            ("rule1".to_string(), RuleSeverity::Warn),
-            ("rule2".to_string(), RuleSeverity::Error),
-        ]));
+        let override_config = RulesConfiguration {
+            correctness: Some(HashMap::from([
+                ("rule1".to_string(), RuleSeverity::Warn),
+                ("rule2".to_string(), RuleSeverity::Error),
+            ])),
+            ..Default::default()
+        };
 
         base.merge_with(override_config);
 
@@ -324,8 +326,10 @@ mod tests {
 
     #[test]
     fn test_merge_none_values() {
-        let mut base = FshLintConfiguration::default();
-        base.linter = None;
+        let mut base = FshLintConfiguration {
+            linter: None,
+            ..Default::default()
+        };
 
         let override_config = FshLintConfiguration::default();
 

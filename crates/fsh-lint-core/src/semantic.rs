@@ -7,7 +7,7 @@ use crate::cst::{FshSyntaxNode, ast::*};
 use crate::{Diagnostic, FshLintError, Location, Result};
 use std::collections::HashMap;
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub type Span = Range<usize>;
 
@@ -368,7 +368,7 @@ impl DefaultSemanticAnalyzer {
         &self,
         profile: &Profile,
         source: &str,
-        file_path: &PathBuf,
+        file_path: &Path,
     ) -> FhirResource {
         let name = profile.name().unwrap_or_else(|| "Unknown".to_string());
         let id = profile
@@ -398,7 +398,7 @@ impl DefaultSemanticAnalyzer {
         &self,
         extension: &Extension,
         source: &str,
-        file_path: &PathBuf,
+        file_path: &Path,
     ) -> FhirResource {
         let name = extension.name().unwrap_or_else(|| "Unknown".to_string());
         let id = extension
@@ -428,7 +428,7 @@ impl DefaultSemanticAnalyzer {
         &self,
         value_set: &ValueSet,
         source: &str,
-        file_path: &PathBuf,
+        file_path: &Path,
     ) -> FhirResource {
         let name = value_set.name().unwrap_or_else(|| "Unknown".to_string());
         let id = value_set
@@ -457,7 +457,7 @@ impl DefaultSemanticAnalyzer {
         &self,
         code_system: &CodeSystem,
         source: &str,
-        file_path: &PathBuf,
+        file_path: &Path,
     ) -> FhirResource {
         let name = code_system.name().unwrap_or_else(|| "Unknown".to_string());
         let id = code_system
@@ -750,18 +750,18 @@ impl DefaultSemanticAnalyzer {
     }
 }
 
-fn node_to_location(file_path: &PathBuf, node: &FshSyntaxNode, source: &str) -> Location {
+fn node_to_location(file_path: &Path, node: &FshSyntaxNode, source: &str) -> Location {
     let range = node.text_range();
     let span = usize::from(range.start())..usize::from(range.end());
     span_to_location(file_path, &span, source)
 }
 
-fn span_to_location(file_path: &PathBuf, span: &Span, source: &str) -> Location {
+fn span_to_location(file_path: &Path, span: &Span, source: &str) -> Location {
     let (start_line, start_col) = offset_to_line_col(source, span.start);
     let (end_line, end_col) = offset_to_line_col(source, span.end);
 
     Location {
-        file: file_path.clone(),
+        file: file_path.to_path_buf(),
         line: start_line + 1,
         column: start_col + 1,
         end_line: Some(end_line + 1),

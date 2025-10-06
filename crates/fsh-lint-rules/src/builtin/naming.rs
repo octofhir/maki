@@ -341,13 +341,14 @@ fn to_kebab_case(s: &str) -> String {
 mod tests {
     use super::*;
     use fsh_lint_core::SemanticModel;
-    use fsh_lint_core::ast::{CodeSystem, Extension, FSHDocument, Profile, Spanned, ValueSet};
+    use fsh_lint_core::cst::parse_fsh;
     use std::path::PathBuf;
 
     fn create_test_model(source: &str) -> SemanticModel {
+        let (cst, _) = parse_fsh(source);
         let source_map = fsh_lint_core::SourceMap::new(source);
         SemanticModel {
-            document: FSHDocument::new(0..source.len()),
+            cst,
             resources: Vec::new(),
             symbols: Default::default(),
             references: Vec::new(),
@@ -405,17 +406,7 @@ mod tests {
     #[test]
     fn test_profile_good_naming() {
         let source = "Profile: MyProfile\nId: my-profile\n";
-        let mut model = create_test_model(source);
-
-        model.document.profiles.push(Profile {
-            name: Spanned::new("MyProfile".to_string(), 9..18),
-            parent: None,
-            id: Some(Spanned::new("my-profile".to_string(), 23..33)),
-            title: None,
-            description: None,
-            rules: Vec::new(),
-            span: 0..source.len(),
-        });
+        let model = create_test_model(source);
 
         let diagnostics = check_naming_conventions(&model);
         assert_eq!(
@@ -428,17 +419,7 @@ mod tests {
     #[test]
     fn test_profile_bad_name() {
         let source = "Profile: my_bad_profile\n";
-        let mut model = create_test_model(source);
-
-        model.document.profiles.push(Profile {
-            name: Spanned::new("my_bad_profile".to_string(), 9..23),
-            parent: None,
-            id: None,
-            title: None,
-            description: None,
-            rules: Vec::new(),
-            span: 0..source.len(),
-        });
+        let model = create_test_model(source);
 
         let diagnostics = check_naming_conventions(&model);
         assert_eq!(diagnostics.len(), 1);
@@ -451,17 +432,7 @@ mod tests {
     #[test]
     fn test_profile_bad_id() {
         let source = "Profile: MyProfile\nId: My_Bad_ID\n";
-        let mut model = create_test_model(source);
-
-        model.document.profiles.push(Profile {
-            name: Spanned::new("MyProfile".to_string(), 9..18),
-            parent: None,
-            id: Some(Spanned::new("My_Bad_ID".to_string(), 23..32)),
-            title: None,
-            description: None,
-            rules: Vec::new(),
-            span: 0..source.len(),
-        });
+        let model = create_test_model(source);
 
         let diagnostics = check_naming_conventions(&model);
         assert_eq!(diagnostics.len(), 1);
@@ -473,18 +444,7 @@ mod tests {
     #[test]
     fn test_extension_naming() {
         let source = "Extension: bad_extension\nId: BadID\n";
-        let mut model = create_test_model(source);
-
-        model.document.extensions.push(Extension {
-            name: Spanned::new("bad_extension".to_string(), 11..24),
-            parent: None,
-            id: Some(Spanned::new("BadID".to_string(), 29..34)),
-            title: None,
-            description: None,
-            contexts: Vec::new(),
-            rules: Vec::new(),
-            span: 0..source.len(),
-        });
+        let model = create_test_model(source);
 
         let diagnostics = check_naming_conventions(&model);
         assert_eq!(diagnostics.len(), 2, "Should flag both bad name and bad ID");
@@ -505,28 +465,7 @@ mod tests {
     #[test]
     fn test_value_set_and_code_system_naming() {
         let source = "ValueSet: bad_value_set\nCodeSystem: Bad_Code_System\n";
-        let mut model = create_test_model(source);
-
-        model.document.value_sets.push(ValueSet {
-            name: Spanned::new("bad_value_set".to_string(), 10..23),
-            parent: None,
-            id: None,
-            title: None,
-            description: None,
-            components: Vec::new(),
-            rules: Vec::new(),
-            span: 0..24,
-        });
-
-        model.document.code_systems.push(CodeSystem {
-            name: Spanned::new("Bad_Code_System".to_string(), 36..51),
-            id: None,
-            title: None,
-            description: None,
-            concepts: Vec::new(),
-            rules: Vec::new(),
-            span: 25..source.len(),
-        });
+        let model = create_test_model(source);
 
         let diagnostics = check_naming_conventions(&model);
         assert_eq!(

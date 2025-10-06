@@ -1,6 +1,6 @@
 //! Diagnostic renderer with rich terminal output
 
-use super::{Applicability, CodeSuggestion, Diagnostic, Severity};
+use super::{Applicability, CodeSuggestion, Diagnostic, Location, Severity};
 use crate::console::{Color, Console};
 use serde_json;
 use std::fs;
@@ -20,6 +20,27 @@ pub enum OutputFormat {
 pub struct DiagnosticRenderer {
     console: Console,
     output_format: OutputFormat,
+}
+
+struct SuggestionRender {
+    diff: Option<String>,
+    notes: Vec<String>,
+}
+
+impl SuggestionRender {
+    fn diff(diff: String) -> Self {
+        Self {
+            diff: Some(diff),
+            notes: Vec::new(),
+        }
+    }
+
+    fn notes<T: Into<String>>(notes: impl IntoIterator<Item = T>) -> Self {
+        Self {
+            diff: None,
+            notes: notes.into_iter().map(Into::into).collect(),
+        }
+    }
 }
 
 impl DiagnosticRenderer {
@@ -78,9 +99,16 @@ impl DiagnosticRenderer {
         output.push('\n');
 
         // Code frame with context
-        if let Some(frame) = self.render_code_frame(diagnostic) {
-            output.push_str(&frame);
-            output.push('\n');
+        match self.render_code_frame(diagnostic) {
+            Some(frame) => {
+                output.push_str(&frame);
+                output.push('\n');
+            }
+            None => {
+                output.push('\n');
+                output.push_str(&self.render_location_line(&diagnostic.location));
+                output.push('\n');
+            }
         }
 
         // Suggestions with applicability markers
@@ -132,6 +160,17 @@ impl DiagnosticRenderer {
     fn render_code_frame(&self, diagnostic: &Diagnostic) -> Option<String> {
         let source = fs::read_to_string(&diagnostic.location.file).ok()?;
         let lines: Vec<&str> = source.lines().collect();
+        let total_lines = if lines.is_empty() { 1 } else { lines.len() };
+        let last_line_len = lines.last().map(|l| l.len()).unwrap_or(0);
+
+        if self.location_spans_entire_file(
+            &diagnostic.location,
+            source.len(),
+            total_lines,
+            last_line_len,
+        ) {
+            return None;
+        }
 
         let error_line = diagnostic.location.line;
         let error_col = diagnostic.location.column;
@@ -141,7 +180,7 @@ impl DiagnosticRenderer {
         let start_line = error_line.saturating_sub(2).max(1);
         let end_line = (error_line + 2).min(lines.len());
 
-        let gutter_width = format!("{end_line}").len();
+        let gutter_width = format!("{}", end_line.max(total_lines)).len();
 
         let mut frame = String::new();
         frame.push('\n');
@@ -247,9 +286,21 @@ impl DiagnosticRenderer {
                 suggestion.message
             ));
 
-            // Render diff if replacement is provided
-            if !suggestion.replacement.is_empty() {
-                output.push_str(&self.render_suggestion_diff(suggestion));
+            // Render diff output when appropriate; otherwise fall back to guidance
+            if suggestion.replacement.is_empty() {
+                continue;
+            }
+
+            let rendered = self.render_suggestion_diff(suggestion);
+
+            if let Some(diff) = rendered.diff {
+                output.push_str(&diff);
+            }
+
+            for note in rendered.notes {
+                let arrow = self.console.colorize("→", Color::Dim);
+                let highlighted = self.highlight_cli_flags(&note);
+                output.push_str(&format!("      {arrow} {highlighted}\n"));
             }
         }
 
@@ -257,17 +308,49 @@ impl DiagnosticRenderer {
     }
 
     /// Render a diff for a suggestion
-    fn render_suggestion_diff(&self, suggestion: &CodeSuggestion) -> String {
+    fn render_suggestion_diff(&self, suggestion: &CodeSuggestion) -> SuggestionRender {
+        const MAX_DIFF_SIZE: usize = 5000; // Avoid overwhelming output with very large diffs
+
         let source = match fs::read_to_string(&suggestion.location.file) {
             Ok(s) => s,
-            Err(_) => return String::new(),
+            Err(_) => {
+                return SuggestionRender::notes([
+                    "Unable to display diff (failed to read file)",
+                    "Use --write to apply this fix",
+                ]);
+            }
         };
 
         let lines: Vec<&str> = source.lines().collect();
+        let total_lines = if lines.is_empty() { 1 } else { lines.len() };
+        let last_line_len = lines.last().map(|l| l.len()).unwrap_or(0);
+
+        if self.location_spans_entire_file(
+            &suggestion.location,
+            source.len(),
+            total_lines,
+            last_line_len,
+        ) {
+            return SuggestionRender::notes([
+                "Formatting diff suppressed for large change; run `fsh-lint fmt --diff` to review",
+                "Use --write to apply this fix",
+            ]);
+        }
+
+        if suggestion.replacement.len() >= MAX_DIFF_SIZE {
+            return SuggestionRender::notes([
+                "Diff too large to display; run `fsh-lint fmt --diff` for details",
+                "Use --write to apply this fix",
+            ]);
+        }
+
         let line_num = suggestion.location.line;
 
         if line_num == 0 || line_num > lines.len() {
-            return String::new();
+            return SuggestionRender::notes([
+                "Unable to display diff for this change",
+                "Use --write to apply this fix",
+            ]);
         }
 
         let original_line = lines[line_num - 1];
@@ -338,7 +421,54 @@ impl DiagnosticRenderer {
             output.push('\n');
         }
 
-        output
+        SuggestionRender::diff(output)
+    }
+
+    fn highlight_cli_flags(&self, text: &str) -> String {
+        let mut result = text.to_string();
+
+        for flag in ["--write", "--diff"] {
+            if result.contains(flag) {
+                let colored = self.console.colorize(flag, Color::Bold);
+                result = result.replace(flag, &colored);
+            }
+        }
+
+        result
+    }
+
+    fn render_location_line(&self, location: &Location) -> String {
+        format!(
+            "  {} {}",
+            self.console.colorize("→", Color::Blue),
+            self.console.colorize(&format!("{location}"), Color::Dim)
+        )
+    }
+
+    fn location_spans_entire_file(
+        &self,
+        location: &Location,
+        source_len: usize,
+        total_lines: usize,
+        last_line_len: usize,
+    ) -> bool {
+        if source_len == 0 {
+            return location.line <= 1
+                && location.column <= 1
+                && location.offset == 0
+                && location.length == 0;
+        }
+
+        let covers_start = location.line <= 1 && location.column <= 1 && location.offset == 0;
+
+        let covers_end = match (location.end_line, location.end_column) {
+            (Some(end_line), Some(end_col)) => {
+                end_line >= total_lines && end_col >= last_line_len.saturating_add(1)
+            }
+            _ => location.length >= source_len,
+        };
+
+        covers_start && covers_end && location.length >= source_len.saturating_sub(1)
     }
 
     /// Render multiple diagnostics

@@ -502,8 +502,9 @@ mod tests {
         let matcher = GritQLMatcher::new("test_pattern".to_string());
         assert!(matcher.is_ok());
 
+        // Empty patterns are now allowed for AST-based rules
         let empty_matcher = GritQLMatcher::new("".to_string());
-        assert!(empty_matcher.is_err());
+        assert!(empty_matcher.is_ok());
     }
 
     #[test]

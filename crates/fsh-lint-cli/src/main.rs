@@ -139,6 +139,15 @@ enum Commands {
         #[arg(help = "Files or directories to format (default: current directory)")]
         paths: Vec<PathBuf>,
 
+        /// Output format
+        #[arg(
+            short,
+            long,
+            default_value = "human",
+            help = "Output format for diagnostics"
+        )]
+        format: OutputFormat,
+
         /// Write fixes to files (default behavior for format command)
         #[arg(long, help = "Write fixes to files")]
         write: bool,
@@ -397,6 +406,7 @@ async fn run_command(cli: Cli) -> Result<()> {
 
         Some(Commands::Fmt {
             paths,
+            format,
             write,
             check,
             diff,
@@ -414,6 +424,7 @@ async fn run_command(cli: Cli) -> Result<()> {
 
             commands::format_command(
                 paths,
+                format,
                 write,
                 check,
                 diff,
@@ -467,7 +478,7 @@ async fn run_command(cli: Cli) -> Result<()> {
                     env!("CARGO_PKG_RUST_VERSION", "unknown")
                 );
                 if let Ok(profile) = std::env::var("PROFILE") {
-                    println!("  Profile: {}", profile);
+                    println!("  Profile: {profile}");
                 }
             } else {
                 println!("{}", fsh_lint_core::VERSION);

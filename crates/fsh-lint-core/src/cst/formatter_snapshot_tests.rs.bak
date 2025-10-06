@@ -48,7 +48,6 @@ Description: "Profile for US Core Patient based on FHIR Patient resource"
     }
 
     #[test]
-    #[ignore] // TODO: Formatter doesn't output rule paths properly
     fn snapshot_profile_with_rules_aligned() {
         let input = r#"Profile:MyProfile
 Parent:Patient
@@ -71,7 +70,6 @@ Parent: Patient
     }
 
     #[test]
-    #[ignore] // TODO: Formatter doesn't output rule paths properly
     fn snapshot_profile_with_rules_not_aligned() {
         let input = r#"Profile:MyProfile
 Parent:Patient
@@ -79,10 +77,8 @@ Parent:Patient
 *identifier 1..* MS
 *name 1..1 MS"#;
 
-        let options = FormatOptions {
-            align_carets: false,
-            ..Default::default()
-        };
+        let mut options = FormatOptions::default();
+        options.align_carets = false;
 
         let expected = r#"Profile: MyProfile
 Parent: Patient
@@ -144,9 +140,12 @@ Description: "Custom code system for demonstration"
 
     #[test]
     fn snapshot_alias() {
-        let input = "Alias:SCT=http://snomed.info/sct\nAlias:LOINC=http://loinc.org";
+        let input = "Alias:$SCT=http://snomed.info/sct\nAlias:$LOINC=http://loinc.org";
 
-        let expected = "Alias: SCT = http://snomed.info/sct\n\nAlias: LOINC = http://loinc.org\n\n";
+        let expected = r#"Alias: $SCT = http://snomed.info/sct
+
+Alias: $LOINC = http://loinc.org
+"#;
 
         test_format_snapshot(input, expected, &FormatOptions::default());
     }
@@ -170,7 +169,6 @@ Parent: Observation
     }
 
     #[test]
-    #[ignore] // TODO: Formatter doesn't output rule paths properly
     fn snapshot_mixed_rules() {
         let input = r#"Profile:ComplexProfile
 Parent:Patient
@@ -193,7 +191,6 @@ Parent: Patient
     }
 
     #[test]
-    #[ignore] // TODO: Formatter doesn't output rule paths properly
     fn snapshot_path_segments() {
         let input = r#"Profile:Test
 Parent:Patient
@@ -214,7 +211,6 @@ Parent: Patient
     }
 
     #[test]
-    #[ignore] // TODO: Formatter doesn't output rule paths properly
     fn snapshot_fixed_values() {
         let input = r#"Profile:Test
 Parent:Patient
@@ -235,7 +231,6 @@ Parent: Patient
     }
 
     #[test]
-    #[ignore] // TODO: Formatter doesn't output rule paths properly
     fn snapshot_flags() {
         let input = r#"Profile:Test
 Parent:Patient
@@ -286,7 +281,6 @@ Parent:Patient
     }
 
     #[test]
-    #[ignore] // TODO: Formatter doesn't output rule paths properly
     fn snapshot_comprehensive_document() {
         let input = r#"Alias:$SCT=http://snomed.info/sct
 

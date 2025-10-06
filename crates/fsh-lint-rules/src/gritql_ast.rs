@@ -4,7 +4,7 @@ use fsh_lint_core::cst::FshSyntaxNode;
 use fsh_lint_core::cst::ast::{AstNode, *};
 use fsh_lint_core::{Diagnostic, Location, Severity};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 
 /// Convert pattern matches to diagnostics
 pub fn matches_to_diagnostics(
@@ -92,7 +92,7 @@ pub struct AstMatch {
 pub fn execute_pattern(
     pattern: &AstPattern,
     document: &Document,
-    file_path: &PathBuf,
+    file_path: &Path,
     source: &str,
 ) -> fsh_lint_core::Result<Vec<AstMatch>> {
     let mut matches = Vec::new();
@@ -197,6 +197,7 @@ pub fn execute_pattern(
 }
 
 /// Context wrapper for different node types
+#[allow(dead_code)]
 enum NodeContext<'a> {
     Profile(&'a Profile),
     Extension(&'a Extension),
@@ -337,7 +338,7 @@ fn get_field_value(field: &str, context: &NodeContext) -> fsh_lint_core::Result<
 fn create_match(
     node_type: NodeType,
     node: &FshSyntaxNode,
-    file_path: &PathBuf,
+    file_path: &Path,
     source: &str,
     predicates: &[Predicate],
     context: &NodeContext,
@@ -389,7 +390,7 @@ fn extract_captures(
 }
 
 /// Convert span to location (helper function)
-fn span_to_location(file_path: &PathBuf, span: &std::ops::Range<usize>, source: &str) -> Location {
+fn span_to_location(file_path: &Path, span: &std::ops::Range<usize>, source: &str) -> Location {
     let line = source[..span.start].lines().count();
     let column = source[..span.start]
         .lines()
@@ -403,7 +404,7 @@ fn span_to_location(file_path: &PathBuf, span: &std::ops::Range<usize>, source: 
         .map_or(0, |line| line.len());
 
     Location {
-        file: file_path.clone(),
+        file: file_path.to_path_buf(),
         line,
         column,
         end_line: Some(end_line),

@@ -9,7 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::rules::{AutofixTemplate, FixSafety};
 use crate::{Applicability, CodeSuggestion, Diagnostic, FshLintError, Location, Result};
@@ -167,7 +167,7 @@ pub trait AutofixEngine {
     /// Apply fixes to a single file
     fn apply_fixes_to_file(
         &self,
-        file: &PathBuf,
+        file: &Path,
         fixes: &[Fix],
         config: &FixConfig,
     ) -> Result<FixResult>;
@@ -675,7 +675,7 @@ impl AutofixEngine for DefaultAutofixEngine {
 
     fn apply_fixes_to_file(
         &self,
-        file: &PathBuf,
+        file: &Path,
         fixes: &[Fix],
         config: &FixConfig,
     ) -> Result<FixResult> {
@@ -683,7 +683,7 @@ impl AutofixEngine for DefaultAutofixEngine {
 
         // Read the original file content
         let original_content =
-            fs::read_to_string(file).map_err(|e| FshLintError::io_error(file.clone(), e))?;
+            fs::read_to_string(file).map_err(|e| FshLintError::io_error(file.to_path_buf(), e))?;
 
         // Limit the number of fixes if configured
         let fixes_to_apply = if let Some(max) = config.max_fixes_per_file {
@@ -722,11 +722,11 @@ impl AutofixEngine for DefaultAutofixEngine {
         // Write the modified content if not in dry-run mode
         if !config.dry_run && applied_count > 0 && errors.is_empty() {
             fs::write(file, &modified_content)
-                .map_err(|e| FshLintError::io_error(file.clone(), e))?;
+                .map_err(|e| FshLintError::io_error(file.to_path_buf(), e))?;
         }
 
         Ok(FixResult {
-            file: file.clone(),
+            file: file.to_path_buf(),
             applied_count,
             failed_count,
             errors,
@@ -911,7 +911,7 @@ impl DefaultAutofixEngine {
     }
 
     /// Validate syntax of modified content
-    fn validate_syntax(&self, content: &str, file: &PathBuf) -> Result<()> {
+    fn validate_syntax(&self, content: &str, file: &Path) -> Result<()> {
         // Basic syntax validation for FSH files
         if file.extension().and_then(|s| s.to_str()) == Some("fsh") {
             self.validate_fsh_syntax(content)?;

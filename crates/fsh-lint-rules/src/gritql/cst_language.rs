@@ -295,7 +295,7 @@ mod tests {
         let lang = FshTargetLanguage;
         let contexts = lang.snippet_context_strings();
 
-        assert!(contexts.len() > 0);
+        assert!(!contexts.is_empty());
         assert_eq!(contexts[0], ("", ""));
     }
 }

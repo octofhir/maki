@@ -38,7 +38,7 @@ Description: "A test profile with lowercase name"
 
     // Should find at least one match (the profile with lowercase name)
     assert!(
-        matches.len() > 0,
+        !matches.is_empty(),
         "Should match profile with lowercase name"
     );
 }
@@ -121,7 +121,7 @@ Description: "A patient's nickname"
     }
 
     // Should find the extension without URL
-    assert!(matches.len() > 0, "Should match extension without ^url");
+    assert!(!matches.is_empty(), "Should match extension without ^url");
 }
 
 #[test]

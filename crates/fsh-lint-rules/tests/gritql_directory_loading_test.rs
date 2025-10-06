@@ -18,7 +18,7 @@ fn test_load_gritql_rules_from_examples_directory() {
         .expect("Failed to load GritQL rules from directory");
 
     // Should have loaded the example .grit files
-    assert!(loader.len() > 0, "Should have loaded at least one rule");
+    assert!(!loader.is_empty(), "Should have loaded at least one rule");
 
     println!("Loaded {} GritQL rules:", loader.len());
     for rule in loader.all_rules() {

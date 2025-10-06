@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Represents a diagnostic message from linting
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -426,7 +426,7 @@ pub trait DiagnosticCollector {
     fn group_by_severity(&self) -> HashMap<Severity, Vec<&Diagnostic>>;
 
     /// Get diagnostics for a specific file
-    fn diagnostics_for_file(&self, file: &PathBuf) -> Vec<&Diagnostic>;
+    fn diagnostics_for_file(&self, file: &Path) -> Vec<&Diagnostic>;
 
     /// Get count of diagnostics by severity
     fn count_by_severity(&self) -> HashMap<Severity, usize>;
@@ -555,10 +555,10 @@ impl DiagnosticCollector for DefaultDiagnosticCollector {
         groups
     }
 
-    fn diagnostics_for_file(&self, file: &PathBuf) -> Vec<&Diagnostic> {
+    fn diagnostics_for_file(&self, file: &Path) -> Vec<&Diagnostic> {
         self.diagnostics
             .iter()
-            .filter(|d| &d.location.file == file)
+            .filter(|d| d.location.file.as_path() == file)
             .collect()
     }
 
@@ -1207,12 +1207,12 @@ impl SourceMap {
         &self,
         span: &std::ops::Range<usize>,
         source: &str,
-        file_path: &std::path::PathBuf,
+        file_path: &Path,
     ) -> Location {
         let (line, column, end_line, end_column) = self.span_to_location(span, source);
 
         Location {
-            file: file_path.clone(),
+            file: file_path.to_path_buf(),
             line,
             column,
             end_line: Some(end_line),
@@ -1228,7 +1228,7 @@ impl SourceMap {
         &self,
         node: &crate::cst::FshSyntaxNode,
         source: &str,
-        file_path: &std::path::PathBuf,
+        file_path: &Path,
     ) -> Location {
         let range = node.text_range();
         let span = usize::from(range.start())..usize::from(range.end());
@@ -1240,7 +1240,7 @@ impl SourceMap {
         &self,
         token: &crate::cst::FshSyntaxToken,
         source: &str,
-        file_path: &std::path::PathBuf,
+        file_path: &Path,
     ) -> Location {
         let range = token.text_range();
         let span = usize::from(range.start())..usize::from(range.end());

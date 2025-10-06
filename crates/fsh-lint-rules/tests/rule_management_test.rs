@@ -10,18 +10,18 @@ use tempfile::TempDir;
 
 /// Create a test rule for testing
 fn create_test_rule(id: &str, name: &str) -> Rule {
-    let rule_id = format!("test/correctness/{}", id);
+    let rule_id = format!("test/correctness/{id}");
     Rule {
         id: rule_id.clone(),
         severity: Severity::Warning,
-        description: format!("Test rule: {}", name),
-        gritql_pattern: format!("test_pattern_{}", id),
+        description: format!("Test rule: {name}"),
+        gritql_pattern: format!("test_pattern_{id}"),
         autofix: None,
         is_ast_rule: false,
         metadata: RuleMetadata {
             id: rule_id,
             name: name.to_string(),
-            description: format!("Test rule: {}", name),
+            description: format!("Test rule: {name}"),
             severity: Severity::Warning,
             category: RuleCategory::Correctness,
             tags: vec!["test".to_string()],
@@ -37,7 +37,7 @@ fn create_test_rule_pack(name: &str, rules: Vec<Rule>) -> RulePack {
         metadata: RulePackMetadata {
             name: name.to_string(),
             version: "1.0.0".to_string(),
-            description: format!("Test rule pack: {}", name),
+            description: format!("Test rule pack: {name}"),
             author: Some("Test Author".to_string()),
             license: Some("MIT".to_string()),
             homepage: None,

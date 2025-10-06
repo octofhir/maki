@@ -3,14 +3,13 @@
 //! This module contains the implementation of all CLI commands
 
 use fsh_lint_core::{
-    AstFormatter, CachedFshParser, ConfigLoader, DefaultExecutor, DefaultFileDiscovery,
-    DefaultSemanticAnalyzer, ExecutionContext, Executor, FileDiscovery, Formatter,
-    FormatterConfiguration, FshLintConfiguration, Result, Rule, RuleCategory, RuleEngine,
-    RuleMetadata,
+    AstFormatter, AutofixEngine, CachedFshParser, ConfigLoader, DefaultAutofixEngine,
+    DefaultExecutor, DefaultFileDiscovery, DefaultSemanticAnalyzer, ExecutionContext, Executor,
+    FileDiscovery, FixConfig, FormatterConfiguration, FshLintConfiguration, Result, Rule,
+    RuleCategory, RuleEngine, RuleMetadata,
 };
 use fsh_lint_rules::gritql::GritQLRuleLoader;
 use fsh_lint_rules::{BuiltinRules, DefaultRuleEngine};
-use serde_json;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{debug, error, info};
@@ -19,12 +18,13 @@ use crate::output::{LintSummary, OutputFormatter, ProgressReporter};
 use crate::{ConfigFormat, OutputFormat, Severity};
 
 /// Lint command implementation
+#[allow(clippy::too_many_arguments)]
 pub async fn lint_command(
     paths: Vec<PathBuf>,
     format: OutputFormat,
-    _write: bool,
-    _dry_run: bool,
-    _unsafe: bool,
+    write: bool,
+    dry_run: bool,
+    r#unsafe: bool,
     _min_severity: Severity,
     include: Vec<String>,
     exclude: Vec<String>,
@@ -81,7 +81,7 @@ pub async fn lint_command(
         for path in paths {
             if path.is_file() {
                 // Direct file path
-                if path.extension().map_or(false, |ext| ext == "fsh") {
+                if path.extension().is_some_and(|ext| ext == "fsh") {
                     files.push(path);
                 }
             } else if path.is_dir() {
@@ -98,7 +98,7 @@ pub async fn lint_command(
                     })?
                 {
                     match entry {
-                        Ok(p) if p.extension().map_or(false, |ext| ext == "fsh") => files.push(p),
+                        Ok(p) if p.extension().is_some_and(|ext| ext == "fsh") => files.push(p),
                         _ => {}
                     }
                 }
@@ -113,7 +113,7 @@ pub async fn lint_command(
                     })?
                 {
                     match entry {
-                        Ok(p) if p.extension().map_or(false, |ext| ext == "fsh") => {
+                        Ok(p) if p.extension().is_some_and(|ext| ext == "fsh") => {
                             files.push(p);
                             found = true;
                         }
@@ -284,6 +284,48 @@ pub async fn lint_command(
         }
     }
 
+    // Apply fixes if requested
+    if write || dry_run {
+        let autofix_engine = DefaultAutofixEngine::new();
+
+        // Generate fixes from diagnostics
+        let fixes = autofix_engine.generate_fixes(&all_diagnostics)?;
+
+        if !fixes.is_empty() {
+            // Create fix configuration based on CLI flags
+            let fix_config = FixConfig {
+                apply_unsafe: r#unsafe,
+                dry_run,
+                interactive: false,
+                max_fixes_per_file: None,
+                validate_syntax: true,
+            };
+
+            // Apply fixes
+            let fix_results = autofix_engine.apply_fixes(&fixes, &fix_config)?;
+
+            // Update summary with number of fixes applied
+            for fix_result in &fix_results {
+                summary.fixes_applied += fix_result.applied_count;
+
+                // Show errors from fix application
+                if !fix_result.errors.is_empty() {
+                    for err in &fix_result.errors {
+                        error!("Fix error in {}: {}", fix_result.file.display(), err);
+                    }
+                }
+            }
+
+            if progress {
+                if dry_run {
+                    println!("Would apply {} fixes (dry run)", summary.fixes_applied);
+                } else {
+                    println!("Applied {} fixes", summary.fixes_applied);
+                }
+            }
+        }
+    }
+
     // Format and print results
     use std::io::IsTerminal;
     let use_colors = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
@@ -313,12 +355,14 @@ pub async fn lint_command(
 ///
 /// Dedicated formatter that only formats code without running lint rules.
 /// This is separate from linting - it only handles code formatting/prettifying.
+#[allow(clippy::too_many_arguments)]
 pub async fn format_command(
     paths: Vec<PathBuf>,
+    format: OutputFormat,
     write: bool,
     check: bool,
     diff: bool,
-    #[allow(unused_variables)] r#unsafe: bool, // Currently unused - formatter doesn't have unsafe fixes
+    #[allow(unused_variables)] r#unsafe: bool, // Kept for API consistency, formatter fixes are always safe
     include: Vec<String>,
     exclude: Vec<String>,
     line_width: Option<usize>,
@@ -390,7 +434,7 @@ pub async fn format_command(
         let mut files = Vec::new();
         for path in paths {
             if path.is_file() {
-                if path.extension().map_or(false, |ext| ext == "fsh") {
+                if path.extension().is_some_and(|ext| ext == "fsh") {
                     files.push(path);
                 }
             } else if path.is_dir() {
@@ -405,7 +449,7 @@ pub async fn format_command(
                     })?
                 {
                     match entry {
-                        Ok(p) if p.extension().map_or(false, |ext| ext == "fsh") => files.push(p),
+                        Ok(p) if p.extension().is_some_and(|ext| ext == "fsh") => files.push(p),
                         _ => {}
                     }
                 }
@@ -425,156 +469,98 @@ pub async fn format_command(
     let parser = CachedFshParser::new()?;
     let mut formatter = AstFormatter::new(parser);
 
-    let mut files_formatted = 0;
-    let mut files_already_formatted = 0;
-    let mut errors = 0;
+    // Generate diagnostics for files that need formatting
+    let file_refs: Vec<&Path> = fsh_files.iter().map(|p| p.as_path()).collect();
+    let diagnostics = formatter.format_files_with_diagnostics(&file_refs, &formatter_config)?;
 
-    use std::io::IsTerminal;
-    let use_colors = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
+    // Build summary
+    let mut summary = LintSummary::new();
+    summary.files_checked = fsh_files.len();
+    summary.info = diagnostics.len(); // Each diagnostic is an info-level "file needs formatting"
 
-    for file_path in &fsh_files {
-        match formatter.format_file(file_path, &formatter_config) {
-            Ok(format_result) => {
-                if format_result.changed {
-                    if check {
-                        // Check mode - report files that need formatting
-                        if use_colors {
-                            println!("\x1b[33mWould format:\x1b[0m {}", file_path.display());
-                        } else {
-                            println!("Would format: {}", file_path.display());
-                        }
-                        files_formatted += 1;
-                    } else if diff {
-                        // Show diff
-                        println!("\n{}", file_path.display());
-                        use fsh_lint_core::DiffRenderer;
-                        let diff_renderer = DiffRenderer::new();
-                        println!(
-                            "{}",
-                            diff_renderer
-                                .render_diff(&format_result.original, &format_result.content)
-                        );
-                        files_formatted += 1;
-                    } else if write {
-                        // Write formatted content
-                        std::fs::write(file_path, &format_result.content).map_err(|e| {
-                            fsh_lint_core::FshLintError::IoError {
-                                path: file_path.clone(),
-                                source: e,
-                            }
-                        })?;
-                        if use_colors {
-                            println!("\x1b[32mFormatted:\x1b[0m {}", file_path.display());
-                        } else {
-                            println!("Formatted: {}", file_path.display());
-                        }
-                        files_formatted += 1;
-                    } else {
-                        // Default: show what would be formatted
-                        if use_colors {
-                            println!("\x1b[33mWould format:\x1b[0m {}", file_path.display());
-                        } else {
-                            println!("Would format: {}", file_path.display());
-                        }
-                        files_formatted += 1;
-                    }
-                } else {
-                    files_already_formatted += 1;
-                }
+    // Handle diff mode separately (doesn't fit into diagnostic model)
+    if diff {
+        use fsh_lint_core::DiffRenderer;
+        let diff_renderer = DiffRenderer::new();
+
+        for diagnostic in &diagnostics {
+            println!("\n{}", diagnostic.location.file.display());
+
+            if let Some(suggestion) = diagnostic.suggestions.first() {
+                // Read original content
+                let original = std::fs::read_to_string(&diagnostic.location.file)?;
+                println!(
+                    "{}",
+                    diff_renderer.render_diff(&original, &suggestion.replacement)
+                );
             }
-            Err(e) => {
-                error!("Error formatting {}: {}", file_path.display(), e);
-                errors += 1;
+        }
+
+        println!(
+            "\nCompleted in {}",
+            crate::output::utils::format_duration(start_time.elapsed())
+        );
+        return Ok(());
+    }
+
+    // Apply formatting fixes if requested
+    if write {
+        for diagnostic in &diagnostics {
+            // Get the formatted content for this file
+            if let Some(formatted_content) =
+                formatter.get_formatted_content(&diagnostic.location.file, &formatter_config)?
+            {
+                // Write the formatted content
+                std::fs::write(&diagnostic.location.file, &formatted_content).map_err(|e| {
+                    fsh_lint_core::FshLintError::IoError {
+                        path: diagnostic.location.file.clone(),
+                        source: e,
+                    }
+                })?;
+                summary.fixes_applied += 1;
             }
         }
     }
 
-    let duration = start_time.elapsed();
+    // Format and print results using same system as lint
+    use std::io::IsTerminal;
+    let use_colors = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
 
-    // Print summary
-    println!();
-    if write {
-        if use_colors {
-            println!(
-                "\x1b[1mFormatted {} file{}\x1b[0m ({} already formatted, {} error{})",
-                files_formatted,
-                if files_formatted == 1 { "" } else { "s" },
-                files_already_formatted,
-                errors,
-                if errors == 1 { "" } else { "s" }
-            );
-        } else {
-            println!(
-                "Formatted {} file{} ({} already formatted, {} error{})",
-                files_formatted,
-                if files_formatted == 1 { "" } else { "s" },
-                files_already_formatted,
-                errors,
-                if errors == 1 { "" } else { "s" }
-            );
-        }
-    } else if check {
-        if use_colors {
-            if files_formatted > 0 {
-                println!(
-                    "\x1b[31m{} file{} need formatting\x1b[0m ({} already formatted, {} error{})",
-                    files_formatted,
-                    if files_formatted == 1 { "" } else { "s" },
-                    files_already_formatted,
-                    errors,
-                    if errors == 1 { "" } else { "s" }
-                );
-            } else {
-                println!("\x1b[32mAll files are formatted correctly!\x1b[0m");
-            }
-        } else {
-            if files_formatted > 0 {
-                println!(
-                    "{} file{} need formatting ({} already formatted, {} error{})",
-                    files_formatted,
-                    if files_formatted == 1 { "" } else { "s" },
-                    files_already_formatted,
-                    errors,
-                    if errors == 1 { "" } else { "s" }
-                );
-            } else {
-                println!("All files are formatted correctly!");
-            }
-        }
+    // Only show diagnostics if in check mode or if nothing was written
+    if check || !write {
+        let formatter_output = OutputFormatter::new(format, use_colors);
+        formatter_output.print_results(&diagnostics, &summary, false)?;
     } else {
-        if use_colors {
-            println!(
-                "\x1b[33m{} file{} would be formatted\x1b[0m ({} already formatted, {} error{})",
-                files_formatted,
-                if files_formatted == 1 { "" } else { "s" },
-                files_already_formatted,
-                errors,
-                if errors == 1 { "" } else { "s" }
-            );
+        // In write mode, just show summary
+        println!("{} files checked", summary.files_checked);
+        if summary.fixes_applied > 0 {
+            if use_colors {
+                println!(
+                    "\x1b[32m✓\x1b[0m Applied formatting to {} file{}",
+                    summary.fixes_applied,
+                    if summary.fixes_applied == 1 { "" } else { "s" }
+                );
+            } else {
+                println!(
+                    "Applied formatting to {} file{}",
+                    summary.fixes_applied,
+                    if summary.fixes_applied == 1 { "" } else { "s" }
+                );
+            }
+        } else if use_colors {
+            println!("\x1b[32m✓\x1b[0m All files are formatted correctly");
         } else {
-            println!(
-                "{} file{} would be formatted ({} already formatted, {} error{})",
-                files_formatted,
-                if files_formatted == 1 { "" } else { "s" },
-                files_already_formatted,
-                errors,
-                if errors == 1 { "" } else { "s" }
-            );
+            println!("All files are formatted correctly");
         }
     }
 
     println!(
         "Completed in {}",
-        crate::output::utils::format_duration(duration)
+        crate::output::utils::format_duration(start_time.elapsed())
     );
 
     // Exit with error code if check mode and files need formatting
-    if check && files_formatted > 0 {
-        std::process::exit(1);
-    }
-
-    // Exit with error if there were parse/format errors
-    if errors > 0 {
+    if check && !diagnostics.is_empty() {
         std::process::exit(1);
     }
 
@@ -636,7 +622,7 @@ pub async fn rules_list_command(
         if detailed {
             println!("\n{}", rule.id);
             println!("  Description: {}", rule.metadata.description);
-            println!("  Category: {}", rule_category);
+            println!("  Category: {rule_category}");
             // Check if rule is configured
             let is_configured = config
                 .linter
@@ -667,7 +653,7 @@ pub async fn rules_list_command(
     if count == 0 {
         println!("\nNo rules found matching the specified filters.");
     } else {
-        println!("\nTotal: {} rules", count);
+        println!("\nTotal: {count} rules");
     }
 
     Ok(())
@@ -701,7 +687,7 @@ pub async fn rules_explain_command(rule_id: String, _config_path: Option<PathBuf
             println!("Rule: {}", rule.id);
             println!("{}", "=".repeat(rule.id.len() + 6));
             println!();
-            println!("Category: {}", category);
+            println!("Category: {category}");
             println!("Description: {}", rule.metadata.description);
 
             if let Some(autofix) = &rule.autofix {
@@ -715,7 +701,7 @@ pub async fn rules_explain_command(rule_id: String, _config_path: Option<PathBuf
             println!("{}", rule.gritql_pattern);
         }
         None => {
-            println!("Rule '{}' not found.", rule_id);
+            println!("Rule '{rule_id}' not found.");
             println!();
             println!("Use 'fsh-lint rules' to list all available rules.");
         }
@@ -747,9 +733,9 @@ pub async fn rules_search_command(query: String, _config_path: Option<PathBuf>) 
         .collect();
 
     if matches.is_empty() {
-        println!("No rules found matching '{}'", query);
+        println!("No rules found matching '{query}'");
     } else {
-        println!("Rules matching '{}':", query);
+        println!("Rules matching '{query}':");
         println!("{}", "=".repeat(20 + query.len()));
         println!();
         for rule in matches {
@@ -797,7 +783,7 @@ pub async fn config_init_command(
             filename
         );
         return Err(fsh_lint_core::FshLintError::ConfigError {
-            message: format!("Configuration file '{}' already exists", filename),
+            message: format!("Configuration file '{filename}' already exists"),
         });
     }
 
@@ -812,19 +798,19 @@ pub async fn config_init_command(
     let config_content = match format {
         ConfigFormat::Json => serde_json::to_string_pretty(&default_config).map_err(|e| {
             fsh_lint_core::FshLintError::ConfigError {
-                message: format!("Failed to serialize JSON: {}", e),
+                message: format!("Failed to serialize JSON: {e}"),
             }
         })?,
         ConfigFormat::Toml => toml::to_string_pretty(&default_config).map_err(|e| {
             fsh_lint_core::FshLintError::ConfigError {
-                message: format!("Failed to serialize TOML: {}", e),
+                message: format!("Failed to serialize TOML: {e}"),
             }
         })?,
     };
 
     std::fs::write(&config_path, config_content)?;
 
-    println!("✅ Created configuration file: {}", filename);
+    println!("✅ Created configuration file: {filename}");
     if with_examples {
         println!("   The file includes example rules and settings.");
     }
@@ -854,8 +840,8 @@ pub async fn config_validate_command(path: Option<PathBuf>) -> Result<()> {
                 .as_ref()
                 .and_then(|f| f.enabled)
                 .unwrap_or(true);
-            println!("   Linter enabled: {}", linter_enabled);
-            println!("   Formatter enabled: {}", formatter_enabled);
+            println!("   Linter enabled: {linter_enabled}");
+            println!("   Formatter enabled: {formatter_enabled}");
         }
         Err(e) => {
             error!("❌ Configuration validation failed: {}", e);
@@ -886,10 +872,10 @@ pub async fn config_show_command(resolved: bool, config_path: Option<PathBuf>) -
 
     let config_json = serde_json::to_string_pretty(&config).map_err(|e| {
         fsh_lint_core::FshLintError::ConfigError {
-            message: format!("Failed to serialize config: {}", e),
+            message: format!("Failed to serialize config: {e}"),
         }
     })?;
-    println!("{}", config_json);
+    println!("{config_json}");
 
     Ok(())
 }
