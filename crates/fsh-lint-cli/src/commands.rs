@@ -241,15 +241,9 @@ pub async fn lint_command(
 
     debug!("Total rules loaded: {}", compiled_rules.len());
 
-    // Create parser, semantic analyzer, and executor
-    let parser = Box::new(CachedFshParser::new()?);
     let semantic_analyzer = Box::new(DefaultSemanticAnalyzer::new());
-
-    // Create execution context
     let context = ExecutionContext::new(config.clone(), compiled_rules);
-
-    // Create executor
-    let executor = DefaultExecutor::new(context, parser, semantic_analyzer, Box::new(rule_engine));
+    let executor = DefaultExecutor::new(context, semantic_analyzer, Box::new(rule_engine));
 
     // Execute linting in parallel
     if progress {

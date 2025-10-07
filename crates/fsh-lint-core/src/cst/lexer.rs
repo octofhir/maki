@@ -274,12 +274,22 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
                 i += size;
             }
             '-' => {
-                tokens.push(CstToken::new(
-                    FshSyntaxKind::Minus,
-                    "-",
-                    span(start, i + size),
-                ));
-                i += size;
+                // Check for arrow ->
+                if let Some(('>', arrow_size)) = next_char(input, i + size) {
+                    tokens.push(CstToken::new(
+                        FshSyntaxKind::Arrow,
+                        "->",
+                        span(start, i + size + arrow_size),
+                    ));
+                    i += size + arrow_size;
+                } else {
+                    tokens.push(CstToken::new(
+                        FshSyntaxKind::Minus,
+                        "-",
+                        span(start, i + size),
+                    ));
+                    i += size;
+                }
             }
             '>' => {
                 tokens.push(CstToken::new(FshSyntaxKind::Gt, ">", span(start, i + size)));
@@ -314,12 +324,17 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
                 i += size;
             }
             '\'' => {
+                // UCUM unit: 'mg', 'kg', etc.
+                let (unit_kind, end, unit_error) = lex_unit(input, start);
+                if let Some(err) = unit_error {
+                    errors.push(err);
+                }
                 tokens.push(CstToken::new(
-                    FshSyntaxKind::SingleQuote,
-                    "'",
-                    span(start, i + size),
+                    unit_kind,
+                    &input[start..end],
+                    span(start, end),
                 ));
-                i += size;
+                i = end;
             }
             '\\' => {
                 tokens.push(CstToken::new(
@@ -466,6 +481,7 @@ fn lex_word(input: &str, start: usize) -> (FshSyntaxKind, usize) {
         "Source" => FshSyntaxKind::SourceKw,
         "Target" => FshSyntaxKind::TargetKw,
         "Context" => FshSyntaxKind::ContextKw,
+        "Characteristics" => FshSyntaxKind::CharacteristicsKw,
 
         // Rule keywords
         "from" => FshSyntaxKind::FromKw,
@@ -480,6 +496,9 @@ fn lex_word(input: &str, start: usize) -> (FshSyntaxKind, usize) {
         "exclude" => FshSyntaxKind::ExcludeKw,
         "codes" => FshSyntaxKind::CodesKw,
         "where" => FshSyntaxKind::WhereKw,
+        "system" => FshSyntaxKind::SystemKw,
+        "valueset" => FshSyntaxKind::ValuesetRefKw,
+        "contentreference" => FshSyntaxKind::ContentreferenceKw,
 
         // Binding strength
         "required" => FshSyntaxKind::RequiredKw,
@@ -519,6 +538,10 @@ fn lex_number(input: &str, start: usize) -> (FshSyntaxKind, usize) {
             '.' => {
                 if has_dot {
                     break; // Second dot, not part of this number
+                }
+                // Lookahead: if next char is also '.', this is a range operator, not a decimal
+                if i + 1 < len && bytes[i + 1] == b'.' {
+                    break; // This is '..' range operator, stop here
                 }
                 has_dot = true;
                 i += 1;
@@ -580,6 +603,46 @@ fn lex_string(input: &str, start: usize) -> (FshSyntaxKind, usize, Option<LexerE
         FshSyntaxKind::String,
         len,
         Some(LexerError::new("Unterminated string", span(start, len))),
+    )
+}
+
+/// Lex a UCUM unit 'unit'
+fn lex_unit(input: &str, start: usize) -> (FshSyntaxKind, usize, Option<LexerError>) {
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+    let mut i = start + 1; // Skip opening single quote
+
+    // Scan for closing single quote
+    while i < len {
+        match bytes[i] as char {
+            '\'' => return (FshSyntaxKind::Unit, i + 1, None),
+            '\\' => {
+                // Handle escaped characters (e.g., '\'' inside unit)
+                i += 1; // Skip escape char
+                if i < len {
+                    i += 1; // Skip escaped char
+                }
+            }
+            '\n' | '\r' => {
+                // Newline before closing quote - probably malformed
+                return (
+                    FshSyntaxKind::Unit,
+                    i,
+                    Some(LexerError::new(
+                        "Unterminated unit (newline found)",
+                        span(start, i),
+                    )),
+                );
+            }
+            _ => i += 1,
+        }
+    }
+
+    // Reached end of input without closing quote
+    (
+        FshSyntaxKind::Unit,
+        len,
+        Some(LexerError::new("Unterminated unit", span(start, len))),
     )
 }
 

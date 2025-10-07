@@ -85,6 +85,7 @@ export default defineConfig({
 						{ label: 'Writing Custom Rules', slug: 'guides/custom-rules' },
 						{ label: 'CI/CD Integration', slug: 'guides/ci-cd' },
 						{ label: 'Editor Integration', slug: 'guides/editors' },
+						{ label: 'Parent Validation', slug: 'guides/parent-validation' },
 						{ label: 'Troubleshooting', slug: 'guides/troubleshooting' },
 					],
 				},

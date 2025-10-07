@@ -14,7 +14,7 @@ pub type Span = Range<usize>;
 /// Semantic model representing the FHIR-aware structure of FSH content
 #[derive(Debug, Clone)]
 pub struct SemanticModel {
-    /// CST root node
+    /// CST root node (stored via Arc for cheap cloning)
     pub cst: FshSyntaxNode,
     /// FHIR resources defined in the FSH content
     pub resources: Vec<FhirResource>,
@@ -35,7 +35,6 @@ impl SemanticModel {
     pub fn new(source_file: PathBuf) -> Self {
         let source = String::new();
         let source_map = crate::SourceMap::new(&source);
-        // Create empty CST
         let (cst, _) = crate::cst::parse_fsh(&source);
         Self {
             cst,

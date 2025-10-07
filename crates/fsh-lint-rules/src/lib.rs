@@ -5,6 +5,7 @@
 
 pub mod builtin;
 pub mod engine;
+pub mod fhir_registry;
 pub mod gritql;
 pub mod gritql_ast;
 pub mod pattern_parser;

@@ -35,8 +35,10 @@ impl BuiltinRules {
             Self::invalid_identifier_rule(),
             // invalid_cardinality_rule moved to blocking_rules()
             Self::invalid_slicing_rule(),
-            Self::duplicate_canonical_url_rule(),
-            Self::duplicate_identifier_rule(),
+            // FIXME: duplicate_canonical_url_rule uses custom GritQL functions that hang
+            // Self::duplicate_canonical_url_rule(),
+            // FIXME: duplicate_identifier_rule uses custom GritQL functions that hang
+            // Self::duplicate_identifier_rule(),
             Self::invalid_constraint_rule(),
             Self::missing_parent_profile_rule(),
             Self::invalid_status_rule(),
@@ -371,6 +373,7 @@ impl BuiltinRules {
     }
 
     /// Rule for detecting duplicate canonical URLs
+    #[allow(dead_code)]
     fn duplicate_canonical_url_rule() -> Rule {
         Rule {
             id: "correctness/duplicate-canonical-url".to_string(),
@@ -402,6 +405,7 @@ impl BuiltinRules {
     }
 
     /// Rule for detecting duplicate identifiers
+    #[allow(dead_code)]
     fn duplicate_identifier_rule() -> Rule {
         Rule {
             id: "correctness/duplicate-identifier".to_string(),

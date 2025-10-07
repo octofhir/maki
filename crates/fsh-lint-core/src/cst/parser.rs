@@ -63,7 +63,13 @@ impl<'a> Parser<'a> {
     fn parse_document(&mut self) {
         self.builder.start_node(FshSyntaxKind::Document);
 
+        let mut doc_iteration = 0;
         while !self.at_end() {
+            doc_iteration += 1;
+            if doc_iteration > 10000 {
+                break;
+            }
+
             // Skip trivia at document level
             if self.at_trivia() {
                 self.consume_trivia();
@@ -82,7 +88,14 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::LogicalKw => self.parse_logical(),
                 FshSyntaxKind::ResourceKw => self.parse_resource(),
                 FshSyntaxKind::AliasKw => self.parse_alias(),
-                FshSyntaxKind::RulesetKw => self.parse_ruleset(),
+                FshSyntaxKind::RulesetKw => {
+                    let start_pos = self.pos;
+                    self.parse_ruleset();
+                    let end_pos = self.pos;
+                    if start_pos == end_pos {
+                        break; // Prevent infinite loop
+                    }
+                }
                 FshSyntaxKind::CommentLine
                 | FshSyntaxKind::CommentBlock
                 | FshSyntaxKind::Newline => {
@@ -134,7 +147,7 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::DescriptionKw => self.parse_description_clause(),
 
                 // Rules start with *
-                FshSyntaxKind::Asterisk => self.parse_rule(),
+                FshSyntaxKind::Asterisk => self.parse_lr_rule(),
 
                 // Comment or newline
                 FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
@@ -177,7 +190,8 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::TitleKw => self.parse_title_clause(),
                 FshSyntaxKind::DescriptionKw => self.parse_description_clause(),
                 FshSyntaxKind::ContextKw => self.parse_context_clause(),
-                FshSyntaxKind::Asterisk => self.parse_rule(),
+                FshSyntaxKind::CharacteristicsKw => self.parse_characteristics_clause(),
+                FshSyntaxKind::Asterisk => self.parse_lr_rule(),
                 FshSyntaxKind::Caret => self.parse_rule(), // Caret rules like ^extension[FMM]
                 FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
                     self.add_current_token();
@@ -217,6 +231,12 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::TitleKw => self.parse_title_clause(),
                 FshSyntaxKind::DescriptionKw => self.parse_description_clause(),
 
+                // ValueSet rules starting with *
+                FshSyntaxKind::Asterisk => self.parse_vs_rule(),
+
+                // Caret rules (for metadata like ^status)
+                FshSyntaxKind::Caret => self.parse_rule(),
+
                 // Comment or newline
                 FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
                     self.add_current_token();
@@ -246,7 +266,7 @@ impl<'a> Parser<'a> {
         self.expect(FshSyntaxKind::Ident);
         self.consume_trivia_and_newlines();
 
-        // Parse metadata clauses
+        // Parse metadata clauses and concepts
         while !self.at_end() && !self.at_definition_keyword() {
             if self.at_trivia() {
                 self.consume_trivia();
@@ -258,6 +278,12 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::IdKw => self.parse_id_clause(),
                 FshSyntaxKind::TitleKw => self.parse_title_clause(),
                 FshSyntaxKind::DescriptionKw => self.parse_description_clause(),
+
+                // CodeSystem concepts starting with *
+                FshSyntaxKind::Asterisk => self.parse_concept(),
+
+                // Caret rules (for metadata like ^status)
+                FshSyntaxKind::Caret => self.parse_rule(),
 
                 // Comment or newline
                 FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
@@ -309,7 +335,7 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::DescriptionKw => self.parse_description_clause(),
 
                 // Rules start with *
-                FshSyntaxKind::Asterisk => self.parse_rule(),
+                FshSyntaxKind::Asterisk => self.parse_lr_rule(),
 
                 // Comments and newlines
                 FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
@@ -427,58 +453,175 @@ impl<'a> Parser<'a> {
 
         // Optional parameters: (param1, param2)
         if self.at(FshSyntaxKind::LParen) {
-            self.add_current_token();
-            self.advance();
-            self.consume_trivia();
-
-            // Parse parameter list
-            while !self.at_end() && !self.at(FshSyntaxKind::RParen) {
-                if self.at(FshSyntaxKind::Ident) {
-                    self.add_current_token();
-                    self.advance();
-                    self.consume_trivia();
-
-                    // Comma separator
-                    if self.at(FshSyntaxKind::Comma) {
-                        self.add_current_token();
-                        self.advance();
-                        self.consume_trivia();
-                    }
-                } else {
-                    break;
-                }
-            }
-
-            if self.at(FshSyntaxKind::RParen) {
-                self.add_current_token();
-                self.advance();
-            }
+            self.parse_parameter_list();
         }
 
         self.consume_trivia_and_newlines();
 
+        let mut iteration_count = 0;
+        let mut consecutive_newlines = 0;
+        let mut non_rule_token_count = 0;
+
         // Parse rules in the RuleSet body
-        while !self.at_end() && !self.at_definition_keyword() {
+        while !self.at_end() {
+            // Check for definition keyword FIRST
+            if self.at_definition_keyword() {
+                break;
+            }
+            iteration_count += 1;
+            if iteration_count > 1000 {
+                break;
+            }
+
+            // PRAGMATIC FIX: If we've seen 20+ non-rule tokens in a row, we're probably past the RuleSet
+            if non_rule_token_count > 20 {
+                break;
+            }
+
             if self.at_trivia() {
                 self.consume_trivia();
                 continue;
             }
 
             match self.current_kind() {
-                FshSyntaxKind::Asterisk => self.parse_rule(),
+                FshSyntaxKind::Asterisk => {
+                    consecutive_newlines = 0; // Reset on rule
+                    non_rule_token_count = 0; // Reset on rule
+                    self.parse_lr_rule();
+                }
                 FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
+                    consecutive_newlines = 0; // Reset on comment
+                    non_rule_token_count = 0; // Reset on comment
                     self.add_current_token();
                     self.advance();
                 }
                 FshSyntaxKind::Newline => {
+                    consecutive_newlines += 1;
+                    non_rule_token_count += 1;
+                    self.add_current_token();
+                    self.advance();
+                    // CRITICAL FIX: Break on blank line (2+ newlines = end of RuleSet)
+                    if consecutive_newlines >= 2 {
+                        break;
+                    }
+                }
+                _ => {
+                    consecutive_newlines = 0; // Reset on other tokens
+                    non_rule_token_count += 1;
+                    // Don't break on unknown tokens (like LBrace from template params)
+                    // Just skip them and continue parsing
                     self.add_current_token();
                     self.advance();
                 }
-                _ => break,
             }
         }
 
         self.builder.finish_node(); // RULE_SET
+    }
+
+    /// Parse parameter list for parameterized RuleSet: (param1, param2, ...)
+    fn parse_parameter_list(&mut self) {
+        self.builder.start_node(FshSyntaxKind::ParameterList);
+
+        self.expect(FshSyntaxKind::LParen);
+        self.consume_trivia();
+
+        // Parse parameters
+        let mut param_count = 0;
+        while !self.at_end() && !self.at(FshSyntaxKind::RParen) {
+            // Safety check for infinite loop
+            if param_count > 100 {
+                break;
+            }
+
+            self.parse_parameter();
+            param_count += 1;
+
+            // Comma separator between parameters
+            if self.at(FshSyntaxKind::Comma) {
+                self.add_current_token();
+                self.advance();
+                self.consume_trivia();
+            } else if !self.at(FshSyntaxKind::RParen) {
+                // CRITICAL FIX: If no comma and not at ), we need to break
+                // Otherwise we'll loop infinitely trying to parse parameters
+                break;
+            }
+        }
+
+        self.expect(FshSyntaxKind::RParen);
+        self.builder.finish_node(); // PARAMETER_LIST
+    }
+
+    /// Parse single parameter in RuleSet parameter list
+    fn parse_parameter(&mut self) {
+        self.builder.start_node(FshSyntaxKind::Parameter);
+        self.expect(FshSyntaxKind::Ident);
+        self.consume_trivia();
+        self.builder.finish_node(); // PARAMETER
+    }
+
+    /// Parse insert arguments in insert rule: (arg1, arg2, ...)
+    fn parse_insert_arguments(&mut self) {
+        self.builder.start_node(FshSyntaxKind::InsertRuleArgs);
+
+        self.expect(FshSyntaxKind::LParen);
+        self.consume_trivia();
+
+        // Parse arguments
+        while !self.at_end() && !self.at(FshSyntaxKind::RParen) {
+            // Parse argument value - can be various types
+            self.parse_insert_argument();
+
+            // Comma separator between arguments
+            if self.at(FshSyntaxKind::Comma) {
+                self.add_current_token();
+                self.advance();
+                self.consume_trivia();
+            }
+        }
+
+        self.expect(FshSyntaxKind::RParen);
+        self.builder.finish_node(); // INSERT_RULE_ARGS
+    }
+
+    /// Parse single argument in insert rule
+    fn parse_insert_argument(&mut self) {
+        // Arguments can be: strings, numbers, booleans, codes, identifiers, etc.
+        if self.at(FshSyntaxKind::String)
+            || self.at(FshSyntaxKind::Integer)
+            || self.at(FshSyntaxKind::Decimal)
+            || self.at(FshSyntaxKind::True)
+            || self.at(FshSyntaxKind::False)
+            || self.at(FshSyntaxKind::Hash)
+        {
+            // Code value starts with #
+            if self.at(FshSyntaxKind::Hash) {
+                self.add_current_token();
+                self.advance();
+                if self.at(FshSyntaxKind::Ident) {
+                    self.add_current_token();
+                    self.advance();
+                }
+            } else {
+                self.add_current_token();
+                self.advance();
+            }
+        } else if self.at(FshSyntaxKind::Ident) {
+            // Could be identifier or path
+            self.add_current_token();
+            self.advance();
+            // Handle path continuation (dot notation)
+            while self.at(FshSyntaxKind::Dot) {
+                self.add_current_token();
+                self.advance();
+                if self.at(FshSyntaxKind::Ident) {
+                    self.add_current_token();
+                    self.advance();
+                }
+            }
+        }
+        self.consume_trivia();
     }
 
     /// Parse Mapping declaration
@@ -505,7 +648,7 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::TargetKw => self.parse_target_clause(),
                 FshSyntaxKind::TitleKw => self.parse_title_clause(),
                 FshSyntaxKind::DescriptionKw => self.parse_description_clause(),
-                FshSyntaxKind::Asterisk => self.parse_rule(),
+                FshSyntaxKind::Asterisk => self.parse_lr_rule(),
                 FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
                     self.add_current_token();
                     self.advance();
@@ -544,7 +687,7 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::IdKw => self.parse_id_clause(),
                 FshSyntaxKind::TitleKw => self.parse_title_clause(),
                 FshSyntaxKind::DescriptionKw => self.parse_description_clause(),
-                FshSyntaxKind::Asterisk => self.parse_rule(),
+                FshSyntaxKind::Asterisk => self.parse_lr_rule(),
                 FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
                     self.add_current_token();
                     self.advance();
@@ -583,7 +726,7 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::IdKw => self.parse_id_clause(),
                 FshSyntaxKind::TitleKw => self.parse_title_clause(),
                 FshSyntaxKind::DescriptionKw => self.parse_description_clause(),
-                FshSyntaxKind::Asterisk => self.parse_rule(),
+                FshSyntaxKind::Asterisk => self.parse_lr_rule(),
                 FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
                     self.add_current_token();
                     self.advance();
@@ -707,7 +850,63 @@ impl<'a> Parser<'a> {
         self.consume_trivia();
         self.expect(FshSyntaxKind::Colon);
         self.consume_trivia();
+
+        // Parse comma-separated list of contexts
         self.expect(FshSyntaxKind::Ident);
+        self.consume_trivia();
+
+        // Additional contexts with comma separator
+        while self.at(FshSyntaxKind::Comma) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+            self.expect(FshSyntaxKind::Ident);
+            self.consume_trivia();
+        }
+
+        self.consume_trivia_and_newlines();
+        self.builder.finish_node();
+    }
+
+    /// Parse Characteristics clause (for Logical models)
+    fn parse_characteristics_clause(&mut self) {
+        self.builder.start_node(FshSyntaxKind::PathRule); // Characteristics is similar to context
+        self.expect(FshSyntaxKind::CharacteristicsKw);
+        self.consume_trivia();
+        self.expect(FshSyntaxKind::Colon);
+        self.consume_trivia();
+
+        // Parse comma-separated list of code values
+        // Each characteristic is a code starting with #
+        if self.at(FshSyntaxKind::Hash) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+            if self.at(FshSyntaxKind::Ident) {
+                self.add_current_token();
+                self.advance();
+                self.consume_trivia();
+            }
+        }
+
+        // Additional characteristics with comma separator
+        while self.at(FshSyntaxKind::Comma) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+
+            if self.at(FshSyntaxKind::Hash) {
+                self.add_current_token();
+                self.advance();
+                self.consume_trivia();
+                if self.at(FshSyntaxKind::Ident) {
+                    self.add_current_token();
+                    self.advance();
+                    self.consume_trivia();
+                }
+            }
+        }
+
         self.consume_trivia_and_newlines();
         self.builder.finish_node();
     }
@@ -795,48 +994,7 @@ impl<'a> Parser<'a> {
 
             // Optional arguments: (arg1, arg2)
             if self.at(FshSyntaxKind::LParen) {
-                self.add_current_token();
-                self.advance();
-                self.consume_trivia();
-
-                // Parse arguments
-                while !self.at_end() && !self.at(FshSyntaxKind::RParen) {
-                    // Argument can be identifier, path, or string
-                    if self.at(FshSyntaxKind::Ident)
-                        || self.at(FshSyntaxKind::String)
-                        || self.at(FshSyntaxKind::Integer)
-                    {
-                        self.add_current_token();
-                        self.advance();
-                        self.consume_trivia();
-
-                        if self.at(FshSyntaxKind::Comma) {
-                            self.add_current_token();
-                            self.advance();
-                            self.consume_trivia();
-                        }
-                    } else if self.at(FshSyntaxKind::LBrace) {
-                        // Template parameter {path}
-                        self.add_current_token();
-                        self.advance();
-                        if self.at(FshSyntaxKind::Ident) {
-                            self.add_current_token();
-                            self.advance();
-                        }
-                        if self.at(FshSyntaxKind::RBrace) {
-                            self.add_current_token();
-                            self.advance();
-                        }
-                        self.consume_trivia();
-                    } else {
-                        break;
-                    }
-                }
-
-                if self.at(FshSyntaxKind::RParen) {
-                    self.add_current_token();
-                    self.advance();
-                }
+                self.parse_insert_arguments();
             }
 
             self.consume_trivia_and_newlines();
@@ -849,7 +1007,9 @@ impl<'a> Parser<'a> {
         self.consume_trivia();
 
         // Determine rule type based on what follows the path
-        let rule_kind = if self.at(FshSyntaxKind::Equals) || self.at(FshSyntaxKind::PlusEquals) {
+        let rule_kind = if self.at(FshSyntaxKind::Arrow) {
+            FshSyntaxKind::MappingRule // Mapping: path -> "target"
+        } else if self.at(FshSyntaxKind::Equals) || self.at(FshSyntaxKind::PlusEquals) {
             FshSyntaxKind::FixedValueRule // Assignment rule
         } else if self.at(FshSyntaxKind::ContainsKw) {
             FshSyntaxKind::ContainsRule
@@ -867,6 +1027,32 @@ impl<'a> Parser<'a> {
 
         // Parse the rest of the rule based on type
         match rule_kind {
+            FshSyntaxKind::MappingRule => {
+                // Mapping: path -> "target" "comment"? #language?
+                self.expect(FshSyntaxKind::Arrow);
+                self.consume_trivia();
+
+                // Target string (required)
+                self.expect(FshSyntaxKind::String);
+                self.consume_trivia();
+
+                // Optional comment string
+                if self.at(FshSyntaxKind::String) {
+                    self.add_current_token();
+                    self.advance();
+                    self.consume_trivia();
+                }
+
+                // Optional language code
+                if self.at(FshSyntaxKind::Hash) {
+                    self.add_current_token();
+                    self.advance();
+                    if self.at(FshSyntaxKind::Ident) {
+                        self.add_current_token();
+                        self.advance();
+                    }
+                }
+            }
             FshSyntaxKind::FixedValueRule => {
                 // Assignment: path = value or path += value
                 if self.at(FshSyntaxKind::Equals) || self.at(FshSyntaxKind::PlusEquals) {
@@ -952,6 +1138,7 @@ impl<'a> Parser<'a> {
         // - Code: #code or System#code "display"
         // - Boolean: true/false
         // - Number: 123 or 1.23
+        // - Quantity: 5.4 'mg' "display"
         // - Reference: Reference(Type)
         // - Identifier/path: SomeValue
 
@@ -977,16 +1164,55 @@ impl<'a> Parser<'a> {
             // Boolean
             self.add_current_token();
             self.advance();
+        } else if self.at(FshSyntaxKind::Unit) {
+            // Quantity without number: 'mg' "display"
+            // But also check for Ratio: 'mg':'mL'
+            let checkpoint = self.pos;
+            self.parse_quantity_value(false);
+            self.consume_trivia();
+
+            if self.at(FshSyntaxKind::Colon) {
+                // This is part of a Ratio: quantity:quantity
+                // Rewind and parse as Ratio
+                self.pos = checkpoint;
+                self.parse_ratio_value();
+            }
         } else if self.at(FshSyntaxKind::Integer) || self.at(FshSyntaxKind::Decimal) {
-            // Number
+            // Could be: Number, Quantity, or Ratio
+            // Lookahead to determine which
+            let checkpoint = self.pos;
             self.add_current_token();
             self.advance();
+            self.consume_trivia();
+
+            if self.at(FshSyntaxKind::Colon) {
+                // This is a Ratio: NUMBER:NUMBER or quantity:quantity
+                self.pos = checkpoint;
+                self.parse_ratio_value();
+            } else if self.at(FshSyntaxKind::Unit) {
+                // This is a Quantity value: NUMBER UNIT STRING?
+                // But could also be part of a Ratio
+                self.pos = checkpoint;
+                let qty_checkpoint = self.pos;
+                self.parse_quantity_value(true);
+                self.consume_trivia();
+
+                if self.at(FshSyntaxKind::Colon) {
+                    // Actually a Ratio with quantities
+                    self.pos = qty_checkpoint;
+                    self.parse_ratio_value();
+                }
+            }
+            // Otherwise, it's just a number (already consumed)
         } else if self.at(FshSyntaxKind::Ident) {
-            // Could be: Reference(Type), Canonical(Type), identifier, or System#code
+            // Could be: Reference(Type), Canonical(Type), CodeableReference(Type), identifier, or System#code
             let ident_text = self.current().map(|t| t.text.as_str()).unwrap_or("");
 
-            if ident_text == "Reference" || ident_text == "Canonical" {
-                // Reference(Type) or Canonical(Type)
+            if ident_text == "Reference"
+                || ident_text == "Canonical"
+                || ident_text == "CodeableReference"
+            {
+                // Reference(Type) or Canonical(Type) or CodeableReference(Type)
                 self.add_current_token();
                 self.advance();
                 if self.at(FshSyntaxKind::LParen) {
@@ -1026,6 +1252,75 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse a Quantity value: NUMBER? UNIT STRING?
+    fn parse_quantity_value(&mut self, has_number: bool) {
+        self.builder.start_node(FshSyntaxKind::Quantity);
+
+        // Optional number (may already be consumed)
+        if has_number && (self.at(FshSyntaxKind::Integer) || self.at(FshSyntaxKind::Decimal)) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
+        // Unit (required): 'mg', 'kg', etc.
+        if self.at(FshSyntaxKind::Unit) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
+        // Optional display string
+        if self.at(FshSyntaxKind::String) {
+            self.add_current_token();
+            self.advance();
+        }
+
+        self.builder.finish_node(); // QUANTITY
+    }
+
+    /// Parse a Ratio value: ratioPart COLON ratioPart
+    /// where ratioPart can be NUMBER or Quantity
+    fn parse_ratio_value(&mut self) {
+        self.builder.start_node(FshSyntaxKind::Ratio);
+
+        // Parse numerator (can be number or quantity)
+        self.parse_ratio_part();
+        self.consume_trivia();
+
+        // Colon separator
+        if self.at(FshSyntaxKind::Colon) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
+        // Parse denominator (can be number or quantity)
+        self.parse_ratio_part();
+
+        self.builder.finish_node(); // RATIO
+    }
+
+    /// Parse one part of a ratio (numerator or denominator)
+    fn parse_ratio_part(&mut self) {
+        // Can be: NUMBER or NUMBER UNIT
+        if self.at(FshSyntaxKind::Integer) || self.at(FshSyntaxKind::Decimal) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+
+            // Check for unit (making it a quantity)
+            if self.at(FshSyntaxKind::Unit) {
+                self.add_current_token();
+                self.advance();
+            }
+        } else if self.at(FshSyntaxKind::Unit) {
+            // Quantity without number
+            self.add_current_token();
+            self.advance();
+        }
+    }
+
     /// Parse a path expression (e.g., name.given, identifier[0].value, ^extension[FMM].value)
     fn parse_path(&mut self) {
         self.builder.start_node(FshSyntaxKind::Path);
@@ -1037,44 +1332,48 @@ impl<'a> Parser<'a> {
         }
 
         while !self.at_end() {
-            if self.at(FshSyntaxKind::Ident) {
+            // CRITICAL FIX: Break if we're not at an identifier
+            // This prevents infinite loop when path ends with trailing dot
+            if !self.at(FshSyntaxKind::Ident) {
+                break;
+            }
+
+            self.add_current_token();
+            self.advance();
+
+            // Check for brackets: [index], [+], [=], [ProfileName]
+            while self.at(FshSyntaxKind::LBracket) {
                 self.add_current_token();
                 self.advance();
 
-                // Check for brackets: [index], [+], [=], [ProfileName]
-                while self.at(FshSyntaxKind::LBracket) {
+                // Content can be: integer, identifier, +, =
+                if self.at(FshSyntaxKind::Ident)
+                    || self.at(FshSyntaxKind::Integer)
+                    || self.at(FshSyntaxKind::Plus)
+                    || self.at(FshSyntaxKind::Equals)
+                {
                     self.add_current_token();
                     self.advance();
-
-                    // Content can be: integer, identifier, +, =
-                    if self.at(FshSyntaxKind::Ident)
-                        || self.at(FshSyntaxKind::Integer)
-                        || self.at(FshSyntaxKind::Plus)
-                        || self.at(FshSyntaxKind::Equals)
-                    {
-                        self.add_current_token();
-                        self.advance();
-                    }
-
-                    if self.at(FshSyntaxKind::RBracket) {
-                        self.add_current_token();
-                        self.advance();
-                    }
                 }
 
-                // Check for dot
-                if self.at(FshSyntaxKind::Dot) {
+                if self.at(FshSyntaxKind::RBracket) {
                     self.add_current_token();
                     self.advance();
-                } else {
-                    break;
                 }
+            }
+
+            // Check for dot
+            if self.at(FshSyntaxKind::Dot) {
+                self.add_current_token();
+                self.advance();
+                // Continue loop to parse next segment
             } else {
+                // No dot means end of path
                 break;
             }
         }
 
-        self.builder.finish_node();
+        self.builder.finish_node(); // PATH
     }
 
     // Helper methods
@@ -1162,6 +1461,757 @@ impl<'a> Parser<'a> {
             self.add_current_token();
             self.advance();
         }
+    }
+
+    /// Parse a Logical/Resource rule (can be addElementRule or standard sdRule)
+    fn parse_lr_rule(&mut self) {
+        self.expect(FshSyntaxKind::Asterisk);
+        self.consume_trivia();
+
+        // Parse path
+        self.parse_path();
+        self.consume_trivia();
+
+        // Check if this is an addElementRule by looking for cardinality pattern
+        // AddElementRule: * path CARD flags* TYPE STRING
+        // CardRule: * path CARD flags* (no TYPE)
+        // OtherRule: * path KEYWORD
+
+        if self.at(FshSyntaxKind::Integer) {
+            // Might be addElementRule, addCRElementRule, or cardRule
+            // We need to look ahead to distinguish:
+            // - If we see contentreference after cardinality/flags -> addCRElementRule
+            // - If we see TYPE (Ident that looks like a type) after cardinality/flags -> addElementRule
+            // - Otherwise -> cardRule
+
+            if self.is_add_cr_element_rule() {
+                // It's an addCRElementRule
+                self.parse_add_cr_element_rule();
+                return;
+            } else if self.is_add_element_rule() {
+                // It's an addElementRule - rebuild it with proper node
+                self.builder.start_node(FshSyntaxKind::AddElementRule);
+
+                // Cardinality (min..max)
+                self.expect(FshSyntaxKind::Integer); // min
+                self.consume_trivia();
+                self.expect(FshSyntaxKind::Range); // ..
+                self.consume_trivia();
+                if self.at(FshSyntaxKind::Integer) || self.at(FshSyntaxKind::Asterisk) {
+                    self.add_current_token(); // max
+                    self.advance();
+                }
+                self.consume_trivia();
+
+                // Flags (MS, SU, etc.)
+                while self.at(FshSyntaxKind::MsFlag)
+                    || self.at(FshSyntaxKind::SuFlag)
+                    || self.at(FshSyntaxKind::TuFlag)
+                    || self.at(FshSyntaxKind::NFlag)
+                    || self.at(FshSyntaxKind::DFlag)
+                {
+                    self.add_current_token();
+                    self.advance();
+                    self.consume_trivia();
+                }
+
+                // Target type(s) - at least one required
+                self.expect(FshSyntaxKind::Ident); // First type
+                self.consume_trivia();
+
+                // Additional types with "or"
+                while self.at(FshSyntaxKind::OrKw) {
+                    self.add_current_token();
+                    self.advance();
+                    self.consume_trivia();
+                    self.expect(FshSyntaxKind::Ident);
+                    self.consume_trivia();
+                }
+
+                // Short description (required)
+                self.expect(FshSyntaxKind::String);
+                self.consume_trivia();
+
+                // Full definition (optional)
+                if self.at(FshSyntaxKind::String) {
+                    self.add_current_token();
+                    self.advance();
+                }
+
+                self.consume_trivia_and_newlines();
+                self.builder.finish_node(); // ADD_ELEMENT_RULE
+                return;
+            }
+        }
+
+        // Not an addElementRule - parse as standard sdRule
+        // We need to reparse this as a standard rule
+        // The path is already consumed, so we continue from here
+        self.parse_standard_sd_rule();
+    }
+
+    /// Check if current position indicates an addElementRule
+    /// Returns true if we see: CARD flags* TYPE STRING
+    fn is_add_element_rule(&self) -> bool {
+        let mut peek_pos = self.pos;
+
+        // Should be at INTEGER for cardinality
+        if peek_pos >= self.tokens.len() || self.tokens[peek_pos].kind != FshSyntaxKind::Integer {
+            return false;
+        }
+        peek_pos += 1;
+
+        // Skip whitespace
+        while peek_pos < self.tokens.len()
+            && self.tokens[peek_pos].kind == FshSyntaxKind::Whitespace
+        {
+            peek_pos += 1;
+        }
+
+        // Should see Range (..)
+        if peek_pos >= self.tokens.len() || self.tokens[peek_pos].kind != FshSyntaxKind::Range {
+            return false;
+        }
+        peek_pos += 1;
+
+        // Skip whitespace
+        while peek_pos < self.tokens.len()
+            && self.tokens[peek_pos].kind == FshSyntaxKind::Whitespace
+        {
+            peek_pos += 1;
+        }
+
+        // Should see max (INTEGER or ASTERISK)
+        if peek_pos >= self.tokens.len() {
+            return false;
+        }
+        if self.tokens[peek_pos].kind != FshSyntaxKind::Integer
+            && self.tokens[peek_pos].kind != FshSyntaxKind::Asterisk
+        {
+            return false;
+        }
+        peek_pos += 1;
+
+        // Skip whitespace
+        while peek_pos < self.tokens.len()
+            && self.tokens[peek_pos].kind == FshSyntaxKind::Whitespace
+        {
+            peek_pos += 1;
+        }
+
+        // Skip flags (MS, SU, TU, N, D)
+        while peek_pos < self.tokens.len() {
+            let kind = self.tokens[peek_pos].kind;
+            if matches!(
+                kind,
+                FshSyntaxKind::MsFlag
+                    | FshSyntaxKind::SuFlag
+                    | FshSyntaxKind::TuFlag
+                    | FshSyntaxKind::NFlag
+                    | FshSyntaxKind::DFlag
+            ) {
+                peek_pos += 1;
+                // Skip whitespace after flag
+                while peek_pos < self.tokens.len()
+                    && self.tokens[peek_pos].kind == FshSyntaxKind::Whitespace
+                {
+                    peek_pos += 1;
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Now we should see either:
+        // - IDENT (type name) followed by STRING -> addElementRule
+        // - Newline or EOF -> cardRule
+
+        if peek_pos >= self.tokens.len() {
+            return false;
+        }
+
+        // If we see IDENT followed by STRING, it's likely addElementRule
+        if self.tokens[peek_pos].kind == FshSyntaxKind::Ident {
+            // Peek ahead for STRING
+            let mut next_pos = peek_pos + 1;
+            while next_pos < self.tokens.len()
+                && self.tokens[next_pos].kind == FshSyntaxKind::Whitespace
+            {
+                next_pos += 1;
+            }
+
+            // Check if next is STRING or OrKw (multiple types) or another IDENT
+            if next_pos < self.tokens.len() {
+                let next_kind = self.tokens[next_pos].kind;
+                if next_kind == FshSyntaxKind::String || next_kind == FshSyntaxKind::OrKw {
+                    return true; // Definitely addElementRule
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Check if current position indicates an addCRElementRule
+    /// Returns true if we see: CARD flags* contentreference REF STRING
+    fn is_add_cr_element_rule(&self) -> bool {
+        let mut peek_pos = self.pos;
+
+        // Should be at INTEGER for cardinality
+        if peek_pos >= self.tokens.len() || self.tokens[peek_pos].kind != FshSyntaxKind::Integer {
+            return false;
+        }
+        peek_pos += 1;
+
+        // Skip whitespace
+        while peek_pos < self.tokens.len()
+            && self.tokens[peek_pos].kind == FshSyntaxKind::Whitespace
+        {
+            peek_pos += 1;
+        }
+
+        // Should see Range (..)
+        if peek_pos >= self.tokens.len() || self.tokens[peek_pos].kind != FshSyntaxKind::Range {
+            return false;
+        }
+        peek_pos += 1;
+
+        // Skip whitespace
+        while peek_pos < self.tokens.len()
+            && self.tokens[peek_pos].kind == FshSyntaxKind::Whitespace
+        {
+            peek_pos += 1;
+        }
+
+        // Should see max (INTEGER or ASTERISK)
+        if peek_pos >= self.tokens.len() {
+            return false;
+        }
+        if self.tokens[peek_pos].kind != FshSyntaxKind::Integer
+            && self.tokens[peek_pos].kind != FshSyntaxKind::Asterisk
+        {
+            return false;
+        }
+        peek_pos += 1;
+
+        // Skip whitespace
+        while peek_pos < self.tokens.len()
+            && self.tokens[peek_pos].kind == FshSyntaxKind::Whitespace
+        {
+            peek_pos += 1;
+        }
+
+        // Skip flags (MS, SU, TU, N, D)
+        while peek_pos < self.tokens.len() {
+            let kind = self.tokens[peek_pos].kind;
+            if matches!(
+                kind,
+                FshSyntaxKind::MsFlag
+                    | FshSyntaxKind::SuFlag
+                    | FshSyntaxKind::TuFlag
+                    | FshSyntaxKind::NFlag
+                    | FshSyntaxKind::DFlag
+            ) {
+                peek_pos += 1;
+                // Skip whitespace after flag
+                while peek_pos < self.tokens.len()
+                    && self.tokens[peek_pos].kind == FshSyntaxKind::Whitespace
+                {
+                    peek_pos += 1;
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Should see contentreference keyword
+        if peek_pos >= self.tokens.len()
+            || self.tokens[peek_pos].kind != FshSyntaxKind::ContentreferenceKw
+        {
+            return false;
+        }
+
+        true
+    }
+
+    /// Parse addCRElementRule: * path CARD flags* contentreference REF STRING STRING?
+    fn parse_add_cr_element_rule(&mut self) {
+        self.builder.start_node(FshSyntaxKind::AddCRElementRule);
+
+        // Cardinality (min..max)
+        self.expect(FshSyntaxKind::Integer); // min
+        self.consume_trivia();
+        self.expect(FshSyntaxKind::Range); // ..
+        self.consume_trivia();
+        if self.at(FshSyntaxKind::Integer) || self.at(FshSyntaxKind::Asterisk) {
+            self.add_current_token(); // max
+            self.advance();
+        }
+        self.consume_trivia();
+
+        // Flags (MS, SU, etc.)
+        while self.at(FshSyntaxKind::MsFlag)
+            || self.at(FshSyntaxKind::SuFlag)
+            || self.at(FshSyntaxKind::TuFlag)
+            || self.at(FshSyntaxKind::NFlag)
+            || self.at(FshSyntaxKind::DFlag)
+        {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
+        // contentreference keyword
+        self.expect(FshSyntaxKind::ContentreferenceKw);
+        self.consume_trivia();
+
+        // Reference URL or code (can be URL or #code)
+        if self.at(FshSyntaxKind::Ident) {
+            // URL like http://example.org/StructureDefinition/Type
+            self.add_current_token();
+            self.advance();
+        } else if self.at(FshSyntaxKind::Hash) {
+            // Code like #LocalType
+            self.add_current_token();
+            self.advance();
+            if self.at(FshSyntaxKind::Ident) {
+                self.add_current_token();
+                self.advance();
+            }
+        }
+        self.consume_trivia();
+
+        // Short description (required)
+        self.expect(FshSyntaxKind::String);
+        self.consume_trivia();
+
+        // Full definition (optional)
+        if self.at(FshSyntaxKind::String) {
+            self.add_current_token();
+            self.advance();
+        }
+
+        self.consume_trivia_and_newlines();
+        self.builder.finish_node(); // ADD_CR_ELEMENT_RULE
+    }
+
+    /// Parse the rest of a standard sdRule after path has been consumed
+    fn parse_standard_sd_rule(&mut self) {
+        // Determine rule type based on what follows the path
+        let rule_kind = if self.at(FshSyntaxKind::Arrow) {
+            FshSyntaxKind::MappingRule
+        } else if self.at(FshSyntaxKind::Equals) || self.at(FshSyntaxKind::PlusEquals) {
+            FshSyntaxKind::FixedValueRule
+        } else if self.at(FshSyntaxKind::ContainsKw) {
+            FshSyntaxKind::ContainsRule
+        } else if self.at(FshSyntaxKind::FromKw) {
+            FshSyntaxKind::ValuesetRule
+        } else if self.at(FshSyntaxKind::OnlyKw) {
+            FshSyntaxKind::OnlyRule
+        } else if self.at(FshSyntaxKind::ObeysKw) {
+            FshSyntaxKind::ObeysRule
+        } else {
+            FshSyntaxKind::CardRule // Default: cardinality/flags
+        };
+
+        self.builder.start_node(rule_kind);
+
+        // Delegate to the appropriate parsing logic from parse_rule()
+        self.parse_sd_rule_body(rule_kind);
+
+        self.consume_trivia_and_newlines();
+        self.builder.finish_node();
+    }
+
+    /// Parse the body of a standard SD rule
+    fn parse_sd_rule_body(&mut self, rule_kind: FshSyntaxKind) {
+        match rule_kind {
+            FshSyntaxKind::MappingRule => {
+                self.expect(FshSyntaxKind::Arrow);
+                self.consume_trivia();
+                self.expect(FshSyntaxKind::String);
+                self.consume_trivia();
+                if self.at(FshSyntaxKind::String) {
+                    self.add_current_token();
+                    self.advance();
+                    self.consume_trivia();
+                }
+                if self.at(FshSyntaxKind::Hash) {
+                    self.add_current_token();
+                    self.advance();
+                    if self.at(FshSyntaxKind::Ident) {
+                        self.add_current_token();
+                        self.advance();
+                    }
+                }
+            }
+            FshSyntaxKind::FixedValueRule => {
+                if self.at(FshSyntaxKind::Equals) || self.at(FshSyntaxKind::PlusEquals) {
+                    self.add_current_token();
+                    self.advance();
+                    self.consume_trivia();
+                    self.parse_value_expression();
+                }
+            }
+            FshSyntaxKind::CardRule => {
+                // Cardinality and flags
+                if self.at(FshSyntaxKind::Integer) {
+                    self.add_current_token();
+                    self.advance();
+                    self.consume_trivia();
+                    if self.at(FshSyntaxKind::Range) {
+                        self.add_current_token();
+                        self.advance();
+                        self.consume_trivia();
+                        if self.at(FshSyntaxKind::Integer) || self.at(FshSyntaxKind::Asterisk) {
+                            self.add_current_token();
+                            self.advance();
+                            self.consume_trivia();
+                        }
+                    }
+                }
+                // Flags
+                while self.at(FshSyntaxKind::MsFlag)
+                    || self.at(FshSyntaxKind::SuFlag)
+                    || self.at(FshSyntaxKind::TuFlag)
+                {
+                    self.add_current_token();
+                    self.advance();
+                    self.consume_trivia();
+                }
+            }
+            _ => {
+                // For other rules (contains, from, only, obeys), just consume tokens until newline
+                while !self.at_end() && !self.at(FshSyntaxKind::Newline) {
+                    self.add_current_token();
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    /// Parse a CodeSystem concept definition
+    fn parse_concept(&mut self) {
+        self.builder.start_node(FshSyntaxKind::Concept);
+
+        self.expect(FshSyntaxKind::Asterisk);
+        self.consume_trivia();
+
+        // One or more CODE tokens (for hierarchy)
+        // Format: * #code or * #parent #child
+        while self.at(FshSyntaxKind::Hash) {
+            self.add_current_token(); // #
+            self.advance();
+            self.consume_trivia();
+
+            // Code identifier after #
+            if self.at(FshSyntaxKind::Ident) || self.at(FshSyntaxKind::Integer) {
+                self.add_current_token();
+                self.advance();
+                self.consume_trivia();
+            }
+        }
+
+        // Optional display string
+        if self.at(FshSyntaxKind::String) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
+        // Optional definition string (second string)
+        if self.at(FshSyntaxKind::String) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
+        self.consume_trivia_and_newlines();
+        self.builder.finish_node(); // CONCEPT
+    }
+
+    /// Parse a ValueSet rule (include/exclude components)
+    fn parse_vs_rule(&mut self) {
+        self.expect(FshSyntaxKind::Asterisk);
+        self.consume_trivia();
+
+        // Check for optional include/exclude keywords
+        let has_include_exclude =
+            self.at(FshSyntaxKind::IncludeKw) || self.at(FshSyntaxKind::ExcludeKw);
+
+        if has_include_exclude {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
+        // Determine if this is concept component or filter component
+        if self.at(FshSyntaxKind::CodesKw) {
+            // Filter component: * include codes from system ...
+            self.parse_vs_filter_component();
+        } else {
+            // Concept component: * include http://system#code "display"
+            // or just: * http://system#code (implicit include)
+            self.parse_vs_concept_component();
+        }
+    }
+
+    /// Parse ValueSet concept component: system#code "display"
+    fn parse_vs_concept_component(&mut self) {
+        self.builder.start_node(FshSyntaxKind::VsConceptComponent);
+
+        // Parse code reference (can be URL#code or just #code)
+        self.parse_vs_code();
+        self.consume_trivia();
+
+        // Optional display string
+        if self.at(FshSyntaxKind::String) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
+        // Optional "from" clause
+        if self.at(FshSyntaxKind::FromKw) {
+            self.parse_vs_component_from();
+        }
+
+        self.consume_trivia_and_newlines();
+        self.builder.finish_node(); // VS_CONCEPT_COMPONENT
+    }
+
+    /// Parse a code reference for ValueSet (can be URL#code)
+    fn parse_vs_code(&mut self) {
+        self.builder.start_node(FshSyntaxKind::CodeRef);
+
+        // Parse system part (if present) - can be URL or identifier
+        // URLs like http://loinc.org are multiple tokens
+        let mut has_system = false;
+
+        while !self.at_end()
+            && !self.at(FshSyntaxKind::Hash)
+            && !self.at(FshSyntaxKind::String)
+            && !self.at(FshSyntaxKind::Newline)
+            && !self.at(FshSyntaxKind::FromKw)
+        {
+            if self.at(FshSyntaxKind::Whitespace) {
+                break;
+            }
+            self.add_current_token();
+            self.advance();
+            has_system = true;
+        }
+
+        // Hash separator
+        if self.at(FshSyntaxKind::Hash) {
+            self.add_current_token();
+            self.advance();
+
+            // Code part (after #)
+            if self.at(FshSyntaxKind::Ident) || self.at(FshSyntaxKind::Integer) {
+                self.add_current_token();
+                self.advance();
+            }
+        } else if !has_system {
+            // No system and no hash - might be just a code starting with #
+            // This case is handled by the hash check above
+        }
+
+        self.builder.finish_node(); // CODE_REF
+    }
+
+    /// Parse ValueSet filter component: codes from system ... where ...
+    fn parse_vs_filter_component(&mut self) {
+        self.builder.start_node(FshSyntaxKind::VsFilterComponent);
+
+        // "codes" keyword
+        self.expect(FshSyntaxKind::CodesKw);
+        self.consume_trivia();
+
+        // "from" clause (required for filter component)
+        if self.at(FshSyntaxKind::FromKw) {
+            self.parse_vs_component_from();
+        }
+
+        // Optional "where" clause with filters
+        if self.at(FshSyntaxKind::WhereKw) {
+            self.parse_vs_where_clause();
+        }
+
+        self.consume_trivia_and_newlines();
+        self.builder.finish_node(); // VS_FILTER_COMPONENT
+    }
+
+    /// Parse "from system X and valueset Y" clause
+    fn parse_vs_component_from(&mut self) {
+        self.builder.start_node(FshSyntaxKind::VsComponentFrom);
+
+        self.expect(FshSyntaxKind::FromKw);
+        self.consume_trivia();
+
+        // Can be "system X" or "valueset Y" or both with "and"
+        loop {
+            if self.at(FshSyntaxKind::SystemKw) {
+                self.parse_vs_from_system();
+            } else if self.at(FshSyntaxKind::ValuesetRefKw) {
+                self.parse_vs_from_valueset();
+            } else {
+                break;
+            }
+
+            self.consume_trivia();
+
+            // Check for "and" to continue
+            if self.at(FshSyntaxKind::AndKw) {
+                self.add_current_token();
+                self.advance();
+                self.consume_trivia();
+            } else {
+                break;
+            }
+        }
+
+        self.builder.finish_node(); // VS_COMPONENT_FROM
+    }
+
+    /// Parse "system URL" part
+    fn parse_vs_from_system(&mut self) {
+        self.builder.start_node(FshSyntaxKind::VsFromSystem);
+
+        self.expect(FshSyntaxKind::SystemKw);
+        self.consume_trivia();
+
+        // System URL or name - consume tokens until we hit a keyword or newline
+        // URLs are multiple tokens, so we need to consume them all
+        while !self.at_end()
+            && !self.at(FshSyntaxKind::Newline)
+            && !self.at(FshSyntaxKind::AndKw)
+            && !self.at(FshSyntaxKind::WhereKw)
+            && !self.at(FshSyntaxKind::Whitespace)
+        {
+            self.add_current_token();
+            self.advance();
+        }
+
+        self.builder.finish_node(); // VS_FROM_SYSTEM
+    }
+
+    /// Parse "valueset URL" part
+    fn parse_vs_from_valueset(&mut self) {
+        self.builder.start_node(FshSyntaxKind::VsFromValueset);
+
+        self.expect(FshSyntaxKind::ValuesetRefKw);
+        self.consume_trivia();
+
+        // ValueSet URL or name
+        while !self.at_end()
+            && !self.at(FshSyntaxKind::Newline)
+            && !self.at(FshSyntaxKind::AndKw)
+            && !self.at(FshSyntaxKind::Whitespace)
+        {
+            self.add_current_token();
+            self.advance();
+        }
+
+        self.builder.finish_node(); // VS_FROM_VALUESET
+    }
+
+    /// Parse "where" filter list
+    fn parse_vs_where_clause(&mut self) {
+        self.builder.start_node(FshSyntaxKind::VsFilterList);
+
+        self.expect(FshSyntaxKind::WhereKw);
+        self.consume_trivia();
+
+        // Parse filter definitions separated by "and"
+        loop {
+            self.parse_vs_filter_definition();
+            self.consume_trivia();
+
+            if self.at(FshSyntaxKind::AndKw) {
+                self.add_current_token();
+                self.advance();
+                self.consume_trivia();
+            } else {
+                break;
+            }
+        }
+
+        self.builder.finish_node(); // VS_FILTER_LIST
+    }
+
+    /// Parse single filter: property operator value
+    fn parse_vs_filter_definition(&mut self) {
+        self.builder.start_node(FshSyntaxKind::VsFilterDefinition);
+
+        // Property name (e.g., "concept", "designation")
+        if self.at(FshSyntaxKind::Ident) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
+        // Operator (e.g., "is-a", "descendent-of", "=")
+        self.parse_vs_filter_operator();
+        self.consume_trivia();
+
+        // Value (optional for some operators)
+        if !self.at_end() && !self.at(FshSyntaxKind::AndKw) && !self.at(FshSyntaxKind::Newline) {
+            self.parse_vs_filter_value();
+        }
+
+        self.builder.finish_node(); // VS_FILTER_DEFINITION
+    }
+
+    /// Parse filter operator
+    fn parse_vs_filter_operator(&mut self) {
+        self.builder.start_node(FshSyntaxKind::VsFilterOperator);
+
+        if self.at(FshSyntaxKind::Equals) {
+            self.add_current_token();
+            self.advance();
+        } else if self.at(FshSyntaxKind::Ident) {
+            // Operators like "is-a", "descendent-of" are lexed as IDENT
+            // They may contain hyphens, so consume the full identifier
+            self.add_current_token();
+            self.advance();
+        }
+
+        self.builder.finish_node(); // VS_FILTER_OPERATOR
+    }
+
+    /// Parse filter value
+    fn parse_vs_filter_value(&mut self) {
+        self.builder.start_node(FshSyntaxKind::VsFilterValue);
+
+        if self.at(FshSyntaxKind::Hash) {
+            // Code: #12345
+            self.add_current_token();
+            self.advance();
+            if self.at(FshSyntaxKind::Ident) || self.at(FshSyntaxKind::Integer) {
+                self.add_current_token();
+                self.advance();
+            }
+        } else if self.at(FshSyntaxKind::True) || self.at(FshSyntaxKind::False) {
+            // Boolean
+            self.add_current_token();
+            self.advance();
+        } else if self.at(FshSyntaxKind::String) {
+            // String
+            self.add_current_token();
+            self.advance();
+        } else if self.at(FshSyntaxKind::Slash) {
+            // Potential regex /pattern/ - for now just consume as slash
+            // TODO: Implement proper regex parsing in lexer
+            self.add_current_token();
+            self.advance();
+        } else {
+            // Default: consume as identifier or other token
+            self.add_current_token();
+            self.advance();
+        }
+
+        self.builder.finish_node(); // VS_FILTER_VALUE
     }
 
     fn error_and_recover(&mut self) {

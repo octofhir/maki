@@ -62,5 +62,9 @@ Description: "Has context"
 * 
 
 ValueSet: ValueSet1
+Id: duplicate-id
+Title: "First ValueSet"
 
 CodeSystem: CodeSystem1
+Id: duplicate-id
+Title: "CodeSystem with Duplicate ID"

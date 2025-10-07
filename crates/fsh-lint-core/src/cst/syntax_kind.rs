@@ -81,6 +81,8 @@ pub enum FshSyntaxKind {
     TargetKw = 31,
     /// "Context" keyword (for extensions)
     ContextKw = 32,
+    /// "Characteristics" keyword (for logical models)
+    CharacteristicsKw = 33,
 
     // Rule keywords
     /// "from" keyword (binding)
@@ -107,6 +109,12 @@ pub enum FshSyntaxKind {
     CodesKw = 50,
     /// "where" keyword (ValueSet filter)
     WhereKw = 51,
+    /// "system" keyword (ValueSet)
+    SystemKw = 52,
+    /// "valueset" reference keyword (ValueSet)
+    ValuesetRefKw = 53,
+    /// "contentreference" keyword (AddCRElementRule)
+    ContentreferenceKw = 54,
 
     // Binding strength
     /// "required" binding strength
@@ -187,6 +195,8 @@ pub enum FshSyntaxKind {
     Backslash = 121,
     /// Forward slash "/"
     Slash = 122,
+    /// Arrow "->" (for mapping)
+    Arrow = 123,
 
     // ==================
     // Literals & Identifiers (150-199)
@@ -207,6 +217,10 @@ pub enum FshSyntaxKind {
     Code = 156,
     /// URL/canonical reference
     Url = 157,
+    /// Regex pattern /pattern/
+    Regex = 158,
+    /// UCUM unit 'unit'
+    Unit = 159,
 
     // ==================
     // Structure Nodes (200-399)
@@ -289,6 +303,10 @@ pub enum FshSyntaxKind {
     PathRule = 259,
     /// Add element rule (for Logical/Resource)
     AddElementRule = 260,
+    /// Add content reference element rule (for Logical/Resource)
+    AddCRElementRule = 262,
+    /// Mapping rule: * path -> "target"
+    MappingRule = 261,
 
     // ValueSet components (300-319)
     /// ValueSet include/exclude component
@@ -303,6 +321,20 @@ pub enum FshSyntaxKind {
     CodeCaretValueRule = 304,
     /// Code insert rule
     CodeInsertRule = 305,
+    /// ValueSet component "from" clause
+    VsComponentFrom = 306,
+    /// "from system X" part
+    VsFromSystem = 307,
+    /// "from valueset Y" part
+    VsFromValueset = 308,
+    /// "where" filter list
+    VsFilterList = 309,
+    /// Single filter definition
+    VsFilterDefinition = 310,
+    /// Filter operator (is-a, =, etc.)
+    VsFilterOperator = 311,
+    /// Filter value
+    VsFilterValue = 312,
 
     // CodeSystem (320-329)
     /// CodeSystem concept
@@ -321,6 +353,14 @@ pub enum FshSyntaxKind {
     TypeRef = 334,
     /// Quantity value
     Quantity = 335,
+    /// Ratio value (numerator:denominator)
+    Ratio = 339,
+    /// Parameter list in parameterized RuleSet
+    ParameterList = 336,
+    /// Individual parameter in RuleSet
+    Parameter = 337,
+    /// Insert rule arguments
+    InsertRuleArgs = 338,
 
     // ==================
     // Special tokens (400+)

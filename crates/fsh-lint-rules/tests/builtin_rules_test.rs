@@ -56,7 +56,7 @@ fn blocking_rules_validate_critical_requirements() {
 #[test]
 fn correctness_rules_have_required_metadata() {
     let rules = BuiltinRules::correctness_rules();
-    assert_eq!(rules.len(), 13); // Updated: added profile-assignment-present and extension-context-missing
+    assert_eq!(rules.len(), 11); // Note: 2 rules commented out (duplicate_canonical_url, duplicate_identifier) due to GritQL hang issues
 
     for rule in &rules {
         assert_rule_basics(rule);

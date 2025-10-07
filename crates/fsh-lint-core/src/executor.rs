@@ -5,14 +5,39 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex, Once,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+};
 use std::time::{Duration, Instant};
 
 use rayon::prelude::*;
 use tracing::{Level, debug, error, info, span, warn};
 
+/// Initialize the global Rayon thread pool once
+static THREAD_POOL_INIT: Once = Once::new();
+
+fn init_global_thread_pool(threads: usize) {
+    THREAD_POOL_INIT.call_once(|| {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .thread_name(|index| format!("fsh-lint-worker-{index}"))
+            .build_global()
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Could not configure global thread pool (may already be initialized): {}",
+                    e
+                );
+            });
+        info!(
+            "Configured global rayon thread pool with {} threads",
+            threads
+        );
+    });
+}
+
 use crate::{
-    CompiledRule, Diagnostic, FshLintConfiguration, FshLintError, Parser, Result, RuleEngine,
+    CompiledRule, Diagnostic, FshLintConfiguration, FshLintError, Result, RuleEngine,
     SemanticAnalyzer,
 };
 
@@ -69,6 +94,8 @@ pub struct ResourceMonitor {
     memory_samples: Arc<Mutex<Vec<u64>>>,
     /// Monitoring interval
     interval: Duration,
+    /// Shutdown flag for stopping the background thread
+    shutdown: Arc<AtomicBool>,
 }
 
 impl ResourceMonitor {
@@ -77,7 +104,13 @@ impl ResourceMonitor {
         Self {
             memory_samples: Arc::new(Mutex::new(Vec::new())),
             interval,
+            shutdown: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Signal the monitor to shut down
+    pub fn shutdown(&self) {
+        self.shutdown.store(true, Ordering::Relaxed);
     }
 
     /// Start monitoring resources in the background
@@ -86,9 +119,10 @@ impl ResourceMonitor {
         let stats_clone = Arc::clone(&stats);
         let samples_clone = Arc::clone(&self.memory_samples);
         let interval = self.interval;
+        let shutdown = Arc::clone(&self.shutdown);
 
         std::thread::spawn(move || {
-            loop {
+            while !shutdown.load(Ordering::Relaxed) {
                 let current_memory = get_current_memory_usage();
 
                 // Update samples
@@ -320,8 +354,6 @@ pub trait Executor {
 pub struct DefaultExecutor {
     /// Execution context
     context: ExecutionContext,
-    /// Parser instance (wrapped in Arc<Mutex> for thread safety)
-    parser: Arc<Mutex<Box<dyn Parser + Send>>>,
     /// Semantic analyzer instance
     semantic_analyzer: Box<dyn SemanticAnalyzer + Send + Sync>,
     /// Rule engine instance
@@ -332,13 +364,23 @@ impl DefaultExecutor {
     /// Create a new default executor
     pub fn new(
         context: ExecutionContext,
-        parser: Box<dyn Parser + Send>,
         semantic_analyzer: Box<dyn SemanticAnalyzer + Send + Sync>,
         rule_engine: Box<dyn RuleEngine + Send + Sync>,
     ) -> Self {
+        // Determine optimal thread count
+        let thread_count = context.thread_pool_size.unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|p| p.get())
+                .unwrap_or(4)
+        });
+
+        info!("Initializing executor with {} threads", thread_count);
+
+        // Initialize global rayon thread pool once
+        init_global_thread_pool(thread_count);
+
         Self {
             context,
-            parser: Arc::new(Mutex::new(parser)),
             semantic_analyzer,
             rule_engine,
         }
@@ -366,8 +408,7 @@ impl DefaultExecutor {
                 };
             }
         };
-
-        let parse_result = match self.parser.lock().unwrap().parse(&content) {
+        let parse_result = match crate::FshParser::parse_content(&content) {
             Ok(result) => result,
             Err(error) => {
                 error!("Failed to parse file {}: {}", file_path.display(), error);
@@ -437,35 +478,6 @@ impl DefaultExecutor {
         }
     }
 
-    /// Check memory usage and apply backpressure if needed
-    fn check_memory_usage(&self) -> Result<()> {
-        if let Some(limit) = self.context.memory_limit {
-            let current_usage = get_current_memory_usage();
-
-            if current_usage > limit {
-                warn!(
-                    "Memory usage ({} bytes) exceeds limit ({} bytes)",
-                    current_usage, limit
-                );
-                // Apply backpressure by reducing parallelism
-                return Err(FshLintError::ResourceLimit {
-                    resource: "memory".to_string(),
-                    limit: limit.to_string(),
-                    current: current_usage.to_string(),
-                });
-            }
-
-            // Update resource stats
-            if let Ok(mut stats) = self.context.resource_stats.lock() {
-                stats.current_memory_bytes = current_usage;
-                if current_usage > stats.peak_memory_bytes {
-                    stats.peak_memory_bytes = current_usage;
-                }
-            }
-        }
-        Ok(())
-    }
-
     /// Report progress if callback is configured
     fn report_progress(&self, info: ProgressInfo) {
         if let Some(ref callback) = self.context.progress_callback {
@@ -479,96 +491,41 @@ impl Executor for DefaultExecutor {
         let total_files = files.len();
         let start_time = Instant::now();
 
-        info!("Starting parallel execution of {} files", total_files);
-
         // Start resource monitoring if enabled
-        let _monitoring_stats = self
+        let monitor_handle = self
             .context
             .resource_monitor
             .as_ref()
             .map(|monitor| monitor.start_monitoring());
 
-        // Configure initial thread pool (only if not already initialized)
-        if let Some(threads) = self.context.thread_pool_size {
-            // Try to build a custom thread pool, but don't fail if global pool is already initialized
-            if let Err(e) = rayon::ThreadPoolBuilder::new()
-                .num_threads(threads)
-                .build_global()
-            {
-                debug!(
-                    "Could not configure global thread pool (may already be initialized): {}",
-                    e
-                );
-                // Continue with default thread pool
-            }
-        }
+        let completed_count = Arc::new(AtomicUsize::new(0));
 
-        // Progress tracking
-        let completed_count = Arc::new(Mutex::new(0usize));
-        let completed_count_clone = Arc::clone(&completed_count);
-
-        // Execute files in parallel with deterministic ordering and adaptive parallelism
         let results: Result<Vec<_>> = files
             .par_iter()
             .enumerate()
             .map(|(index, file_path)| {
-                // Check memory usage and adjust parallelism periodically
-                if index % 10 == 0 {
-                    self.check_memory_usage()?;
-
-                    // Adjust parallelism based on resource usage
-                    if let (Some(monitor), Some(controller)) = (
-                        &self.context.resource_monitor,
-                        &self.context.backpressure_controller,
-                    ) {
-                        let trend = monitor.get_memory_trend();
-                        let stats = self.context.get_resource_stats();
-                        let new_parallelism = controller.adjust_parallelism(&stats, trend.clone());
-
-                        // Note: Rayon doesn't support dynamic thread pool resizing,
-                        // so this is more of a monitoring feature for now
-                        debug!(
-                            "Current parallelism: {}, Memory trend: {:?}",
-                            new_parallelism, trend
-                        );
-                    }
-                }
-
-                let _file_start_time = Instant::now();
                 let result = self.process_file(file_path);
-                let _file_processing_time = _file_start_time.elapsed();
 
-                // Update progress and statistics
-                {
-                    let mut count = completed_count_clone.lock().unwrap();
-                    *count += 1;
-                    let completed = *count;
+                // Update progress with atomic counter (no locks!)
+                let completed = completed_count.fetch_add(1, Ordering::Relaxed) + 1;
 
-                    let elapsed = start_time.elapsed();
-                    let estimated_remaining = if completed > 0 {
-                        let avg_time_per_file = elapsed / completed as u32;
-                        let remaining_files = total_files - completed;
-                        Some(avg_time_per_file * remaining_files as u32)
-                    } else {
-                        None
-                    };
+                let elapsed = start_time.elapsed();
+                let estimated_remaining = if completed > 0 {
+                    let avg_time_per_file = elapsed / completed as u32;
+                    let remaining_files = total_files - completed;
+                    Some(avg_time_per_file * remaining_files as u32)
+                } else {
+                    None
+                };
 
-                    // Update resource statistics
-                    if let Ok(mut stats) = self.context.resource_stats.lock() {
-                        stats.files_processed = completed;
-                        if completed > 0 {
-                            stats.avg_processing_time = elapsed / completed as u32;
-                        }
-                    }
-
-                    self.report_progress(ProgressInfo {
-                        total_files,
-                        completed_files: completed,
-                        current_file: Some(file_path.clone()),
-                        elapsed,
-                        estimated_remaining,
-                    });
-                }
+                // Report progress (no locks inside par_iter!)
+                self.report_progress(ProgressInfo {
+                    total_files,
+                    completed_files: completed,
+                    current_file: Some(file_path.clone()),
+                    elapsed,
+                    estimated_remaining,
+                });
 
                 Ok((index, result))
             })
@@ -590,6 +547,16 @@ impl Executor for DefaultExecutor {
             total_files, total_time
         );
 
+        // Update final statistics (outside parallel section, no contention)
+        if let Ok(mut stats) = self.context.resource_stats.lock() {
+            stats.files_processed = total_files;
+            stats.avg_processing_time = if total_files > 0 {
+                total_time / total_files as u32
+            } else {
+                Duration::ZERO
+            };
+        }
+
         // Final progress report
         self.report_progress(ProgressInfo {
             total_files,
@@ -598,6 +565,13 @@ impl Executor for DefaultExecutor {
             elapsed: total_time,
             estimated_remaining: Some(Duration::ZERO),
         });
+
+        // Shutdown resource monitor if it was started
+        if let Some(_stats) = monitor_handle {
+            if let Some(monitor) = &self.context.resource_monitor {
+                monitor.shutdown();
+            }
+        }
 
         Ok(final_results)
     }

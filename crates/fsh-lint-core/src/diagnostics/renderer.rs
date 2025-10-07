@@ -195,13 +195,21 @@ impl DiagnosticRenderer {
         ));
         frame.push_str(&format!("  {}\n", self.console.colorize("│", Color::Blue)));
 
+        // Determine color based on severity
+        let highlight_color = match diagnostic.severity {
+            Severity::Error => Color::Red,
+            Severity::Warning => Color::Yellow,
+            Severity::Info => Color::Blue,
+            Severity::Hint => Color::Dim,
+        };
+
         for line_num in start_line..=end_line {
             let is_error_line = line_num == error_line;
             let line_content = lines.get(line_num - 1)?;
 
             // Line marker and number
             if is_error_line {
-                frame.push_str(&self.console.colorize(">", Color::Red));
+                frame.push_str(&self.console.colorize(">", highlight_color));
                 frame.push(' ');
             } else {
                 frame.push_str("  ");
@@ -217,7 +225,12 @@ impl DiagnosticRenderer {
 
             // Line content
             if is_error_line {
-                frame.push_str(&self.highlight_error_in_line(line_content, error_col, error_len));
+                frame.push_str(&self.highlight_error_in_line(
+                    line_content,
+                    error_col,
+                    error_len,
+                    highlight_color,
+                ));
             } else {
                 frame.push_str(line_content);
             }
@@ -231,7 +244,7 @@ impl DiagnosticRenderer {
                 frame.push_str(&" ".repeat(error_col.saturating_sub(1)));
 
                 let carets = "^".repeat(error_len.max(1));
-                frame.push_str(&self.console.colorize(&carets, Color::Red));
+                frame.push_str(&self.console.colorize(&carets, highlight_color));
 
                 frame.push('\n');
             }
@@ -241,7 +254,7 @@ impl DiagnosticRenderer {
     }
 
     /// Highlight the error portion within a line
-    fn highlight_error_in_line(&self, line: &str, col: usize, len: usize) -> String {
+    fn highlight_error_in_line(&self, line: &str, col: usize, len: usize, color: Color) -> String {
         if col == 0 || col > line.len() {
             return line.to_string();
         }
@@ -256,7 +269,7 @@ impl DiagnosticRenderer {
         format!(
             "{}{}{}",
             before,
-            self.console.colorize(error_part, Color::Red),
+            self.console.colorize(error_part, color),
             after
         )
     }

@@ -96,6 +96,7 @@ pub struct RuleRegistry {
 pub struct DefaultRuleEngine {
     registry: RuleRegistry,
     gritql_loader: Option<crate::gritql::GritQLRuleLoader>,
+    gritql_compiler: Arc<GritQLCompiler>,
 }
 
 impl RuleRegistry {
@@ -287,17 +288,29 @@ impl RuleRegistry {
 impl DefaultRuleEngine {
     /// Create a new rule engine
     pub fn new() -> Self {
+        let compiler = GritQLCompiler::new().unwrap_or_else(|e| {
+            tracing::error!("Failed to create GritQL compiler: {}", e);
+            panic!("Fatal: Could not initialize GritQL compiler");
+        });
+
         Self {
             registry: RuleRegistry::new(),
             gritql_loader: None,
+            gritql_compiler: Arc::new(compiler),
         }
     }
 
     /// Create a new rule engine with configuration
     pub fn with_config(config: RuleEngineConfig) -> Self {
+        let compiler = GritQLCompiler::new().unwrap_or_else(|e| {
+            tracing::error!("Failed to create GritQL compiler: {}", e);
+            panic!("Fatal: Could not initialize GritQL compiler");
+        });
+
         Self {
             registry: RuleRegistry::with_config(config),
             gritql_loader: None,
+            gritql_compiler: Arc::new(compiler),
         }
     }
 
@@ -319,9 +332,12 @@ impl DefaultRuleEngine {
         let path_refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
         let gritql_loader = crate::gritql::GritQLRuleLoader::load_from_directories(&path_refs)?;
 
+        let compiler = GritQLCompiler::new()?;
+
         Ok(Self {
             registry: RuleRegistry::new(),
             gritql_loader: Some(gritql_loader),
+            gritql_compiler: Arc::new(compiler),
         })
     }
 
@@ -754,14 +770,8 @@ impl RuleEngineTrait for DefaultRuleEngine {
     fn execute_rules(&self, model: &SemanticModel) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
 
-        // Create GritQL compiler for pattern execution
-        let compiler = match crate::gritql::GritQLCompiler::new() {
-            Ok(compiler) => compiler,
-            Err(e) => {
-                tracing::error!("Failed to create GritQL compiler: {}", e);
-                return diagnostics;
-            }
-        };
+        // Use the pre-initialized GritQL compiler (shared across all files)
+        let compiler = &self.gritql_compiler;
 
         // Execute built-in rules
         for rule in self.registry.get_all() {
@@ -782,7 +792,7 @@ impl RuleEngineTrait for DefaultRuleEngine {
             }
 
             // Execute the rule against each file in the semantic model
-            match self.execute_single_rule(rule, model, &compiler) {
+            match self.execute_single_rule(rule, model, compiler) {
                 Ok(mut rule_diagnostics) => {
                     diagnostics.append(&mut rule_diagnostics);
                 }
