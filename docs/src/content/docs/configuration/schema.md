@@ -9,7 +9,7 @@ The FSH Lint configuration file has a JSON schema available for IDE autocomplete
 
 ```json
 {
-  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json"
+  "$schema": "https://octofhir.github.io/maki/schema/v1.json"
 }
 ```
 
@@ -77,7 +77,7 @@ interface FilesConfiguration {
 
 ```jsonc
 {
-  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json",
+  "$schema": "https://octofhir.github.io/maki/schema/v1.json",
   "root": true,
   "extends": ["./base-config.json"],
   
@@ -130,7 +130,7 @@ Supported in:
 The schema is automatically served from GitHub Pages. For offline use:
 
 ```bash
-curl -O https://octofhir.github.io/maki-rs/schema/v1.json
+curl -O https://octofhir.github.io/maki/schema/v1.json
 ```
 
 Then reference it locally:

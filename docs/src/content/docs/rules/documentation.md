@@ -33,7 +33,7 @@ Warns about missing documentation fields such as Description, Title, Publisher, 
 }
 ```
 
-**Learn more**: [Missing Metadata](https://octofhir.github.io/maki-rs/rules/documentation/missing-metadata)
+**Learn more**: [Missing Metadata](https://octofhir.github.io/maki/rules/documentation/missing-metadata)
 
 ---
 
@@ -60,7 +60,7 @@ Detects FHIR resources without description metadata
 }
 ```
 
-**Learn more**: [Missing Description](https://octofhir.github.io/maki-rs/rules/documentation/missing-description)
+**Learn more**: [Missing Description](https://octofhir.github.io/maki/rules/documentation/missing-description)
 
 ---
 
@@ -87,7 +87,7 @@ Detects FHIR resources without title metadata
 }
 ```
 
-**Learn more**: [Missing Title](https://octofhir.github.io/maki-rs/rules/documentation/missing-title)
+**Learn more**: [Missing Title](https://octofhir.github.io/maki/rules/documentation/missing-title)
 
 ---
 
@@ -114,7 +114,7 @@ Detects FHIR resources without publisher metadata
 }
 ```
 
-**Learn more**: [Missing Publisher](https://octofhir.github.io/maki-rs/rules/documentation/missing-publisher)
+**Learn more**: [Missing Publisher](https://octofhir.github.io/maki/rules/documentation/missing-publisher)
 
 ---
 

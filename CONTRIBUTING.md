@@ -19,13 +19,13 @@ We are committed to providing a welcoming and inspiring community for all. Pleas
 1. Fork the repository on GitHub
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/maki-rs.git
-   cd maki-rs
+   git clone https://github.com/YOUR_USERNAME/maki.git
+   cd maki
    ```
 
 3. Add the upstream repository:
    ```bash
-   git remote add upstream https://github.com/octofhir/maki-rs.git
+   git remote add upstream https://github.com/octofhir/maki.git
    ```
 
 4. Build the project:
@@ -43,7 +43,7 @@ We are committed to providing a welcoming and inspiring community for all. Pleas
 This is a Rust workspace with the following crates:
 
 ```
-maki-rs/
+maki/
 ├── crates/
 │   ├── maki-core/        # Core linting engine
 │   │   ├── src/
@@ -211,7 +211,7 @@ GritQL rules are pattern-matching rules that can be written without Rust code:
 
 3. Test your GritQL pattern in `crates/maki-rules/tests/gritql_integration_test.rs`
 
-See [Writing Custom Rules Guide](https://octofhir.github.io/maki-rs/guides/custom-rules/) for more details.
+See [Writing Custom Rules Guide](https://octofhir.github.io/maki/guides/custom-rules/) for more details.
 
 ## Running Tests
 
@@ -450,9 +450,9 @@ Visit http://localhost:4321 to view the docs.
 
 ## Getting Help
 
-- **Documentation**: https://octofhir.github.io/maki-rs/
-- **GitHub Issues**: https://github.com/octofhir/maki-rs/issues
-- **Discussions**: https://github.com/octofhir/maki-rs/discussions
+- **Documentation**: https://octofhir.github.io/maki/
+- **GitHub Issues**: https://github.com/octofhir/maki/issues
+- **Discussions**: https://github.com/octofhir/maki/discussions
 
 ## Useful Resources
 

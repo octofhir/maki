@@ -21,7 +21,7 @@ This creates `maki.json` in your current directory with recommended defaults.
 
 ```jsonc
 {
-  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json",
+  "$schema": "https://octofhir.github.io/maki/schema/v1.json",
   "root": true,
   "linter": {
     "enabled": true,
@@ -36,7 +36,7 @@ This creates `maki.json` in your current directory with recommended defaults.
 
 ```jsonc
 {
-  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json",
+  "$schema": "https://octofhir.github.io/maki/schema/v1.json",
   "root": true,
 
   // Extend from base config
@@ -83,7 +83,7 @@ The `$schema` field enables IDE autocomplete and validation:
 
 ```jsonc
 {
-  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json"
+  "$schema": "https://octofhir.github.io/maki/schema/v1.json"
 }
 ```
 

@@ -69,7 +69,7 @@ impl ConfigGenerator {
     fn add_jsonc_comments(_json: String) -> String {
         // For now, just prepend a helpful header comment
         r#"{
-  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json",
+  "$schema": "https://octofhir.github.io/maki/schema/v1.json",
   "root": true,
   "linter": {
     "enabled": true,

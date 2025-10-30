@@ -438,4 +438,4 @@ Have you written a useful rule? Consider contributing it back!
 
 ---
 
-**Need Help?** Open an issue on [GitHub](https://github.com/octofhir/maki-rs/issues)
+**Need Help?** Open an issue on [GitHub](https://github.com/octofhir/maki/issues)

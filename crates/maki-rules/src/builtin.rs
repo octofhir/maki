@@ -108,7 +108,7 @@ impl BuiltinRules {
                 tags: vec!["correctness".to_string(), "keywords".to_string()],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/correctness/invalid-keyword"
+                    "https://octofhir.github.io/maki/rules/correctness/invalid-keyword"
                         .to_string(),
                 ),
             },
@@ -147,7 +147,7 @@ impl BuiltinRules {
                 tags: vec!["correctness".to_string(), "alias".to_string()],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/correctness/malformed-alias"
+                    "https://octofhir.github.io/maki/rules/correctness/malformed-alias"
                         .to_string(),
                 ),
             },
@@ -189,7 +189,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/correctness/invalid-caret-path"
+                    "https://octofhir.github.io/maki/rules/correctness/invalid-caret-path"
                         .to_string(),
                 ),
             },
@@ -240,7 +240,7 @@ impl BuiltinRules {
                 tags: vec!["suspicious".to_string(), "formatting".to_string()],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/suspicious/trailing-text".to_string(),
+                    "https://octofhir.github.io/maki/rules/suspicious/trailing-text".to_string(),
                 ),
             },
             is_ast_rule: false,
@@ -282,7 +282,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/correctness/missing-profile-id"
+                    "https://octofhir.github.io/maki/rules/correctness/missing-profile-id"
                         .to_string(),
                 ),
             },
@@ -324,7 +324,7 @@ impl BuiltinRules {
                 tags: vec!["correctness".to_string(), "identifier".to_string()],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/correctness/invalid-identifier"
+                    "https://octofhir.github.io/maki/rules/correctness/invalid-identifier"
                         .to_string(),
                 ),
             },
@@ -363,7 +363,7 @@ impl BuiltinRules {
                 tags: vec!["correctness".to_string(), "slicing".to_string()],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/correctness/invalid-slicing"
+                    "https://octofhir.github.io/maki/rules/correctness/invalid-slicing"
                         .to_string(),
                 ),
             },
@@ -403,7 +403,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/correctness/duplicate-canonical-url"
+                    "https://octofhir.github.io/maki/rules/correctness/duplicate-canonical-url"
                         .to_string(),
                 ),
             },
@@ -437,7 +437,7 @@ impl BuiltinRules {
                 category: RuleCategory::Correctness,
                 tags: vec!["correctness".to_string(), "identifier".to_string(), "duplicate".to_string()],
                 version: Some("1.0.0".to_string()),
-                docs_url: Some("https://octofhir.github.io/maki-rs/rules/correctness/duplicate-identifier".to_string()),
+                docs_url: Some("https://octofhir.github.io/maki/rules/correctness/duplicate-identifier".to_string()),
             },
         is_ast_rule: false,
         }
@@ -481,7 +481,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/correctness/invalid-constraint"
+                    "https://octofhir.github.io/maki/rules/correctness/invalid-constraint"
                         .to_string(),
                 ),
             },
@@ -523,7 +523,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/correctness/missing-parent-profile"
+                    "https://octofhir.github.io/maki/rules/correctness/missing-parent-profile"
                         .to_string(),
                 ),
             },
@@ -571,7 +571,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/style/profile-naming-convention"
+                    "https://octofhir.github.io/maki/rules/style/profile-naming-convention"
                         .to_string(),
                 ),
             },
@@ -619,7 +619,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/documentation/missing-description"
+                    "https://octofhir.github.io/maki/rules/documentation/missing-description"
                         .to_string(),
                 ),
             },
@@ -666,7 +666,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/documentation/missing-title"
+                    "https://octofhir.github.io/maki/rules/documentation/missing-title"
                         .to_string(),
                 ),
             },
@@ -700,7 +700,7 @@ impl BuiltinRules {
                 category: RuleCategory::Suspicious,
                 tags: vec!["suspicious".to_string(), "metadata".to_string(), "consistency".to_string()],
                 version: Some("1.0.0".to_string()),
-                docs_url: Some("https://octofhir.github.io/maki-rs/rules/suspicious/inconsistent-metadata".to_string()),
+                docs_url: Some("https://octofhir.github.io/maki/rules/suspicious/inconsistent-metadata".to_string()),
             },
         is_ast_rule: false,
         }
@@ -745,7 +745,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/documentation/missing-publisher"
+                    "https://octofhir.github.io/maki/rules/documentation/missing-publisher"
                         .to_string(),
                 ),
             },
@@ -788,7 +788,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/correctness/invalid-status"
+                    "https://octofhir.github.io/maki/rules/correctness/invalid-status"
                         .to_string(),
                 ),
             },
@@ -831,7 +831,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/blocking/required-field-present"
+                    "https://octofhir.github.io/maki/rules/blocking/required-field-present"
                         .to_string(),
                 ),
             },
@@ -863,7 +863,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/blocking/invalid-cardinality"
+                    "https://octofhir.github.io/maki/rules/blocking/invalid-cardinality"
                         .to_string(),
                 ),
             },
@@ -895,7 +895,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/blocking/binding-strength-present"
+                    "https://octofhir.github.io/maki/rules/blocking/binding-strength-present"
                         .to_string(),
                 ),
             },
@@ -926,7 +926,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/documentation/missing-metadata"
+                    "https://octofhir.github.io/maki/rules/documentation/missing-metadata"
                         .to_string(),
                 ),
             },
@@ -955,7 +955,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/correctness/profile-assignment-present"
+                    "https://octofhir.github.io/maki/rules/correctness/profile-assignment-present"
                         .to_string(),
                 ),
             },
@@ -984,7 +984,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/correctness/extension-context-missing"
+                    "https://octofhir.github.io/maki/rules/correctness/extension-context-missing"
                         .to_string(),
                 ),
             },
@@ -1015,7 +1015,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/blocking/duplicate-definition"
+                    "https://octofhir.github.io/maki/rules/blocking/duplicate-definition"
                         .to_string(),
                 ),
             },
@@ -1046,7 +1046,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki-rs/rules/style/naming-convention"
+                    "https://octofhir.github.io/maki/rules/style/naming-convention"
                         .to_string(),
                 ),
             },

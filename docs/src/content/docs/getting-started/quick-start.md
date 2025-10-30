@@ -35,7 +35,7 @@ This creates `maki.json` with recommended settings:
 
 ```json
 {
-  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json",
+  "$schema": "https://octofhir.github.io/maki/schema/v1.json",
   "root": true,
   "linter": {
     "enabled": true,

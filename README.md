@@ -2,9 +2,9 @@
 
 **M**odern **A**nalysis and **K**it for **I**mplementation Guides
 
-[![CI](https://github.com/octofhir/maki-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/octofhir/maki-rs/actions/workflows/ci.yml)
-[![Security Audit](https://github.com/octofhir/maki-rs/actions/workflows/security-audit.yml/badge.svg)](https://github.com/octofhir/maki-rs/actions/workflows/security-audit.yml)
-[![codecov](https://codecov.io/gh/octofhir/maki-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/octofhir/maki-rs)
+[![CI](https://github.com/octofhir/maki/actions/workflows/ci.yml/badge.svg)](https://github.com/octofhir/maki/actions/workflows/ci.yml)
+[![Security Audit](https://github.com/octofhir/maki/actions/workflows/security-audit.yml/badge.svg)](https://github.com/octofhir/maki/actions/workflows/security-audit.yml)
+[![codecov](https://codecov.io/gh/octofhir/maki/branch/main/graph/badge.svg)](https://codecov.io/gh/octofhir/maki)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
 A high-performance toolchain for FHIR Shorthand (FSH), written in Rust.
@@ -33,12 +33,12 @@ Part of the [OctoFHIR](https://github.com/octofhir) ecosystem.
 
 ### Download Pre-built Binary
 
-Download the latest binary for your platform from [GitHub Releases](https://github.com/octofhir/maki-rs/releases/latest):
+Download the latest binary for your platform from [GitHub Releases](https://github.com/octofhir/maki/releases/latest):
 
 **Linux:**
 ```bash
 # x86_64 (ARM64 not currently available)
-wget https://github.com/octofhir/maki-rs/releases/latest/download/maki-linux-x64
+wget https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64
 chmod +x maki-linux-x64
 sudo mv maki-linux-x64 /usr/local/bin/maki
 ```
@@ -46,12 +46,12 @@ sudo mv maki-linux-x64 /usr/local/bin/maki
 **macOS:**
 ```bash
 # Intel
-curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-macos-x64 -o maki
+curl -L https://github.com/octofhir/maki/releases/latest/download/maki-macos-x64 -o maki
 chmod +x maki
 sudo mv maki /usr/local/bin/
 
 # Apple Silicon
-curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-macos-arm64 -o maki
+curl -L https://github.com/octofhir/maki/releases/latest/download/maki-macos-arm64 -o maki
 chmod +x maki
 sudo mv maki /usr/local/bin/
 ```
@@ -63,8 +63,8 @@ Download `maki-windows-x64.exe` or `maki-windows-arm64.exe` from the releases pa
 ### Build from Source
 
 ```bash
-git clone https://github.com/octofhir/maki-rs.git
-cd maki-rs
+git clone https://github.com/octofhir/maki.git
+cd maki
 cargo build --release --bin maki
 
 # Binary will be at: target/release/maki
@@ -241,7 +241,7 @@ jobs:
 
       - name: Download FSH Lint
         run: |
-          curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-linux-x64 -o maki
+          curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o maki
           chmod +x maki
 
       - name: Lint FSH files
@@ -260,7 +260,7 @@ jobs:
 maki:
   image: ubuntu:latest
   script:
-    - curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-linux-x64 -o maki
+    - curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o maki
     - chmod +x maki
     - ./maki lint input/
 ```
@@ -309,7 +309,7 @@ This is a Rust workspace with the following crates:
 
 For comprehensive documentation, guides, and API references, visit:
 
-**https://octofhir.github.io/maki-rs/**
+**https://octofhir.github.io/maki/**
 
 Topics covered:
 - Getting Started Guide

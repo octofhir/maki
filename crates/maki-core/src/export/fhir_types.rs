@@ -81,6 +81,10 @@ pub struct StructureDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub derivation: Option<String>,
 
+    /// Extension context (for extensions only) - where can this extension be used
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<Vec<StructureDefinitionContext>>,
+
     /// Snapshot view of the structure
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snapshot: Option<StructureDefinitionSnapshot>,
@@ -111,6 +115,7 @@ impl StructureDefinition {
             type_field,
             base_definition: None,
             derivation: Some("constraint".to_string()),
+            context: None,
             snapshot: None,
             differential: None,
         }
@@ -371,6 +376,49 @@ pub struct ElementDefinitionConstraint {
     /// FHIRPath expression of constraint
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expression: Option<String>,
+}
+
+// ============================================================================
+// StructureDefinition Context (for Extensions)
+// ============================================================================
+
+/// Context where an extension can be used
+///
+/// See: <https://www.hl7.org/fhir/extensibility.html#context>
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StructureDefinitionContext {
+    /// element | extension | fhirpath
+    #[serde(rename = "type")]
+    pub type_: String,
+
+    /// Where the extension can be used (e.g., "Patient", "Observation.status")
+    pub expression: String,
+}
+
+impl StructureDefinitionContext {
+    /// Create a new extension context
+    pub fn new(type_: impl Into<String>, expression: impl Into<String>) -> Self {
+        Self {
+            type_: type_.into(),
+            expression: expression.into(),
+        }
+    }
+
+    /// Create an element context
+    pub fn element(expression: impl Into<String>) -> Self {
+        Self::new("element", expression)
+    }
+
+    /// Create an extension context
+    pub fn extension(expression: impl Into<String>) -> Self {
+        Self::new("extension", expression)
+    }
+
+    /// Create a fhirpath context
+    pub fn fhirpath(expression: impl Into<String>) -> Self {
+        Self::new("fhirpath", expression)
+    }
 }
 
 #[cfg(test)]

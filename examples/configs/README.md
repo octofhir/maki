@@ -1,6 +1,6 @@
 # Configuration Examples
 
-This directory contains example configuration files for maki-rs.
+This directory contains example configuration files for maki.
 
 ## Files
 
@@ -26,7 +26,7 @@ cp examples/configs/minimal.json ./maki.json
 # Or create your own
 cat > maki.json << 'EOF'
 {
-  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json",
+  "$schema": "https://octofhir.github.io/maki/schema/v1.json",
   "root": true,
   "linter": {
     "enabled": true,
@@ -75,7 +75,7 @@ Just include the `$schema` field in your config:
 
 ```json
 {
-  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json"
+  "$schema": "https://octofhir.github.io/maki/schema/v1.json"
 }
 ```
 

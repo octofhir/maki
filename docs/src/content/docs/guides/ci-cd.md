@@ -244,7 +244,7 @@ repos:
 Use binary releases instead of building from source:
 
 ```bash
-curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-linux.tar.gz | tar xz
+curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux.tar.gz | tar xz
 sudo mv maki /usr/local/bin/
 ```
 

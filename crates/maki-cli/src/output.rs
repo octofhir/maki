@@ -182,7 +182,7 @@ impl OutputFormatter {
                     "driver": {
                         "name": "maki",
                         "version": maki_core::VERSION,
-                        "informationUri": "https://github.com/octofhir/maki-rs"
+                        "informationUri": "https://github.com/octofhir/maki"
                     }
                 },
                 "results": sarif_results,

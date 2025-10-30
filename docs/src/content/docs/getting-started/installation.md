@@ -23,27 +23,27 @@ maki --version
 ## Install from Source
 
 ```bash
-git clone https://github.com/octofhir/maki-rs.git
-cd maki-rs
+git clone https://github.com/octofhir/maki.git
+cd maki
 cargo install --path crates/maki-cli
 ```
 
 ## Download Pre-built Binaries
 
 Download the latest release for your platform from:
-https://github.com/octofhir/maki-rs/releases
+https://github.com/octofhir/maki/releases
 
 ### macOS
 
 ```bash
-curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-macos.tar.gz | tar xz
+curl -L https://github.com/octofhir/maki/releases/latest/download/maki-macos.tar.gz | tar xz
 sudo mv maki /usr/local/bin/
 ```
 
 ### Linux
 
 ```bash
-curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-linux.tar.gz | tar xz
+curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux.tar.gz | tar xz
 sudo mv maki /usr/local/bin/
 ```
 

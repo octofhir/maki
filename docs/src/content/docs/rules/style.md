@@ -33,7 +33,7 @@ Enforces PascalCase naming convention for FHIR profiles
 }
 ```
 
-**Learn more**: [Profile Naming Convention](https://octofhir.github.io/maki-rs/rules/style/profile-naming-convention)
+**Learn more**: [Profile Naming Convention](https://octofhir.github.io/maki/rules/style/profile-naming-convention)
 
 ---
 
@@ -60,7 +60,7 @@ Enforces consistent naming conventions: PascalCase for Profile/Extension/ValueSe
 }
 ```
 
-**Learn more**: [Naming Convention](https://octofhir.github.io/maki-rs/rules/style/naming-convention)
+**Learn more**: [Naming Convention](https://octofhir.github.io/maki/rules/style/naming-convention)
 
 ---
 

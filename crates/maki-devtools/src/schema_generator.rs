@@ -27,7 +27,7 @@ impl SchemaGenerator {
         let mut schema_json = serde_json::to_value(schema)?;
 
         // Add metadata
-        schema_json["$id"] = json!("https://octofhir.github.io/maki-rs/schema/v1.json");
+        schema_json["$id"] = json!("https://octofhir.github.io/maki/schema/v1.json");
         schema_json["$schema"] = json!("http://json-schema.org/draft-07/schema#");
         schema_json["title"] = json!("FSH Lint Configuration");
         schema_json["description"] =

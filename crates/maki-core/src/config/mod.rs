@@ -1,4 +1,4 @@
-//! Configuration system for maki-rs
+//! Configuration system for maki
 //!
 //! This module provides a comprehensive configuration management system with:
 //! - JSON/JSONC configuration file support
@@ -39,7 +39,7 @@
 //!
 //! ```jsonc
 //! {
-//!   "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json",
+//!   "$schema": "https://octofhir.github.io/maki/schema/v1.json",
 //!   "root": true,
 //!   "linter": {
 //!     "enabled": true,

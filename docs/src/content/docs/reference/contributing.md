@@ -26,13 +26,13 @@ Thank you for your interest in contributing to FSH Lint!
 
 1. Fork the repository:
 ```bash
-gh repo fork octofhir/maki-rs
+gh repo fork octofhir/maki
 ```
 
 2. Clone your fork:
 ```bash
-git clone https://github.com/YOUR_USERNAME/maki-rs.git
-cd maki-rs
+git clone https://github.com/YOUR_USERNAME/maki.git
+cd maki
 ```
 
 3. Build the project:

@@ -16,15 +16,17 @@
 //! ## Status
 //!
 //! - ✅ Profile exporter (Task 17)
-//! - 🔜 Extension exporter (Task 18)
+//! - ✅ Extension exporter (Task 18)
 //! - 🔜 ValueSet exporter (Task 19)
 //! - 🔜 CodeSystem exporter (Task 19)
 //! - 🔜 Instance exporter (Task 20)
 //! - 🔜 ImplementationGuide exporter (Task 28)
 
+pub mod extension_exporter;
 pub mod fhir_types;
 pub mod profile_exporter;
 
+pub use extension_exporter::ExtensionExporter;
 pub use fhir_types::*;
 pub use profile_exporter::{ExportError, ProfileExporter};
 

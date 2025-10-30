@@ -16,7 +16,7 @@ resolver = "3"
 version = "0.0.2"
 authors = ["OctoFHIR Team <funyloony@gmail.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/octofhir/maki-rs"
+repository = "https://github.com/octofhir/maki"
 homepage = "https://github.com/octofhir"
 edition = "2024"
 

@@ -126,7 +126,7 @@ Custom rule files should:
 
 - [GritQL Documentation](https://docs.grit.io/)
 - [FSH Specification](https://hl7.org/fhir/uv/shorthand/)
-- [maki Documentation](https://octofhir.github.io/maki-rs/)
+- [maki Documentation](https://octofhir.github.io/maki/)
 
 ## Contributing
 

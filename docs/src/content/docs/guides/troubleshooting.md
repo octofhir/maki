@@ -158,7 +158,7 @@ find . -name "*.fsh" -print0 | xargs -0 -n 10 maki lint
 ```yaml
 - name: Download FSH Lint
   run: |
-    curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-linux.tar.gz | tar xz
+    curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux.tar.gz | tar xz
     sudo mv maki /usr/local/bin/
 ```
 
@@ -199,8 +199,8 @@ maki lint **/*.fsh
 
 If you're still stuck:
 
-1. Check [GitHub Issues](https://github.com/octofhir/maki-rs/issues)
-2. Search [Discussions](https://github.com/octofhir/maki-rs/discussions)
+1. Check [GitHub Issues](https://github.com/octofhir/maki/issues)
+2. Search [Discussions](https://github.com/octofhir/maki/discussions)
 3. Open a new issue with:
    - FSH Lint version (`maki --version`)
    - OS and version

@@ -1,4 +1,4 @@
-//! Configuration types for maki-rs
+//! Configuration types for maki
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -155,7 +155,7 @@ pub struct RuleConfig {
 impl Default for MakiConfiguration {
     fn default() -> Self {
         Self {
-            schema: Some("https://octofhir.github.io/maki-rs/schema/v1.json".to_string()),
+            schema: Some("https://octofhir.github.io/maki/schema/v1.json".to_string()),
             root: Some(false),
             extends: None,
             linter: Some(LinterConfiguration::default()),
