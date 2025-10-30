@@ -1,0 +1,3 @@
+# Minimal SUSHI configuration
+canonical: http://example.org/fhir/minimal-ig
+fhirVersion: 4.0.1

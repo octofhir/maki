@@ -4,8 +4,8 @@
 //! StructureDefinitions with real FHIR packages.
 
 use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
-use maki_core::cst::parse_fsh;
 use maki_core::cst::ast::{AstNode, Profile};
+use maki_core::cst::parse_fsh;
 use maki_core::export::{ProfileExporter, StructureDefinitionKind};
 use std::sync::Arc;
 
@@ -60,19 +60,31 @@ async fn test_export_simple_patient_profile() {
         structure_def.url,
         "http://example.org/fhir/StructureDefinition/SimplePatientProfile"
     );
-    assert_eq!(structure_def.title, Some("Simple Patient Profile".to_string()));
+    assert_eq!(
+        structure_def.title,
+        Some("Simple Patient Profile".to_string())
+    );
     assert_eq!(
         structure_def.description,
         Some("A simple patient profile for testing".to_string())
     );
 
     // Verify differential
-    let differential = structure_def.differential.as_ref().expect("No differential");
-    assert!(!differential.element.is_empty(), "Differential should have elements");
+    let differential = structure_def
+        .differential
+        .as_ref()
+        .expect("No differential");
+    assert!(
+        !differential.element.is_empty(),
+        "Differential should have elements"
+    );
 
     // Check that name and gender constraints are in differential
     let has_name = differential.element.iter().any(|e| e.path.contains("name"));
-    let has_gender = differential.element.iter().any(|e| e.path.contains("gender"));
+    let has_gender = differential
+        .element
+        .iter()
+        .any(|e| e.path.contains("gender"));
     assert!(has_name, "Differential should contain name constraint");
     assert!(has_gender, "Differential should contain gender constraint");
 }
@@ -134,12 +146,20 @@ async fn test_export_profile_with_flags() {
     let differential = structure_def.differential.as_ref().unwrap();
 
     // Check name - should have MS
-    if let Some(name_elem) = differential.element.iter().find(|e| e.path.ends_with("name")) {
+    if let Some(name_elem) = differential
+        .element
+        .iter()
+        .find(|e| e.path.ends_with("name"))
+    {
         assert_eq!(name_elem.must_support, Some(true));
     }
 
     // Check gender - should have MS and SU
-    if let Some(gender_elem) = differential.element.iter().find(|e| e.path.ends_with("gender")) {
+    if let Some(gender_elem) = differential
+        .element
+        .iter()
+        .find(|e| e.path.ends_with("gender"))
+    {
         assert_eq!(gender_elem.must_support, Some(true));
         assert_eq!(gender_elem.is_summary, Some(true));
     }
@@ -267,7 +287,10 @@ async fn test_export_complex_profile() {
     // Verify metadata
     assert_eq!(structure_def.name, "ComplexPatientProfile");
     assert_eq!(structure_def.id, Some("complex-patient".to_string()));
-    assert_eq!(structure_def.title, Some("Complex Patient Profile".to_string()));
+    assert_eq!(
+        structure_def.title,
+        Some("Complex Patient Profile".to_string())
+    );
     assert_eq!(
         structure_def.description,
         Some("A complex profile with multiple constraints".to_string())
@@ -281,15 +304,19 @@ async fn test_export_complex_profile() {
     );
 
     // Verify some specific constraints
-    assert!(differential
-        .element
-        .iter()
-        .any(|e| e.path.ends_with("identifier") && e.must_support == Some(true)));
+    assert!(
+        differential
+            .element
+            .iter()
+            .any(|e| e.path.ends_with("identifier") && e.must_support == Some(true))
+    );
 
-    assert!(differential
-        .element
-        .iter()
-        .any(|e| e.path.ends_with("birthDate") && e.is_summary == Some(true)));
+    assert!(
+        differential
+            .element
+            .iter()
+            .any(|e| e.path.ends_with("birthDate") && e.is_summary == Some(true))
+    );
 }
 
 #[tokio::test]
@@ -320,10 +347,12 @@ async fn test_export_observation_profile() {
     assert!(!differential.element.is_empty());
 
     // Verify status constraint
-    assert!(differential
-        .element
-        .iter()
-        .any(|e| e.path.ends_with("status") && e.min == Some(1)));
+    assert!(
+        differential
+            .element
+            .iter()
+            .any(|e| e.path.ends_with("status") && e.min == Some(1))
+    );
 }
 
 #[tokio::test]

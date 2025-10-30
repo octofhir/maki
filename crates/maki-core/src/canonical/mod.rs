@@ -430,6 +430,78 @@ impl DefinitionSession {
     pub fn releases(&self) -> &[FhirRelease] {
         &self.releases
     }
+
+    /// Create a minimal test session for unit testing
+    ///
+    /// This creates a DefinitionSession with minimal configuration suitable
+    /// for unit tests that don't need real FHIR packages.
+    ///
+    /// # Note
+    /// This is a blocking wrapper around an async operation. It should only
+    /// be used in tests where async context is not available.
+    #[cfg(test)]
+    pub fn for_testing() -> Self {
+        use tokio::runtime::Runtime;
+
+        let test_config = octofhir_canonical_manager::FcmConfig::test_config(std::path::Path::new(
+            "/tmp/maki-test",
+        ));
+
+        let rt = Runtime::new().expect("Failed to create test runtime");
+        let manager = std::sync::Arc::new(
+            rt.block_on(octofhir_canonical_manager::CanonicalManager::new(
+                test_config,
+            ))
+            .expect("Failed to create test manager"),
+        );
+
+        Self {
+            facade: std::sync::Arc::new(CanonicalFacade {
+                manager,
+                options: CanonicalOptions::default(),
+                global_cache: std::sync::Arc::new(dashmap::DashMap::new()),
+            }),
+            releases: vec![FhirRelease::R4],
+            local_cache: dashmap::DashMap::new(),
+            installed: dashmap::DashSet::new(),
+        }
+    }
+
+    /// Resolve a StructureDefinition by canonical URL
+    ///
+    /// This is a convenience method that resolves a resource and deserializes it
+    /// as a StructureDefinition.
+    ///
+    /// # Arguments
+    ///
+    /// * `canonical_url` - Canonical URL of the StructureDefinition
+    ///
+    /// # Returns
+    ///
+    /// The StructureDefinition if found, or None if not found or not a StructureDefinition
+    pub async fn resolve_structure_definition(
+        &self,
+        canonical_url: &str,
+    ) -> CanonicalResult<Option<crate::export::StructureDefinition>> {
+        let resource = self.resolve(canonical_url).await?;
+
+        // Check resource type
+        if resource.resource_type != "StructureDefinition" {
+            return Ok(None);
+        }
+
+        // Deserialize from JSON
+        match serde_json::from_value((*resource.content).clone()) {
+            Ok(sd) => Ok(Some(sd)),
+            Err(e) => {
+                warn!(
+                    "Failed to deserialize StructureDefinition {}: {}",
+                    canonical_url, e
+                );
+                Ok(None)
+            }
+        }
+    }
 }
 
 async fn ensure_storage_dirs(config: &FcmConfig) -> CanonicalResult<()> {

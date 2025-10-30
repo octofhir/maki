@@ -16,6 +16,7 @@ biome_text_size = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
+serde_yaml = { workspace = true }
 json5 = "0.4"                             # JSONC support (comments + trailing commas)
 schemars = "1.0"                          # JSON Schema generation
 tokio = { workspace = true }

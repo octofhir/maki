@@ -1,0 +1,86 @@
+# Complete SUSHI configuration example
+canonical: http://example.org/fhir/example-ig
+fhirVersion: 4.0.1
+id: example.fhir.ig
+name: ExampleIG
+title: Example Implementation Guide
+version: 1.0.0
+status: draft
+experimental: true
+date: 2024-01-01
+publisher: Example Organization
+contact:
+  - name: Example Contact
+    telecom:
+      - system: email
+        value: contact@example.org
+      - system: url
+        value: http://example.org
+description: |
+  This is an example Implementation Guide demonstrating
+  all the SUSHI configuration features.
+license: CC0-1.0
+copyright: Copyright 2024 Example Organization
+
+# Dependencies
+dependencies:
+  hl7.fhir.us.core: 5.0.1
+  hl7.fhir.uv.extensions: 1.0.0
+
+# Global profiles
+global:
+  - type: Patient
+    profile: http://example.org/fhir/StructureDefinition/example-patient
+
+# Resource groups
+groups:
+  - id: profiles
+    name: Profiles
+    description: FHIR Profiles defined in this IG
+    resources:
+      - StructureDefinition/example-patient
+      - StructureDefinition/example-observation
+  - id: examples
+    name: Examples
+    description: Example resources
+
+# Parameters
+parameters:
+  - code: copyrightyear
+    value: "2024"
+  - code: releaselabel
+    value: draft
+  - code: path-resource
+    value: input/resources
+
+# Pages
+pages:
+  - title: Home
+    generation: markdown
+  - title: Artifacts
+    generation: html
+  - title: Downloads
+    generation: markdown
+
+# Menu
+menu:
+  - name: Home
+    url: index.html
+  - name: Artifacts
+    url: artifacts.html
+  - name: Support
+    subMenu:
+      - name: FHIR Spec
+        url: http://hl7.org/fhir/R4/
+        openInNewTab: true
+      - name: Downloads
+        url: downloads.html
+
+# SUSHI-specific options
+FSHOnly: false
+applyExtensionMetadataToRoot: true
+
+instanceOptions:
+  setMetaProfile: always
+  setId: always
+  manualSliceOrdering: false

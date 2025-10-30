@@ -180,10 +180,12 @@ fn test_parameter_count_mismatch_too_few() {
 
     let result = expander.expand(&insert);
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("expects 2 parameters"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("expects 2 parameters")
+    );
 }
 
 #[test]
@@ -208,10 +210,12 @@ fn test_parameter_count_mismatch_too_many() {
 
     let result = expander.expand(&insert);
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("expects 1 parameters"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("expects 1 parameters")
+    );
 }
 
 #[test]
@@ -226,10 +230,12 @@ fn test_ruleset_not_found() {
 
     let result = expander.expand(&insert);
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("not found: NonExistentRuleSet"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("not found: NonExistentRuleSet")
+    );
 }
 
 #[test]
@@ -407,10 +413,10 @@ fn test_mixed_bracket_types() {
         name: "MixedBrackets".to_string(),
         parameters: vec!["type".to_string(), "value".to_string()],
         rules: vec![
-            "* value[x] = {value}".to_string(),              // [x] is choice type marker
-            "* extension[{type}] = {value}".to_string(),     // [{type}] should not substitute
-            "* name[0].given = {value}".to_string(),         // [0] is index
-            "* telecom[+].value = {value}".to_string(),      // [+] is soft indexing
+            "* value[x] = {value}".to_string(), // [x] is choice type marker
+            "* extension[{type}] = {value}".to_string(), // [{type}] should not substitute
+            "* name[0].given = {value}".to_string(), // [0] is index
+            "* telecom[+].value = {value}".to_string(), // [+] is soft indexing
         ],
         source_file: PathBuf::from("test.fsh"),
         source_range: 0..100,

@@ -40,11 +40,11 @@
 //! ```
 
 use crate::semantic::{FhirResource, ResourceType, SemanticModel};
+use petgraph::Direction;
 use petgraph::algo::{is_cyclic_directed, toposort};
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
-use petgraph::Direction;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::Range;
 use std::sync::Arc;
@@ -239,7 +239,10 @@ impl DependencyGraph {
     ///
     /// Returns `CircularDependency` error if the graph contains cycles.
     pub fn topological_sort(&self) -> Result<Vec<String>, DependencyError> {
-        trace!("Performing topological sort on {} nodes", self.graph.node_count());
+        trace!(
+            "Performing topological sort on {} nodes",
+            self.graph.node_count()
+        );
 
         // Check for cycles first
         if is_cyclic_directed(&self.graph) {
@@ -284,15 +287,11 @@ impl DependencyGraph {
         // Filter to only cycles (SCCs with more than 1 node or self-loops)
         sccs.into_iter()
             .filter(|scc| {
-                scc.len() > 1
-                    || (scc.len() == 1
-                        && self.graph.contains_edge(scc[0], scc[0]))
+                scc.len() > 1 || (scc.len() == 1 && self.graph.contains_edge(scc[0], scc[0]))
             })
             .map(|scc| {
-                let mut cycle: Vec<String> = scc
-                    .iter()
-                    .map(|&idx| self.graph[idx].clone())
-                    .collect();
+                let mut cycle: Vec<String> =
+                    scc.iter().map(|&idx| self.graph[idx].clone()).collect();
                 // Add first node at end to show the cycle
                 if !cycle.is_empty() {
                     cycle.push(cycle[0].clone());
@@ -310,11 +309,7 @@ impl DependencyGraph {
 
         tarjan_scc(&self.graph)
             .into_iter()
-            .map(|scc| {
-                scc.iter()
-                    .map(|&idx| self.graph[idx].clone())
-                    .collect()
-            })
+            .map(|scc| scc.iter().map(|&idx| self.graph[idx].clone()).collect())
             .collect()
     }
 
@@ -439,7 +434,10 @@ impl DependencyGraph {
 
     /// Get all nodes in the graph
     pub fn all_nodes(&self) -> Vec<String> {
-        self.graph.node_indices().map(|idx| self.graph[idx].clone()).collect()
+        self.graph
+            .node_indices()
+            .map(|idx| self.graph[idx].clone())
+            .collect()
     }
 }
 
@@ -467,7 +465,10 @@ impl DependencyAnalyzer {
     ///
     /// Analyzes all resources in the semantic model and extracts dependencies.
     pub fn build_graph(&self) -> Result<DependencyGraph, DependencyError> {
-        debug!("Building dependency graph from {} resources", self.model.resources.len());
+        debug!(
+            "Building dependency graph from {} resources",
+            self.model.resources.len()
+        );
 
         let mut graph = DependencyGraph::new();
 
@@ -501,19 +502,25 @@ impl DependencyAnalyzer {
     }
 
     /// Analyze a single resource for dependencies
-    fn analyze_resource(&self, resource: &FhirResource) -> Vec<(String, DependencyType, Range<usize>)> {
+    fn analyze_resource(
+        &self,
+        resource: &FhirResource,
+    ) -> Vec<(String, DependencyType, Range<usize>)> {
         let mut dependencies = Vec::new();
 
         // Parent dependency
         if let Some(parent) = &resource.parent {
-            let location = resource.location.offset..resource.location.offset + resource.location.length;
+            let location =
+                resource.location.offset..resource.location.offset + resource.location.length;
             dependencies.push((parent.clone(), DependencyType::Parent, location));
         }
 
         // Instance-of dependency
         if resource.resource_type == ResourceType::Instance
-            && let Some(parent) = &resource.parent {
-            let location = resource.location.offset..resource.location.offset + resource.location.length;
+            && let Some(parent) = &resource.parent
+        {
+            let location =
+                resource.location.offset..resource.location.offset + resource.location.length;
             dependencies.push((parent.clone(), DependencyType::InstanceOf, location));
         }
 
@@ -521,7 +528,8 @@ impl DependencyAnalyzer {
         for element in &resource.elements {
             // Type references
             if let Some(type_info) = &element.type_info {
-                let location = element.location.offset..element.location.offset + element.location.length;
+                let location =
+                    element.location.offset..element.location.offset + element.location.length;
 
                 // Type reference
                 if !Self::is_primitive_type(&type_info.type_name) {
@@ -555,7 +563,8 @@ impl DependencyAnalyzer {
             for constraint in &element.constraints {
                 use crate::semantic::ConstraintType;
 
-                let location = constraint.location.offset..constraint.location.offset + constraint.location.length;
+                let location = constraint.location.offset
+                    ..constraint.location.offset + constraint.location.length;
 
                 match constraint.constraint_type {
                     ConstraintType::Binding => {
@@ -620,12 +629,8 @@ impl DependencyAnalyzer {
         let mut errors = Vec::new();
 
         // Check for missing dependencies
-        let defined_names: HashSet<String> = self
-            .model
-            .resources
-            .iter()
-            .map(|r| r.id.clone())
-            .collect();
+        let defined_names: HashSet<String> =
+            self.model.resources.iter().map(|r| r.id.clone()).collect();
 
         for resource in &self.model.resources {
             let dependencies = graph.get_dependencies(&resource.id);
@@ -633,7 +638,8 @@ impl DependencyAnalyzer {
             for dep in dependencies {
                 if !defined_names.contains(dep) && !Self::is_builtin(dep) {
                     warn!("Missing dependency: {} referenced by {}", dep, resource.id);
-                    let location = resource.location.offset..resource.location.offset + resource.location.length;
+                    let location = resource.location.offset
+                        ..resource.location.offset + resource.location.length;
                     errors.push(DependencyError::MissingDependency {
                         name: dep.to_string(),
                         referrer: resource.id.clone(),

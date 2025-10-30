@@ -69,12 +69,19 @@
 mod loader;
 mod maki_config;
 mod merge;
+mod sushi_config;
 
 // Re-export main types
 pub use loader::ConfigLoader;
 pub use maki_config::{
     FilesConfiguration, FormatterConfiguration, LinterConfiguration, MakiConfiguration, RuleConfig,
     RuleSeverity, RulesConfiguration,
+};
+pub use sushi_config::{
+    SushiConfiguration, ContactDetail, ContactPoint, UsageContext, CodeableConcept, Coding,
+    DependencyVersion, GlobalProfile, ResourceGroup, ResourceEntry, PageDefinition,
+    Parameter, Template, MenuItem, InstanceOptions, MetaProfileSetting, IdSetting,
+    DefinitionExtension, ConfigError,
 };
 
 // Re-export Result type

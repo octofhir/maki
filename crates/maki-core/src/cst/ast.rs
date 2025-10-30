@@ -100,8 +100,20 @@ impl Document {
         self.syntax.children().filter_map(CodeSystem::cast)
     }
 
+    pub fn logicals(&self) -> impl Iterator<Item = Logical> {
+        self.syntax.children().filter_map(Logical::cast)
+    }
+
+    pub fn resources(&self) -> impl Iterator<Item = Resource> {
+        self.syntax.children().filter_map(Resource::cast)
+    }
+
     pub fn aliases(&self) -> impl Iterator<Item = Alias> {
         self.syntax.children().filter_map(Alias::cast)
+    }
+
+    pub fn instances(&self) -> impl Iterator<Item = Instance> {
+        self.syntax.children().filter_map(Instance::cast)
     }
 }
 
@@ -279,6 +291,10 @@ impl ValueSet {
         child_of_kind(&self.syntax, FshSyntaxKind::DescriptionClause)
             .and_then(DescriptionClause::cast)
     }
+
+    pub fn rules(&self) -> impl Iterator<Item = Rule> {
+        self.syntax.children().filter_map(Rule::cast)
+    }
 }
 
 // ============================================================================
@@ -329,6 +345,170 @@ impl CodeSystem {
     pub fn description(&self) -> Option<DescriptionClause> {
         child_of_kind(&self.syntax, FshSyntaxKind::DescriptionClause)
             .and_then(DescriptionClause::cast)
+    }
+
+    pub fn rules(&self) -> impl Iterator<Item = Rule> {
+        self.syntax.children().filter_map(Rule::cast)
+    }
+}
+
+// ============================================================================
+// Logical
+// ============================================================================
+
+/// Logical model definition: Logical: Name
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Logical {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for Logical {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::Logical
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl Logical {
+    /// Get the logical model name
+    pub fn name(&self) -> Option<String> {
+        get_ident_text(&self.syntax)
+    }
+
+    /// Get the syntax node for the logical model name (for precise location)
+    pub fn name_token(&self) -> Option<FshSyntaxToken> {
+        token_of_kind(&self.syntax, FshSyntaxKind::Ident)
+    }
+
+    /// Get the parent clause (Parent: BaseType)
+    pub fn parent(&self) -> Option<ParentClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::ParentClause).and_then(ParentClause::cast)
+    }
+
+    /// Get the id clause
+    pub fn id(&self) -> Option<IdClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::IdClause).and_then(IdClause::cast)
+    }
+
+    /// Get the title clause
+    pub fn title(&self) -> Option<TitleClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::TitleClause).and_then(TitleClause::cast)
+    }
+
+    /// Get the description clause
+    pub fn description(&self) -> Option<DescriptionClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::DescriptionClause)
+            .and_then(DescriptionClause::cast)
+    }
+
+    /// Get the characteristic codes
+    ///
+    /// Parses "Characteristics: #code1, #code2" and returns ["code1", "code2"]
+    pub fn characteristics(&self) -> Vec<String> {
+        let mut codes = Vec::new();
+        let mut found_characteristics_kw = false;
+
+        for child in self.syntax.children_with_tokens() {
+            if let Some(token) = child.as_token() {
+                // Look for Characteristics keyword
+                if token.kind() == FshSyntaxKind::CharacteristicsKw {
+                    found_characteristics_kw = true;
+                    continue;
+                }
+
+                // After Characteristics keyword, collect codes
+                if found_characteristics_kw {
+                    let text = token.text();
+                    if text.starts_with('#') {
+                        codes.push(text[1..].to_string());
+                    }
+                }
+            }
+        }
+
+        codes
+    }
+
+    /// Get all rules
+    pub fn rules(&self) -> impl Iterator<Item = Rule> {
+        self.syntax.children().filter_map(Rule::cast)
+    }
+}
+
+// ============================================================================
+// Resource
+// ============================================================================
+
+/// Resource definition: Resource: Name
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resource {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for Resource {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::Resource
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl Resource {
+    /// Get the resource name
+    pub fn name(&self) -> Option<String> {
+        get_ident_text(&self.syntax)
+    }
+
+    /// Get the syntax node for the resource name (for precise location)
+    pub fn name_token(&self) -> Option<FshSyntaxToken> {
+        token_of_kind(&self.syntax, FshSyntaxKind::Ident)
+    }
+
+    /// Get the parent clause (Parent: BaseType)
+    pub fn parent(&self) -> Option<ParentClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::ParentClause).and_then(ParentClause::cast)
+    }
+
+    /// Get the id clause
+    pub fn id(&self) -> Option<IdClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::IdClause).and_then(IdClause::cast)
+    }
+
+    /// Get the title clause
+    pub fn title(&self) -> Option<TitleClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::TitleClause).and_then(TitleClause::cast)
+    }
+
+    /// Get the description clause
+    pub fn description(&self) -> Option<DescriptionClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::DescriptionClause)
+            .and_then(DescriptionClause::cast)
+    }
+
+    /// Get all rules
+    pub fn rules(&self) -> impl Iterator<Item = Rule> {
+        self.syntax.children().filter_map(Rule::cast)
     }
 }
 
@@ -424,6 +604,77 @@ impl Alias {
         } else {
             Some(value_parts.join(""))
         }
+    }
+}
+
+// ============================================================================
+// Instance
+// ============================================================================
+
+/// Instance definition: Instance: name
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Instance {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for Instance {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::Instance
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl Instance {
+    /// Get instance name
+    pub fn name(&self) -> Option<String> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+            .find(|t| t.kind() == FshSyntaxKind::Ident)
+            .map(|t| t.text().trim().to_string())
+    }
+
+    /// Get InstanceOf clause
+    pub fn instance_of(&self) -> Option<InstanceOfClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::InstanceofClause)
+            .and_then(InstanceOfClause::cast)
+    }
+
+    /// Get Usage clause
+    pub fn usage(&self) -> Option<UsageClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::UsageClause).and_then(UsageClause::cast)
+    }
+
+    /// Get Id clause
+    pub fn id(&self) -> Option<IdClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::IdClause).and_then(IdClause::cast)
+    }
+
+    /// Get Title clause
+    pub fn title(&self) -> Option<TitleClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::TitleClause).and_then(TitleClause::cast)
+    }
+
+    /// Get Description clause
+    pub fn description(&self) -> Option<DescriptionClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::DescriptionClause)
+            .and_then(DescriptionClause::cast)
+    }
+
+    /// Get all rules
+    pub fn rules(&self) -> impl Iterator<Item = Rule> {
+        self.syntax.children().filter_map(Rule::cast)
     }
 }
 
@@ -548,6 +799,80 @@ impl AstNode for DescriptionClause {
 impl DescriptionClause {
     pub fn value(&self) -> Option<String> {
         get_string_text(&self.syntax)
+    }
+}
+
+/// InstanceOf clause: InstanceOf: ProfileName
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstanceOfClause {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for InstanceOfClause {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::InstanceofClause
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl InstanceOfClause {
+    pub fn value(&self) -> Option<String> {
+        // Get the identifier after "InstanceOf:"
+        get_ident_text(&self.syntax)
+    }
+}
+
+/// Usage clause: Usage: #example
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsageClause {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for UsageClause {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::UsageClause
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl UsageClause {
+    pub fn value(&self) -> Option<String> {
+        // Get the code after "Usage:" (starts with #)
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+            .find(|t| t.kind() == FshSyntaxKind::Code)
+            .map(|t| {
+                let text = t.text().trim();
+                // Remove # prefix if present
+                if text.starts_with('#') {
+                    text[1..].to_string()
+                } else {
+                    text.to_string()
+                }
+            })
     }
 }
 

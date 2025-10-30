@@ -17,8 +17,8 @@ pub use dependency_graph::{
 };
 pub use invariant::{ConstraintSeverity, Invariant, InvariantError, InvariantRegistry};
 pub use path_resolver::{
-    Bracket, ElementDefinition, ElementType, PathError, PathResolver, PathSegment,
-    SoftIndexOp, StructureDefinition,
+    Bracket, ElementDefinition, ElementType, PathError, PathResolver, PathSegment, SoftIndexOp,
+    StructureDefinition,
 };
 pub use ruleset::{RuleSet, RuleSetError, RuleSetExpander, RuleSetInsert};
 pub use slicing::{
@@ -54,6 +54,24 @@ pub struct SemanticModel {
     pub source_map: crate::SourceMap,
     /// Original source text (needed for SourceMap lookups)
     pub source: String,
+}
+
+impl Default for SemanticModel {
+    fn default() -> Self {
+        let source = String::new();
+        let source_map = crate::SourceMap::new(&source);
+        let (cst, _) = crate::cst::parse_fsh(&source);
+        Self {
+            cst,
+            resources: Vec::new(),
+            symbols: SymbolTable::default(),
+            aliases: AliasTable::new(),
+            references: Vec::new(),
+            source_file: PathBuf::new(),
+            source_map,
+            source,
+        }
+    }
 }
 
 impl SemanticModel {

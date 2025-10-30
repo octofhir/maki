@@ -229,10 +229,7 @@ async fn test_resolve_multiple_resources() {
     let observation_code = resolver.resolve_path("Observation", "code").await.unwrap();
     assert_eq!(observation_code.path(), Some("Observation.code"));
 
-    let practitioner_name = resolver
-        .resolve_path("Practitioner", "name")
-        .await
-        .unwrap();
+    let practitioner_name = resolver.resolve_path("Practitioner", "name").await.unwrap();
     assert_eq!(practitioner_name.path(), Some("Practitioner.name"));
 }
 
@@ -248,18 +245,18 @@ async fn test_path_segment_creation() {
     assert_eq!(with_index.base, "name");
     assert_eq!(with_index.bracket, Some(Bracket::Index(0)));
 
-    let with_slice =
-        PathSegment::with_bracket("component".to_string(), Bracket::Slice("systolic".to_string()));
+    let with_slice = PathSegment::with_bracket(
+        "component".to_string(),
+        Bracket::Slice("systolic".to_string()),
+    );
     assert_eq!(with_slice.base, "component");
     assert_eq!(
         with_slice.bracket,
         Some(Bracket::Slice("systolic".to_string()))
     );
 
-    let with_soft = PathSegment::with_bracket(
-        "telecom".to_string(),
-        Bracket::Soft(SoftIndexOp::Increment),
-    );
+    let with_soft =
+        PathSegment::with_bracket("telecom".to_string(), Bracket::Soft(SoftIndexOp::Increment));
     assert_eq!(with_soft.base, "telecom");
     assert_eq!(
         with_soft.bracket,
@@ -324,7 +321,10 @@ async fn test_structure_definition_json_parsing() {
         content: Arc::new(sd_json),
     };
 
-    assert_eq!(sd.url(), Some("http://hl7.org/fhir/StructureDefinition/Patient"));
+    assert_eq!(
+        sd.url(),
+        Some("http://hl7.org/fhir/StructureDefinition/Patient")
+    );
     assert_eq!(sd.type_name(), "Patient");
 
     let elements = sd.elements();

@@ -35,8 +35,8 @@
 //! # }
 //! ```
 
+use crate::canonical::fishable::{FhirType, Fishable};
 use crate::canonical::{DefinitionResource, DefinitionSession};
-use crate::canonical::fishable::{Fishable, FhirType};
 use dashmap::DashMap;
 use serde_json::Value;
 use std::sync::Arc;
@@ -207,9 +207,7 @@ impl ElementDefinition {
 
     /// Check if this is a choice type element (path ends with [x])
     pub fn is_choice_type(&self) -> bool {
-        self.path()
-            .map(|p| p.ends_with("[x]"))
-            .unwrap_or(false)
+        self.path().map(|p| p.ends_with("[x]")).unwrap_or(false)
     }
 }
 
@@ -270,9 +268,7 @@ impl StructureDefinition {
 
     /// Find element by exact path match
     pub fn find_element_by_path(&self, path: &str) -> Option<ElementDefinition> {
-        self.elements()
-            .into_iter()
-            .find(|e| e.path() == Some(path))
+        self.elements().into_iter().find(|e| e.path() == Some(path))
     }
 }
 
@@ -421,9 +417,10 @@ impl PathResolver {
         }
 
         if in_bracket {
-            return Err(PathError::InvalidSyntax(
-                format!("Unclosed bracket in path: {}", path),
-            ));
+            return Err(PathError::InvalidSyntax(format!(
+                "Unclosed bracket in path: {}",
+                path
+            )));
         }
 
         Ok(segments)
@@ -472,7 +469,14 @@ impl PathResolver {
                 .iter()
                 .filter(|e| {
                     e.path()
-                        .map(|p| p == target_path || (segment.bracket == Some(Bracket::ChoiceType) && p.starts_with(&format!("{}[x]", target_path.trim_end_matches("[x]")))))
+                        .map(|p| {
+                            p == target_path
+                                || (segment.bracket == Some(Bracket::ChoiceType)
+                                    && p.starts_with(&format!(
+                                        "{}[x]",
+                                        target_path.trim_end_matches("[x]")
+                                    )))
+                        })
                         .unwrap_or(false)
                 })
                 .cloned()
@@ -604,10 +608,7 @@ impl PathResolver {
             );
             return Err(PathError::UnfoldError {
                 element_path: element_path.to_string(),
-                reason: format!(
-                    "No children found in parent type '{}'",
-                    parent_type.code
-                ),
+                reason: format!("No children found in parent type '{}'", parent_type.code),
             });
         }
 
@@ -737,12 +738,17 @@ mod tests {
         );
 
         assert_eq!(
-            PathSegment::with_bracket("component".to_string(), Bracket::Slice("systolic".to_string())).bracket,
+            PathSegment::with_bracket(
+                "component".to_string(),
+                Bracket::Slice("systolic".to_string())
+            )
+            .bracket,
             Some(Bracket::Slice("systolic".to_string()))
         );
 
         assert_eq!(
-            PathSegment::with_bracket("telecom".to_string(), Bracket::Soft(SoftIndexOp::Increment)).bracket,
+            PathSegment::with_bracket("telecom".to_string(), Bracket::Soft(SoftIndexOp::Increment))
+                .bracket,
             Some(Bracket::Soft(SoftIndexOp::Increment))
         );
 
@@ -813,7 +819,10 @@ mod tests {
             content: Arc::new(sd_json),
         };
 
-        assert_eq!(sd.url(), Some("http://hl7.org/fhir/StructureDefinition/Patient"));
+        assert_eq!(
+            sd.url(),
+            Some("http://hl7.org/fhir/StructureDefinition/Patient")
+        );
         assert_eq!(sd.type_name(), "Patient");
     }
 }

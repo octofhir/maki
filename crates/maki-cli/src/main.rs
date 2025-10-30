@@ -68,6 +68,46 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Build FSH project to FHIR resources (SUSHI-compatible)
+    Build {
+        /// Path to FSH project directory
+        #[arg(help = "Path to FSH project (default: current directory)")]
+        project_path: Option<PathBuf>,
+
+        /// Output directory for generated resources
+        #[arg(
+            short,
+            long,
+            help = "Output directory (default: fsh-generated)"
+        )]
+        output: Option<PathBuf>,
+
+        /// Generate snapshots in StructureDefinitions
+        #[arg(short, long, help = "Generate snapshots in StructureDefinitions")]
+        snapshot: bool,
+
+        /// Output preprocessed FSH for debugging
+        #[arg(short, long, help = "Output preprocessed FSH")]
+        preprocessed: bool,
+
+        /// Clean output directory before building
+        #[arg(long, help = "Clean output directory before building")]
+        clean: bool,
+
+        /// Show progress during build
+        #[arg(long, help = "Show progress bar during build")]
+        progress: bool,
+
+        /// Override configuration values (e.g., --config version:2.0.0)
+        #[arg(
+            short = 'c',
+            long,
+            help = "Override config values (version, status, releaselabel)",
+            value_parser = parse_config_override
+        )]
+        config: Vec<(String, String)>,
+    },
+
     /// Lint FSH files for syntax errors, semantic issues, and best practice violations
     #[command(alias = "check")]
     Lint {
@@ -313,6 +353,18 @@ enum ConfigFormat {
     Toml,
 }
 
+/// Parse config override in the format key:value
+fn parse_config_override(s: &str) -> std::result::Result<(String, String), String> {
+    let parts: Vec<&str> = s.splitn(2, ':').collect();
+    if parts.len() != 2 {
+        return Err(format!(
+            "Invalid config override format '{}'. Expected 'key:value'",
+            s
+        ));
+    }
+    Ok((parts[0].to_string(), parts[1].to_string()))
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -370,6 +422,29 @@ fn generate_completion_script(shell: Shell) {
 
 async fn run_command(cli: Cli) -> Result<()> {
     match cli.command {
+        Some(Commands::Build {
+            project_path,
+            output,
+            snapshot,
+            preprocessed,
+            clean,
+            progress,
+            config,
+        }) => {
+            let config_overrides: std::collections::HashMap<String, String> =
+                config.into_iter().collect();
+            commands::build::build_command(
+                project_path,
+                output,
+                snapshot,
+                preprocessed,
+                clean,
+                progress,
+                config_overrides,
+            )
+            .await
+        }
+
         Some(Commands::Lint {
             paths,
             format,

@@ -8,9 +8,17 @@ homepage.workspace = true
 edition.workspace = true
 publish = false
 
+[[bin]]
+name = "run-parity-tests"
+path = "src/bin/run_parity_tests.rs"
+
 [dependencies]
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
 tempfile = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
+anyhow = { workspace = true }
+walkdir = { workspace = true }
+chrono = "0.4"
+clap = { workspace = true }

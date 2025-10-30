@@ -80,6 +80,15 @@ pub enum ExportError {
 
     #[error("Missing required field: {0}")]
     MissingRequiredField(String),
+
+    #[error("Invalid path: {path} in {resource}")]
+    InvalidPath { path: String, resource: String },
+
+    #[error("Invalid value: {0}")]
+    InvalidValue(String),
+
+    #[error("Type mismatch: expected {expected}, got {actual}")]
+    TypeMismatch { expected: String, actual: String },
 }
 
 /// Profile exporter
@@ -191,7 +200,8 @@ impl ProfileExporter {
 
         // 6. Generate differential from changes
         if let Some(base_snap) = base_snapshot {
-            structure_def.differential = Some(self.generate_differential(&base_snap, &structure_def));
+            structure_def.differential =
+                Some(self.generate_differential(&base_snap, &structure_def));
         }
 
         // 7. Validate exported structure
@@ -228,13 +238,12 @@ impl ProfileExporter {
     }
 
     /// Validate an ElementDefinition
-    fn validate_element_definition(
-        &self,
-        element: &ElementDefinition,
-    ) -> Result<(), ExportError> {
+    fn validate_element_definition(&self, element: &ElementDefinition) -> Result<(), ExportError> {
         // Check path is not empty
         if element.path.is_empty() {
-            return Err(ExportError::MissingRequiredField("element.path".to_string()));
+            return Err(ExportError::MissingRequiredField(
+                "element.path".to_string(),
+            ));
         }
 
         // Validate cardinality if present
@@ -283,8 +292,8 @@ impl ProfileExporter {
             .map_err(|e| ExportError::ParentNotFound(format!("{}: {}", parent, e)))?;
 
         // Parse JSON into StructureDefinition
-        let structure_def: StructureDefinition = serde_json::from_value((*resource.content).clone())
-            .map_err(|e| {
+        let structure_def: StructureDefinition =
+            serde_json::from_value((*resource.content).clone()).map_err(|e| {
                 ExportError::CanonicalError(format!(
                     "Failed to parse StructureDefinition for {}: {}",
                     parent, e
@@ -313,19 +322,22 @@ impl ProfileExporter {
 
         // Optional metadata
         if let Some(id_clause) = profile.id()
-            && let Some(id) = id_clause.value() {
-                structure_def.id = Some(id);
-            }
+            && let Some(id) = id_clause.value()
+        {
+            structure_def.id = Some(id);
+        }
 
         if let Some(title_clause) = profile.title()
-            && let Some(title) = title_clause.value() {
-                structure_def.title = Some(title);
-            }
+            && let Some(title) = title_clause.value()
+        {
+            structure_def.title = Some(title);
+        }
 
         if let Some(desc_clause) = profile.description()
-            && let Some(desc) = desc_clause.value() {
-                structure_def.description = Some(desc);
-            }
+            && let Some(desc) = desc_clause.value()
+        {
+            structure_def.description = Some(desc);
+        }
 
         Ok(())
     }
@@ -385,15 +397,13 @@ impl ProfileExporter {
         let profile_name = structure_def.name.clone();
 
         // Find and update element
-        let element = structure_def
-            .find_element_mut(&full_path)
-            .ok_or_else(|| {
-                warn!("Element not found in snapshot: {}", full_path);
-                ExportError::ElementNotFound {
-                    path: full_path.clone(),
-                    profile: profile_name,
-                }
-            })?;
+        let element = structure_def.find_element_mut(&full_path).ok_or_else(|| {
+            warn!("Element not found in snapshot: {}", full_path);
+            ExportError::ElementNotFound {
+                path: full_path.clone(),
+                profile: profile_name,
+            }
+        })?;
 
         debug!("Applying cardinality {}..{} to {}", min, max, full_path);
         element.min = Some(min);
@@ -423,12 +433,12 @@ impl ProfileExporter {
         let full_path = self.resolve_full_path(structure_def, &path_str).await?;
         let profile_name = structure_def.name.clone();
 
-        let element = structure_def
-            .find_element_mut(&full_path)
-            .ok_or_else(|| ExportError::ElementNotFound {
+        let element = structure_def.find_element_mut(&full_path).ok_or_else(|| {
+            ExportError::ElementNotFound {
                 path: full_path.clone(),
                 profile: profile_name,
-            })?;
+            }
+        })?;
 
         for flag in rule.flags() {
             self.apply_flag_to_element(element, &flag)?;
@@ -471,21 +481,23 @@ impl ProfileExporter {
 
         let strength_str = rule.strength().unwrap_or_else(|| "required".to_string());
 
-        trace!("Applying binding rule: {} from {} ({})", path_str, value_set, strength_str);
+        trace!(
+            "Applying binding rule: {} from {} ({})",
+            path_str, value_set, strength_str
+        );
 
-        let strength = BindingStrength::from_str(&strength_str).ok_or_else(|| {
-            ExportError::InvalidBindingStrength(strength_str.clone())
-        })?;
+        let strength = BindingStrength::from_str(&strength_str)
+            .ok_or_else(|| ExportError::InvalidBindingStrength(strength_str.clone()))?;
 
         let full_path = self.resolve_full_path(structure_def, &path_str).await?;
         let profile_name = structure_def.name.clone();
 
-        let element = structure_def
-            .find_element_mut(&full_path)
-            .ok_or_else(|| ExportError::ElementNotFound {
+        let element = structure_def.find_element_mut(&full_path).ok_or_else(|| {
+            ExportError::ElementNotFound {
                 path: full_path.clone(),
                 profile: profile_name,
-            })?;
+            }
+        })?;
 
         // Create canonical URL for ValueSet
         let value_set_url = if value_set.starts_with("http://") || value_set.starts_with("https://")
@@ -524,12 +536,12 @@ impl ProfileExporter {
         let full_path = self.resolve_full_path(structure_def, &path_str).await?;
         let profile_name = structure_def.name.clone();
 
-        let element = structure_def
-            .find_element_mut(&full_path)
-            .ok_or_else(|| ExportError::ElementNotFound {
+        let element = structure_def.find_element_mut(&full_path).ok_or_else(|| {
+            ExportError::ElementNotFound {
                 path: full_path.clone(),
                 profile: profile_name,
-            })?;
+            }
+        })?;
 
         // Parse value and determine type
         // For now, we'll store as pattern (less strict than fixed)
@@ -543,7 +555,10 @@ impl ProfileExporter {
         } else if value.starts_with('#') {
             // Code value
             let code = value.trim_start_matches('#');
-            pattern_map.insert("patternCode".to_string(), JsonValue::String(code.to_string()));
+            pattern_map.insert(
+                "patternCode".to_string(),
+                JsonValue::String(code.to_string()),
+            );
         } else if value.parse::<i64>().is_ok() || value.parse::<f64>().is_ok() {
             // Numeric value
             let parsed_value: JsonValue = serde_json::from_str(&value)?;
@@ -601,7 +616,10 @@ impl ProfileExporter {
             }
         }
 
-        trace!("Generated differential with {} elements", differential_elements.len());
+        trace!(
+            "Generated differential with {} elements",
+            differential_elements.len()
+        );
 
         StructureDefinitionDifferential {
             element: differential_elements,
@@ -632,7 +650,10 @@ impl ProfileExporter {
             }
         }
 
-        trace!("Generated differential with {} elements", differential_elements.len());
+        trace!(
+            "Generated differential with {} elements",
+            differential_elements.len()
+        );
 
         StructureDefinitionDifferential {
             element: differential_elements,

@@ -1,0 +1,4 @@
+# Invalid configuration - missing canonical
+fhirVersion: 4.0.1
+id: invalid.ig
+name: InvalidIG

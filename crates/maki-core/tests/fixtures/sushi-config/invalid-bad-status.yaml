@@ -1,0 +1,4 @@
+# Invalid configuration - bad status value
+canonical: http://example.org/fhir/invalid-ig
+fhirVersion: 4.0.1
+status: invalid-status-value

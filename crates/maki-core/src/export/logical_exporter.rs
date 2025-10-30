@@ -1,95 +1,53 @@
-//! Extension Exporter
+//! Logical Model and Resource Exporter
 //!
-//! Exports FSH Extension definitions to FHIR StructureDefinition resources.
-//! Extensions are special profiles with specific structural requirements.
+//! Exports FSH Logical models and Resource definitions to FHIR StructureDefinition resources.
+//! Unlike Profiles and Extensions which constrain existing types, Logical models and Resources
+//! define entirely new types with their own element structure.
 //!
-//! # FHIR Extension Structure
+//! # Logical vs Resource
 //!
-//! Extensions are StructureDefinitions with:
-//! - `kind`: "complex-type"
-//! - `type`: "Extension"
-//! - `baseDefinition`: "http://hl7.org/fhir/StructureDefinition/Extension"
-//! - `derivation`: "constraint"
-//! - `context`: Where the extension can be used
-//! - Special element structure:
-//!   - `Extension.url` (required, fixed to extension's canonical URL)
-//!   - Either `Extension.value[x]` OR `Extension.extension` (mutually exclusive)
+//! - **Logical**: Abstract data models with `kind: "logical"`
+//! - **Resource**: Concrete FHIR resources with `kind: "resource"`
 //!
-//! # Simple vs Complex Extensions
+//! Both follow the same export pattern with element path transformation.
 //!
-//! - **Simple Extension**: Has `value[x]` element with a single data type
-//! - **Complex Extension**: Has `extension` element with nested extensions (no value[x])
+//! # Path Transformation
 //!
-//! # Example
+//! When defining a new type, element paths must be transformed from the base type:
+//! - Base: `Element.id` → New: `MyLogical.id`
+//! - Base: `Element.extension` → New: `MyLogical.extension`
 //!
-//! ```rust,no_run
-//! use maki_core::export::ExtensionExporter;
-//! use maki_core::cst::ast::Extension;
-//! use maki_core::canonical::DefinitionSession;
-//! use std::sync::Arc;
+//! # Characteristics Extension
 //!
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let session: Arc<DefinitionSession> = todo!();
-//! let exporter = ExtensionExporter::new(
-//!     session,
-//!     "http://example.org/fhir".to_string(),
-//! ).await?;
+//! Logical models can have characteristics (e.g., `#can-bind`, `#has-range`) which are
+//! represented as extensions on the StructureDefinition.
 //!
-//! // Parse extension from FSH
-//! let extension: Extension = todo!();
-//!
-//! // Export to StructureDefinition
-//! let structure_def = exporter.export(&extension).await?;
-//! # Ok(())
-//! # }
-//! ```
+//! See: <https://www.hl7.org/fhir/structuredefinition.html>
 
 use super::ExportError;
 use super::fhir_types::*;
 use crate::canonical::DefinitionSession;
-use crate::cst::ast::{CardRule, Extension, FixedValueRule, FlagRule, Rule, ValueSetRule};
+use crate::cst::ast::{CardRule, FixedValueRule, FlagRule, Logical, Resource, Rule, ValueSetRule};
 use crate::semantic::path_resolver::PathResolver;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
-/// Extension exporter
+/// Logical model and Resource exporter
 ///
-/// Transforms FSH Extension AST nodes into FHIR StructureDefinition resources.
-pub struct ExtensionExporter {
+/// Transforms FSH Logical/Resource AST nodes into FHIR StructureDefinition resources.
+pub struct LogicalExporter {
     /// Session for resolving FHIR definitions
     session: Arc<DefinitionSession>,
     /// Path resolver for finding elements
     path_resolver: Arc<PathResolver>,
-    /// Base URL for generated extensions
+    /// Base URL for generated resources
     base_url: String,
 }
 
-impl ExtensionExporter {
-    /// Create a new extension exporter
-    ///
-    /// # Arguments
-    ///
-    /// * `session` - DefinitionSession for resolving base definitions
-    /// * `base_url` - Base URL for generated extension canonical URLs
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// use maki_core::export::ExtensionExporter;
-    /// use maki_core::canonical::DefinitionSession;
-    /// use std::sync::Arc;
-    ///
-    /// let session: Arc<DefinitionSession> = todo!();
-    /// let exporter = ExtensionExporter::new(
-    ///     session,
-    ///     "http://example.org/fhir".to_string(),
-    /// ).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
+impl LogicalExporter {
+    /// Create a new logical/resource exporter
     pub async fn new(
         session: Arc<DefinitionSession>,
         base_url: String,
@@ -103,211 +61,261 @@ impl ExtensionExporter {
         })
     }
 
-    /// Export an Extension to StructureDefinition
-    ///
-    /// # Arguments
-    ///
-    /// * `extension` - FSH Extension AST node
-    ///
-    /// # Returns
-    ///
-    /// A FHIR StructureDefinition with proper extension structure
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - Extension base not found
-    /// - Required fields missing
-    /// - Rule application fails
-    pub async fn export(&self, extension: &Extension) -> Result<StructureDefinition, ExportError> {
-        let extension_name = extension
+    /// Export a Logical model to StructureDefinition
+    pub async fn export_logical(
+        &self,
+        logical: &Logical,
+    ) -> Result<StructureDefinition, ExportError> {
+        let name = logical
             .name()
-            .ok_or_else(|| ExportError::MissingRequiredField("extension name".to_string()))?;
+            .ok_or_else(|| ExportError::MissingRequiredField("logical name".to_string()))?;
 
-        debug!("Exporting extension: {}", extension_name);
+        debug!("Exporting logical model: {}", name);
 
-        // 1. Get base Extension StructureDefinition
-        let mut structure_def = self.get_base_extension_definition().await?;
+        // Get parent (defaults to Element if not specified)
+        let parent = logical
+            .parent()
+            .and_then(|p| p.value())
+            .unwrap_or_else(|| "Element".to_string());
 
-        // 2. Apply metadata
-        self.apply_metadata(&mut structure_def, extension)?;
+        // Get base StructureDefinition
+        let mut structure_def = self.get_base_structure_definition(&parent).await?;
 
-        // 3. Make a copy of the base snapshot for comparison
+        // Apply metadata
+        self.apply_metadata(
+            &mut structure_def,
+            &name,
+            logical.id(),
+            logical.title(),
+            logical.description(),
+        )?;
+
+        // Set as logical model
+        structure_def.kind = StructureDefinitionKind::Logical;
+        structure_def.is_abstract = false;
+        structure_def.type_field = name.clone();
+        structure_def.derivation = Some("specialization".to_string());
+
+        // Transform element paths from base type to new type
+        self.transform_element_paths(&mut structure_def, &parent, &name)?;
+
+        // Make a copy of the base snapshot for comparison
         let base_snapshot = structure_def.snapshot.clone();
 
-        // 4. Set extension context
-        self.set_extension_context(&mut structure_def, extension)?;
+        // Apply characteristics as extensions
+        let characteristics = logical.characteristics();
+        if !characteristics.is_empty() {
+            self.apply_characteristics(&mut structure_def, &characteristics)?;
+        }
 
-        // 5. Apply all rules to snapshot
-        for rule in extension.rules() {
+        // Apply all rules to snapshot
+        for rule in logical.rules() {
             if let Err(e) = self.apply_rule(&mut structure_def, &rule).await {
                 warn!("Failed to apply rule: {}", e);
-                // Continue with other rules instead of failing completely
             }
         }
 
-        // 6. Ensure proper extension structure (url, value[x] or extension)
-        self.ensure_extension_structure(&mut structure_def)?;
-
-        // 7. Generate differential from changes
+        // Generate differential from changes
         if let Some(base_snap) = base_snapshot {
             structure_def.differential =
                 Some(self.generate_differential(&base_snap, &structure_def));
         }
 
-        // 8. Validate exported structure
-        self.validate_extension_structure(&structure_def)?;
+        // Validate exported structure
+        self.validate_structure_definition(&structure_def)?;
 
-        debug!("Successfully exported extension: {}", extension_name);
+        debug!("Successfully exported logical model: {}", name);
         Ok(structure_def)
     }
 
-    /// Get base Extension StructureDefinition
-    async fn get_base_extension_definition(&self) -> Result<StructureDefinition, ExportError> {
-        let canonical_url = "http://hl7.org/fhir/StructureDefinition/Extension";
+    /// Export a Resource definition to StructureDefinition
+    pub async fn export_resource(
+        &self,
+        resource: &Resource,
+    ) -> Result<StructureDefinition, ExportError> {
+        let name = resource
+            .name()
+            .ok_or_else(|| ExportError::MissingRequiredField("resource name".to_string()))?;
 
-        debug!("Resolving base Extension: {}", canonical_url);
+        debug!("Exporting resource: {}", name);
 
-        let resource = self.session.resolve(canonical_url).await.map_err(|e| {
-            ExportError::ParentNotFound(format!("Extension base definition: {}", e))
-        })?;
+        // Get parent (defaults to DomainResource for resources)
+        let parent = resource
+            .parent()
+            .and_then(|p| p.value())
+            .unwrap_or_else(|| "DomainResource".to_string());
 
-        // Parse JSON into StructureDefinition
+        // Get base StructureDefinition
+        let mut structure_def = self.get_base_structure_definition(&parent).await?;
+
+        // Apply metadata
+        self.apply_metadata(
+            &mut structure_def,
+            &name,
+            resource.id(),
+            resource.title(),
+            resource.description(),
+        )?;
+
+        // Set as resource
+        structure_def.kind = StructureDefinitionKind::Resource;
+        structure_def.is_abstract = false;
+        structure_def.type_field = name.clone();
+        structure_def.derivation = Some("specialization".to_string());
+
+        // Transform element paths from base type to new type
+        self.transform_element_paths(&mut structure_def, &parent, &name)?;
+
+        // Make a copy of the base snapshot for comparison
+        let base_snapshot = structure_def.snapshot.clone();
+
+        // Apply all rules to snapshot
+        for rule in resource.rules() {
+            if let Err(e) = self.apply_rule(&mut structure_def, &rule).await {
+                warn!("Failed to apply rule: {}", e);
+            }
+        }
+
+        // Generate differential from changes
+        if let Some(base_snap) = base_snapshot {
+            structure_def.differential =
+                Some(self.generate_differential(&base_snap, &structure_def));
+        }
+
+        // Validate exported structure
+        self.validate_structure_definition(&structure_def)?;
+
+        debug!("Successfully exported resource: {}", name);
+        Ok(structure_def)
+    }
+
+    /// Get base StructureDefinition from parent type
+    async fn get_base_structure_definition(
+        &self,
+        parent: &str,
+    ) -> Result<StructureDefinition, ExportError> {
+        debug!("Resolving parent: {}", parent);
+
+        let canonical_url = if parent.starts_with("http://") || parent.starts_with("https://") {
+            parent.to_string()
+        } else {
+            format!("http://hl7.org/fhir/StructureDefinition/{}", parent)
+        };
+
+        let resource = self
+            .session
+            .resolve(&canonical_url)
+            .await
+            .map_err(|e| ExportError::ParentNotFound(format!("{}: {}", parent, e)))?;
+
         let structure_def: StructureDefinition =
             serde_json::from_value((*resource.content).clone()).map_err(|e| {
                 ExportError::CanonicalError(format!(
-                    "Failed to parse base Extension StructureDefinition: {}",
-                    e
+                    "Failed to parse StructureDefinition for {}: {}",
+                    parent, e
                 ))
             })?;
 
-        debug!("Resolved base Extension: {}", structure_def.url);
+        debug!("Resolved parent: {} ({})", parent, structure_def.url);
         Ok(structure_def)
     }
 
-    /// Apply extension metadata
+    /// Apply metadata to StructureDefinition
     fn apply_metadata(
         &self,
         structure_def: &mut StructureDefinition,
-        extension: &Extension,
+        name: &str,
+        id: Option<crate::cst::ast::IdClause>,
+        title: Option<crate::cst::ast::TitleClause>,
+        description: Option<crate::cst::ast::DescriptionClause>,
     ) -> Result<(), ExportError> {
-        let extension_name = extension
-            .name()
-            .ok_or_else(|| ExportError::MissingRequiredField("name".to_string()))?;
+        structure_def.name = name.to_string();
+        structure_def.url = format!("{}/StructureDefinition/{}", self.base_url, name);
 
-        // Update metadata fields
-        structure_def.name = extension_name.clone();
-        structure_def.url = format!("{}/Extension/{}", self.base_url, extension_name);
-        structure_def.kind = StructureDefinitionKind::ComplexType;
-        structure_def.type_field = "Extension".to_string();
-        structure_def.base_definition =
-            Some("http://hl7.org/fhir/StructureDefinition/Extension".to_string());
-        structure_def.derivation = Some("constraint".to_string());
-        structure_def.is_abstract = false;
-
-        // Optional metadata
-        if let Some(id_clause) = extension.id()
-            && let Some(id) = id_clause.value()
+        if let Some(id_clause) = id
+            && let Some(id_value) = id_clause.value()
         {
-            structure_def.id = Some(id);
+            structure_def.id = Some(id_value);
         }
 
-        if let Some(title_clause) = extension.title()
-            && let Some(title) = title_clause.value()
+        if let Some(title_clause) = title
+            && let Some(title_value) = title_clause.value()
         {
-            structure_def.title = Some(title);
+            structure_def.title = Some(title_value);
         }
 
-        if let Some(desc_clause) = extension.description()
-            && let Some(desc) = desc_clause.value()
+        if let Some(desc_clause) = description
+            && let Some(desc_value) = desc_clause.value()
         {
-            structure_def.description = Some(desc);
+            structure_def.description = Some(desc_value);
         }
 
         Ok(())
     }
 
-    /// Set extension context from caret rules
+    /// Transform element paths from base type to new type
     ///
-    /// Looks for rules like:
-    /// - `^context[+].type = #element`
-    /// - `^context[=].expression = "Patient"`
-    fn set_extension_context(
+    /// For a logical model or resource, all element paths must be changed
+    /// from the parent type to the new type name.
+    ///
+    /// Example: Element.id → MyLogical.id
+    fn transform_element_paths(
         &self,
         structure_def: &mut StructureDefinition,
-        _extension: &Extension,
+        parent_type: &str,
+        new_type: &str,
     ) -> Result<(), ExportError> {
-        // TODO: Parse caret rules for context
-        // For now, set default context to Element (can be used anywhere)
+        debug!(
+            "Transforming element paths from {} to {}",
+            parent_type, new_type
+        );
 
-        // Default context: can be used on any element
-        let default_context = vec![StructureDefinitionContext::element("Element")];
+        if let Some(ref mut snapshot) = structure_def.snapshot {
+            for element in &mut snapshot.element {
+                // Replace the type prefix in the path
+                if element.path.starts_with(parent_type) {
+                    element.path = element.path.replacen(parent_type, new_type, 1);
+                    trace!("Transformed path to: {}", element.path);
+                }
+            }
+        }
 
-        structure_def.context = Some(default_context);
-        debug!("Setting default extension context to Element");
+        // Update root element's base.path
+        if let Some(snapshot) = &mut structure_def.snapshot {
+            if let Some(root_element) = snapshot.element.first_mut() {
+                // Root element path should match the new type
+                root_element.path = new_type.to_string();
+            }
+        }
 
         Ok(())
     }
 
-    /// Ensure proper extension structure
+    /// Apply characteristics as extensions on the StructureDefinition
     ///
-    /// Extensions must have:
-    /// - Extension.url (fixed to canonical URL)
-    /// - Either Extension.value[x] OR Extension.extension (but not both)
-    fn ensure_extension_structure(
+    /// Characteristics like #can-bind, #has-range are represented using the
+    /// structuredefinition-type-characteristics extension.
+    ///
+    /// See: <http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics>
+    fn apply_characteristics(
         &self,
         structure_def: &mut StructureDefinition,
+        characteristics: &[String],
     ) -> Result<(), ExportError> {
-        // Check if we have a snapshot
-        let snapshot = structure_def
-            .snapshot
-            .as_mut()
-            .ok_or_else(|| ExportError::MissingRequiredField("snapshot".to_string()))?;
+        debug!("Applying {} characteristics", characteristics.len());
 
-        // Find Extension.url element and fix it to this extension's URL
-        if let Some(url_element) = snapshot
-            .element
-            .iter_mut()
-            .find(|e| e.path == "Extension.url")
-        {
-            let mut fixed = HashMap::new();
-            fixed.insert(
-                "fixedUri".to_string(),
-                JsonValue::String(structure_def.url.clone()),
-            );
-            url_element.fixed = Some(fixed);
-            debug!("Fixed Extension.url to {}", structure_def.url);
+        // For now, we'll store characteristics as a comment in the description
+        // Full implementation would use the structuredefinition-type-characteristics extension
+        let char_text = format!("Characteristics: {}", characteristics.join(", "));
+
+        if let Some(ref mut desc) = structure_def.description {
+            desc.push_str(&format!("\n\n{}", char_text));
+        } else {
+            structure_def.description = Some(char_text);
         }
 
-        // Check for value[x] constraints to determine if simple or complex extension
-        let has_value_constraint = snapshot.element.iter().any(|e| {
-            e.path.starts_with("Extension.value[x]") || e.path.starts_with("Extension.value")
-        });
-
-        let has_extension_constraint = snapshot
-            .element
-            .iter()
-            .any(|e| e.path == "Extension.extension" && e.min.is_some());
-
-        if has_value_constraint && has_extension_constraint {
-            warn!(
-                "Extension {} has both value[x] and extension constraints. \
-                 Extensions must be either simple (value[x]) or complex (extension), not both.",
-                structure_def.name
-            );
-        }
-
-        if has_value_constraint {
-            debug!(
-                "Extension {} is a simple extension (has value[x])",
-                structure_def.name
-            );
-        } else if has_extension_constraint {
-            debug!(
-                "Extension {} is a complex extension (has sub-extensions)",
-                structure_def.name
-            );
-        }
+        // TODO: Implement proper extension support
+        // structure_def.extension = Some(vec![...])
 
         Ok(())
     }
@@ -334,7 +342,7 @@ impl ExtensionExporter {
         }
     }
 
-    /// Apply cardinality rule (min..max)
+    /// Apply cardinality rule
     async fn apply_cardinality_rule(
         &self,
         structure_def: &mut StructureDefinition,
@@ -351,7 +359,6 @@ impl ExtensionExporter {
 
         trace!("Applying cardinality rule: {} {}", path_str, cardinality);
 
-        // Parse cardinality (e.g., "1..1", "0..*")
         let parts: Vec<&str> = cardinality.split("..").collect();
         if parts.len() != 2 {
             return Err(ExportError::InvalidCardinality(cardinality));
@@ -362,16 +369,14 @@ impl ExtensionExporter {
             .map_err(|_| ExportError::InvalidCardinality(cardinality.clone()))?;
         let max = parts[1].to_string();
 
-        // Resolve path to element
         let full_path = self.resolve_full_path(structure_def, &path_str).await?;
-        let extension_name = structure_def.name.clone();
+        let type_name = structure_def.name.clone();
 
-        // Find and update element
         let element = structure_def.find_element_mut(&full_path).ok_or_else(|| {
             warn!("Element not found in snapshot: {}", full_path);
             ExportError::ElementNotFound {
                 path: full_path.clone(),
-                profile: extension_name,
+                profile: type_name,
             }
         })?;
 
@@ -379,7 +384,6 @@ impl ExtensionExporter {
         element.min = Some(min);
         element.max = Some(max);
 
-        // Also apply flags if present
         for flag in rule.flags() {
             self.apply_flag_to_element(element, &flag)?;
         }
@@ -387,7 +391,7 @@ impl ExtensionExporter {
         Ok(())
     }
 
-    /// Apply flag rule (MS, SU, etc.)
+    /// Apply flag rule
     async fn apply_flag_rule(
         &self,
         structure_def: &mut StructureDefinition,
@@ -401,12 +405,12 @@ impl ExtensionExporter {
         trace!("Applying flag rule: {}", path_str);
 
         let full_path = self.resolve_full_path(structure_def, &path_str).await?;
-        let extension_name = structure_def.name.clone();
+        let type_name = structure_def.name.clone();
 
         let element = structure_def.find_element_mut(&full_path).ok_or_else(|| {
             ExportError::ElementNotFound {
                 path: full_path.clone(),
-                profile: extension_name,
+                profile: type_name,
             }
         })?;
 
@@ -434,7 +438,7 @@ impl ExtensionExporter {
         Ok(())
     }
 
-    /// Apply binding rule (ValueSet binding)
+    /// Apply binding rule
     async fn apply_binding_rule(
         &self,
         structure_def: &mut StructureDefinition,
@@ -460,16 +464,15 @@ impl ExtensionExporter {
             .ok_or_else(|| ExportError::InvalidBindingStrength(strength_str.clone()))?;
 
         let full_path = self.resolve_full_path(structure_def, &path_str).await?;
-        let extension_name = structure_def.name.clone();
+        let type_name = structure_def.name.clone();
 
         let element = structure_def.find_element_mut(&full_path).ok_or_else(|| {
             ExportError::ElementNotFound {
                 path: full_path.clone(),
-                profile: extension_name,
+                profile: type_name,
             }
         })?;
 
-        // Create canonical URL for ValueSet
         let value_set_url = if value_set.starts_with("http://") || value_set.starts_with("https://")
         {
             value_set
@@ -504,36 +507,30 @@ impl ExtensionExporter {
         trace!("Applying fixed value rule: {} = {}", path_str, value);
 
         let full_path = self.resolve_full_path(structure_def, &path_str).await?;
-        let extension_name = structure_def.name.clone();
+        let type_name = structure_def.name.clone();
 
         let element = structure_def.find_element_mut(&full_path).ok_or_else(|| {
             ExportError::ElementNotFound {
                 path: full_path.clone(),
-                profile: extension_name,
+                profile: type_name,
             }
         })?;
 
-        // Parse value and determine type
         let mut pattern_map = HashMap::new();
 
-        // Determine the type from the element or infer from value
         if value.starts_with('"') {
-            // String value
             let parsed_value: JsonValue = serde_json::from_str(&value)?;
             pattern_map.insert("patternString".to_string(), parsed_value);
         } else if value.starts_with('#') {
-            // Code value
             let code = value.trim_start_matches('#');
             pattern_map.insert(
                 "patternCode".to_string(),
                 JsonValue::String(code.to_string()),
             );
         } else if value.parse::<i64>().is_ok() || value.parse::<f64>().is_ok() {
-            // Numeric value
             let parsed_value: JsonValue = serde_json::from_str(&value)?;
             pattern_map.insert("patternInteger".to_string(), parsed_value);
         } else {
-            // Treat as identifier/code
             pattern_map.insert("patternCode".to_string(), JsonValue::String(value));
         };
 
@@ -548,7 +545,6 @@ impl ExtensionExporter {
         structure_def: &StructureDefinition,
         path: &str,
     ) -> Result<String, ExportError> {
-        // If path already includes resource type, use as-is
         if path.contains('.') {
             let parts: Vec<&str> = path.split('.').collect();
             if parts[0] == structure_def.type_field {
@@ -556,7 +552,6 @@ impl ExtensionExporter {
             }
         }
 
-        // For Extension, prepend "Extension."
         Ok(format!("{}.{}", structure_def.type_field, path))
     }
 
@@ -570,15 +565,12 @@ impl ExtensionExporter {
 
         if let Some(modified_snapshot) = &modified.snapshot {
             for modified_elem in &modified_snapshot.element {
-                // Find corresponding base element
                 if let Some(base_elem) = base.element.iter().find(|e| e.path == modified_elem.path)
                 {
-                    // Check if element was modified
                     if modified_elem.is_modified_from(base_elem) {
                         differential_elements.push(modified_elem.clone());
                     }
                 } else {
-                    // New element (not in base) - always include
                     differential_elements.push(modified_elem.clone());
                 }
             }
@@ -594,26 +586,21 @@ impl ExtensionExporter {
         }
     }
 
-    /// Validate extension structure
-    fn validate_extension_structure(
+    /// Validate structure definition
+    fn validate_structure_definition(
         &self,
         structure_def: &StructureDefinition,
     ) -> Result<(), ExportError> {
-        // Check required fields
         if structure_def.url.is_empty() {
             return Err(ExportError::MissingRequiredField("url".to_string()));
         }
         if structure_def.name.is_empty() {
             return Err(ExportError::MissingRequiredField("name".to_string()));
         }
-        if structure_def.type_field != "Extension" {
-            return Err(ExportError::InvalidType(format!(
-                "Extension must have type 'Extension', got '{}'",
-                structure_def.type_field
-            )));
+        if structure_def.type_field.is_empty() {
+            return Err(ExportError::MissingRequiredField("type".to_string()));
         }
 
-        // Validate differential elements if present
         if let Some(differential) = &structure_def.differential {
             for element in &differential.element {
                 self.validate_element_definition(element)?;
@@ -625,16 +612,13 @@ impl ExtensionExporter {
 
     /// Validate an ElementDefinition
     fn validate_element_definition(&self, element: &ElementDefinition) -> Result<(), ExportError> {
-        // Check path is not empty
         if element.path.is_empty() {
             return Err(ExportError::MissingRequiredField(
                 "element.path".to_string(),
             ));
         }
 
-        // Validate cardinality if present
         if let (Some(min), Some(max)) = (&element.min, &element.max) {
-            // Check that max is valid
             if max != "*" {
                 if let Ok(max_val) = max.parse::<u32>() {
                     if *min > max_val {
@@ -653,16 +637,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extension_context_creation() {
-        let ctx = StructureDefinitionContext::element("Patient");
-        assert_eq!(ctx.type_, "element");
-        assert_eq!(ctx.expression, "Patient");
+    fn test_path_transformation() {
+        // Test that path transformation logic is correct
+        let parent = "Element";
+        let new_type = "MyLogical";
 
-        let ctx = StructureDefinitionContext::extension("http://example.org/Extension/myExt");
-        assert_eq!(ctx.type_, "extension");
-        assert_eq!(ctx.expression, "http://example.org/Extension/myExt");
+        let path = "Element.id";
+        let transformed = path.replacen(parent, new_type, 1);
+        assert_eq!(transformed, "MyLogical.id");
+
+        let path = "Element.extension";
+        let transformed = path.replacen(parent, new_type, 1);
+        assert_eq!(transformed, "MyLogical.extension");
     }
-
-    // Integration tests would go here, similar to profile_exporter tests
-    // They require a real DefinitionSession which is tested in integration tests
 }

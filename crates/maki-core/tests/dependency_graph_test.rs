@@ -1,7 +1,9 @@
 //! Integration tests for dependency graph construction and analysis
 
 use maki_core::cst::parse_fsh;
-use maki_core::semantic::dependency_graph::{DependencyAnalyzer, DependencyError, DependencyGraph, DependencyType};
+use maki_core::semantic::dependency_graph::{
+    DependencyAnalyzer, DependencyError, DependencyGraph, DependencyType,
+};
 use maki_core::semantic::{DefaultSemanticAnalyzer, SemanticAnalyzer};
 use std::path::PathBuf;
 use std::sync::Arc;

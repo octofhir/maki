@@ -109,9 +109,7 @@ pub enum RuleSetError {
     RuleSetNotFound(String),
 
     /// Parameter count mismatch
-    #[error(
-        "Parameter count mismatch: {ruleset} expects {expected} parameters, got {actual}"
-    )]
+    #[error("Parameter count mismatch: {ruleset} expects {expected} parameters, got {actual}")]
     ParameterCountMismatch {
         ruleset: String,
         expected: usize,
@@ -157,7 +155,11 @@ impl RuleSetExpander {
     /// If a RuleSet with the same name already exists, it will be replaced.
     pub fn register_ruleset(&mut self, ruleset: RuleSet) {
         let name = ruleset.name.clone();
-        debug!("Registering RuleSet '{}' with {} parameters", name, ruleset.parameters.len());
+        debug!(
+            "Registering RuleSet '{}' with {} parameters",
+            name,
+            ruleset.parameters.len()
+        );
         self.rulesets.insert(name, Arc::new(ruleset));
     }
 
@@ -456,9 +458,7 @@ mod tests {
         let ruleset = RuleSet {
             name: "Test".to_string(),
             parameters: vec!["p1".to_string(), "p2".to_string()],
-            rules: vec![
-                "* item[{p1}].item[{p2}].value = {p1}".to_string(),
-            ],
+            rules: vec!["* item[{p1}].item[{p2}].value = {p1}".to_string()],
             source_file: PathBuf::from("test.fsh"),
             source_range: 0..10,
         };
@@ -501,9 +501,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             RuleSetError::ParameterCountMismatch {
-                expected,
-                actual,
-                ..
+                expected, actual, ..
             } => {
                 assert_eq!(expected, 2);
                 assert_eq!(actual, 1);
@@ -600,10 +598,7 @@ mod tests {
 
         let insert = RuleSetInsert {
             ruleset_name: "Complex".to_string(),
-            arguments: vec![
-                "\"http://example.com\"".to_string(),
-                "Boolean".to_string(),
-            ],
+            arguments: vec!["\"http://example.com\"".to_string(), "Boolean".to_string()],
             source_range: 10..20,
         };
 

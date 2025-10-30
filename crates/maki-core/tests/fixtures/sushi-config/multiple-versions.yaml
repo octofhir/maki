@@ -1,0 +1,12 @@
+# Configuration with multiple FHIR versions
+canonical: http://example.org/fhir/multi-version-ig
+fhirVersion:
+  - 4.0.1
+  - 4.3.0
+  - 5.0.0
+id: multi.version.ig
+name: MultiVersionIG
+title: Multi-Version Implementation Guide
+version: 1.0.0
+status: active
+publisher: Example Organization

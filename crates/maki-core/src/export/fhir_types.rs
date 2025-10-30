@@ -96,7 +96,12 @@ pub struct StructureDefinition {
 
 impl StructureDefinition {
     /// Create a new StructureDefinition with required fields
-    pub fn new(url: String, name: String, type_field: String, kind: StructureDefinitionKind) -> Self {
+    pub fn new(
+        url: String,
+        name: String,
+        type_field: String,
+        kind: StructureDefinitionKind,
+    ) -> Self {
         Self {
             resource_type: "StructureDefinition".to_string(),
             id: None,
@@ -421,6 +426,646 @@ impl StructureDefinitionContext {
     }
 }
 
+// ============================================================================
+// ValueSet
+// ============================================================================
+
+/// FHIR ValueSet resource
+///
+/// Represents a set of codes drawn from one or more code systems.
+/// See: <https://www.hl7.org/fhir/valueset.html>
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ValueSetResource {
+    /// Resource type (always "ValueSet")
+    pub resource_type: String,
+
+    /// Logical id of this artifact
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+
+    /// Canonical identifier for this value set
+    pub url: String,
+
+    /// Business version of the value set
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+
+    /// Name for this value set (computer friendly)
+    pub name: String,
+
+    /// Name for this value set (human friendly)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
+    /// draft | active | retired | unknown
+    pub status: String,
+
+    /// Date last changed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+
+    /// Name of the publisher
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+
+    /// Natural language description of the value set
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// The context that the content is intended to support
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub use_context: Option<Vec<serde_json::Value>>,
+
+    /// Intended jurisdiction for value set (if applicable)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jurisdiction: Option<Vec<serde_json::Value>>,
+
+    /// Immutable | Extensible | Complete | Supplement
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub immutable: Option<bool>,
+
+    /// Purpose and use of the value set
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+
+    /// Use and/or publishing restrictions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub copyright: Option<String>,
+
+    /// Content logical definition of the value set (CLD)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compose: Option<ValueSetCompose>,
+
+    /// Used when the value set is "expanded"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expansion: Option<serde_json::Value>,
+}
+
+impl ValueSetResource {
+    /// Create a new ValueSet resource
+    pub fn new(url: impl Into<String>, name: impl Into<String>, status: impl Into<String>) -> Self {
+        Self {
+            resource_type: "ValueSet".to_string(),
+            id: None,
+            url: url.into(),
+            version: None,
+            name: name.into(),
+            title: None,
+            status: status.into(),
+            date: None,
+            publisher: None,
+            description: None,
+            use_context: None,
+            jurisdiction: None,
+            immutable: None,
+            purpose: None,
+            copyright: None,
+            compose: None,
+            expansion: None,
+        }
+    }
+}
+
+/// Content logical definition of the value set (CLD)
+///
+/// Defines what codes are in the value set.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ValueSetCompose {
+    /// Fixed date for references with no specified version (transitive)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked_date: Option<String>,
+
+    /// Whether inactive codes are in the value set
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inactive: Option<bool>,
+
+    /// Include one or more codes from a code system or other value set(s)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<ValueSetInclude>>,
+
+    /// Explicitly exclude codes from a code system or other value set(s)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<ValueSetInclude>>,
+}
+
+impl ValueSetCompose {
+    /// Create a new empty compose
+    pub fn new() -> Self {
+        Self {
+            locked_date: None,
+            inactive: None,
+            include: None,
+            exclude: None,
+        }
+    }
+
+    /// Add an include entry
+    pub fn add_include(&mut self, include: ValueSetInclude) {
+        if let Some(ref mut includes) = self.include {
+            includes.push(include);
+        } else {
+            self.include = Some(vec![include]);
+        }
+    }
+
+    /// Add an exclude entry
+    pub fn add_exclude(&mut self, exclude: ValueSetInclude) {
+        if let Some(ref mut excludes) = self.exclude {
+            excludes.push(exclude);
+        } else {
+            self.exclude = Some(vec![exclude]);
+        }
+    }
+}
+
+impl Default for ValueSetCompose {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Include or exclude codes from a code system or value set
+///
+/// Specifies a concept to be included or excluded.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ValueSetInclude {
+    /// The system the codes come from
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
+
+    /// Specific version of the code system
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+
+    /// A concept defined in the system
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub concept: Option<Vec<ValueSetConcept>>,
+
+    /// Select codes/concepts by their properties (including relationships)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Vec<ValueSetFilter>>,
+
+    /// Select the contents included in this value set
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_set: Option<Vec<String>>,
+}
+
+impl ValueSetInclude {
+    /// Create a new include for a specific system
+    pub fn from_system(system: impl Into<String>) -> Self {
+        Self {
+            system: Some(system.into()),
+            version: None,
+            concept: None,
+            filter: None,
+            value_set: None,
+        }
+    }
+
+    /// Create a new include from another value set
+    pub fn from_valueset(value_set_url: impl Into<String>) -> Self {
+        Self {
+            system: None,
+            version: None,
+            concept: None,
+            filter: None,
+            value_set: Some(vec![value_set_url.into()]),
+        }
+    }
+
+    /// Add a concept
+    pub fn add_concept(&mut self, concept: ValueSetConcept) {
+        if let Some(ref mut concepts) = self.concept {
+            concepts.push(concept);
+        } else {
+            self.concept = Some(vec![concept]);
+        }
+    }
+
+    /// Add a filter
+    pub fn add_filter(&mut self, filter: ValueSetFilter) {
+        if let Some(ref mut filters) = self.filter {
+            filters.push(filter);
+        } else {
+            self.filter = Some(vec![filter]);
+        }
+    }
+}
+
+/// A concept from a code system
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ValueSetConcept {
+    /// Code or expression from system
+    pub code: String,
+
+    /// Text to display for this code for this value set in this valueset
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
+
+    /// Additional representations for this concept
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub designation: Option<Vec<serde_json::Value>>,
+}
+
+impl ValueSetConcept {
+    /// Create a new concept with just a code
+    pub fn new(code: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            display: None,
+            designation: None,
+        }
+    }
+
+    /// Create a new concept with code and display
+    pub fn with_display(code: impl Into<String>, display: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            display: Some(display.into()),
+            designation: None,
+        }
+    }
+}
+
+/// Filter to select codes from a code system
+///
+/// Selects codes based on properties defined by the code system.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ValueSetFilter {
+    /// A property/filter defined by the code system
+    pub property: String,
+
+    /// = | is-a | descendent-of | is-not-a | regex | in | not-in | generalizes | exists
+    pub op: String,
+
+    /// Code from the system, or regex criteria, or boolean value for exists
+    pub value: String,
+}
+
+impl ValueSetFilter {
+    /// Create a new filter
+    pub fn new(
+        property: impl Into<String>,
+        op: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
+        Self {
+            property: property.into(),
+            op: op.into(),
+            value: value.into(),
+        }
+    }
+
+    /// Create an "is-a" filter (concept is a child of the given parent)
+    pub fn is_a(parent_code: impl Into<String>) -> Self {
+        Self::new("concept", "is-a", parent_code)
+    }
+
+    /// Create a "descendent-of" filter
+    pub fn descendent_of(parent_code: impl Into<String>) -> Self {
+        Self::new("concept", "descendent-of", parent_code)
+    }
+
+    /// Create a "regex" filter
+    pub fn regex(pattern: impl Into<String>) -> Self {
+        Self::new("concept", "regex", pattern)
+    }
+
+    /// Create an "exists" filter
+    pub fn exists(property: impl Into<String>) -> Self {
+        Self::new(property, "exists", "true")
+    }
+}
+
+// ============================================================================
+// CodeSystem
+// ============================================================================
+
+/// FHIR CodeSystem resource
+///
+/// Represents a set of codes with definitions and relationships.
+/// See: <https://www.hl7.org/fhir/codesystem.html>
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeSystemResource {
+    /// Resource type (always "CodeSystem")
+    pub resource_type: String,
+
+    /// Logical id of this artifact
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+
+    /// Canonical identifier for this code system
+    pub url: String,
+
+    /// Business version of the code system
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+
+    /// Name for this code system (computer friendly)
+    pub name: String,
+
+    /// Name for this code system (human friendly)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
+    /// draft | active | retired | unknown
+    pub status: String,
+
+    /// Date last changed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+
+    /// Name of the publisher
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+
+    /// Natural language description of the code system
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// The context that the content is intended to support
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub use_context: Option<Vec<serde_json::Value>>,
+
+    /// Intended jurisdiction for code system (if applicable)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jurisdiction: Option<Vec<serde_json::Value>>,
+
+    /// Why this code system is defined
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+
+    /// Use and/or publishing restrictions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub copyright: Option<String>,
+
+    /// If code comparison is case sensitive
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub case_sensitive: Option<bool>,
+
+    /// not-present | example | fragment | complete | supplement
+    pub content: String,
+
+    /// Total concepts in the code system
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+
+    /// If definitions are not stable
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub experimental: Option<bool>,
+
+    /// Concepts in the code system
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub concept: Option<Vec<CodeSystemConcept>>,
+
+    /// Additional information supplied about each concept
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub property: Option<Vec<CodeSystemProperty>>,
+}
+
+impl CodeSystemResource {
+    /// Create a new CodeSystem resource
+    pub fn new(url: impl Into<String>, name: impl Into<String>, status: impl Into<String>) -> Self {
+        Self {
+            resource_type: "CodeSystem".to_string(),
+            id: None,
+            url: url.into(),
+            version: None,
+            name: name.into(),
+            title: None,
+            status: status.into(),
+            date: None,
+            publisher: None,
+            description: None,
+            use_context: None,
+            jurisdiction: None,
+            purpose: None,
+            copyright: None,
+            case_sensitive: None,
+            content: "complete".to_string(),
+            count: None,
+            experimental: None,
+            concept: None,
+            property: None,
+        }
+    }
+
+    /// Add a concept to the code system
+    pub fn add_concept(&mut self, concept: CodeSystemConcept) {
+        if let Some(ref mut concepts) = self.concept {
+            concepts.push(concept);
+        } else {
+            self.concept = Some(vec![concept]);
+        }
+    }
+
+    /// Add a property definition
+    pub fn add_property(&mut self, property: CodeSystemProperty) {
+        if let Some(ref mut properties) = self.property {
+            properties.push(property);
+        } else {
+            self.property = Some(vec![property]);
+        }
+    }
+
+    /// Update the count of concepts
+    pub fn update_count(&mut self) {
+        if let Some(ref concepts) = self.concept {
+            self.count = Some(self.count_concepts_recursive(concepts));
+        }
+    }
+
+    /// Recursively count all concepts including children
+    fn count_concepts_recursive(&self, concepts: &[CodeSystemConcept]) -> u32 {
+        concepts
+            .iter()
+            .map(|c| {
+                let mut count = 1;
+                if let Some(ref children) = c.concept {
+                    count += self.count_concepts_recursive(children);
+                }
+                count
+            })
+            .sum()
+    }
+}
+
+/// A concept defined in the code system
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeSystemConcept {
+    /// Code that identifies concept
+    pub code: String,
+
+    /// Text to display to the user
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
+
+    /// Formal definition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub definition: Option<String>,
+
+    /// Additional representations for the concept
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub designation: Option<Vec<serde_json::Value>>,
+
+    /// Property value for the concept
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub property: Option<Vec<CodeSystemConceptProperty>>,
+
+    /// Child Concepts (is-a/contains/categorizes)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub concept: Option<Vec<CodeSystemConcept>>,
+}
+
+impl CodeSystemConcept {
+    /// Create a new concept with just a code
+    pub fn new(code: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            display: None,
+            definition: None,
+            designation: None,
+            property: None,
+            concept: None,
+        }
+    }
+
+    /// Create a concept with code and display
+    pub fn with_display(code: impl Into<String>, display: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            display: Some(display.into()),
+            definition: None,
+            designation: None,
+            property: None,
+            concept: None,
+        }
+    }
+
+    /// Create a concept with code, display, and definition
+    pub fn with_definition(
+        code: impl Into<String>,
+        display: impl Into<String>,
+        definition: impl Into<String>,
+    ) -> Self {
+        Self {
+            code: code.into(),
+            display: Some(display.into()),
+            definition: Some(definition.into()),
+            designation: None,
+            property: None,
+            concept: None,
+        }
+    }
+
+    /// Add a child concept
+    pub fn add_child(&mut self, child: CodeSystemConcept) {
+        if let Some(ref mut children) = self.concept {
+            children.push(child);
+        } else {
+            self.concept = Some(vec![child]);
+        }
+    }
+
+    /// Add a property value
+    pub fn add_property(&mut self, property: CodeSystemConceptProperty) {
+        if let Some(ref mut properties) = self.property {
+            properties.push(property);
+        } else {
+            self.property = Some(vec![property]);
+        }
+    }
+}
+
+/// A property value for a concept
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeSystemConceptProperty {
+    /// Reference to CodeSystem.property.code
+    pub code: String,
+
+    /// Value of the property for this concept
+    #[serde(flatten)]
+    pub value: CodeSystemPropertyValue,
+}
+
+impl CodeSystemConceptProperty {
+    /// Create a new concept property
+    pub fn new(code: impl Into<String>, value: CodeSystemPropertyValue) -> Self {
+        Self {
+            code: code.into(),
+            value,
+        }
+    }
+}
+
+/// Value of a concept property (can be various types)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CodeSystemPropertyValue {
+    #[serde(rename = "valueCode")]
+    Code(String),
+    #[serde(rename = "valueString")]
+    String(String),
+    #[serde(rename = "valueInteger")]
+    Integer(i32),
+    #[serde(rename = "valueBoolean")]
+    Boolean(bool),
+}
+
+/// Additional information about a property
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeSystemProperty {
+    /// Identifies the property on the concepts
+    pub code: String,
+
+    /// Formal identifier for the property
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+
+    /// Why the property is defined
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// code | Coding | string | integer | boolean | dateTime | decimal
+    #[serde(rename = "type")]
+    pub type_: String,
+}
+
+impl CodeSystemProperty {
+    /// Create a new property definition
+    pub fn new(code: impl Into<String>, type_: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            uri: None,
+            description: None,
+            type_: type_.into(),
+        }
+    }
+
+    /// Create a property with description
+    pub fn with_description(
+        code: impl Into<String>,
+        type_: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Self {
+        Self {
+            code: code.into(),
+            uri: None,
+            description: Some(description.into()),
+            type_: type_.into(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -435,7 +1080,10 @@ mod tests {
         );
 
         assert_eq!(sd.resource_type, "StructureDefinition");
-        assert_eq!(sd.url, "http://example.org/fhir/StructureDefinition/TestProfile");
+        assert_eq!(
+            sd.url,
+            "http://example.org/fhir/StructureDefinition/TestProfile"
+        );
         assert_eq!(sd.name, "TestProfile");
         assert_eq!(sd.type_field, "Patient");
         assert_eq!(sd.kind, StructureDefinitionKind::Resource);
@@ -460,9 +1108,18 @@ mod tests {
 
     #[test]
     fn test_binding_strength_from_str() {
-        assert_eq!(BindingStrength::from_str("required"), Some(BindingStrength::Required));
-        assert_eq!(BindingStrength::from_str("REQUIRED"), Some(BindingStrength::Required));
-        assert_eq!(BindingStrength::from_str("extensible"), Some(BindingStrength::Extensible));
+        assert_eq!(
+            BindingStrength::from_str("required"),
+            Some(BindingStrength::Required)
+        );
+        assert_eq!(
+            BindingStrength::from_str("REQUIRED"),
+            Some(BindingStrength::Required)
+        );
+        assert_eq!(
+            BindingStrength::from_str("extensible"),
+            Some(BindingStrength::Extensible)
+        );
         assert_eq!(BindingStrength::from_str("invalid"), None);
     }
 

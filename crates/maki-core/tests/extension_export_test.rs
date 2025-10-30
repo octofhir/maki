@@ -24,12 +24,9 @@ async fn create_test_session() -> Arc<maki_core::canonical::DefinitionSession> {
 #[tokio::test]
 async fn test_export_simple_extension() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(
-        session.clone(),
-        "http://example.org/fhir".to_string(),
-    )
-    .await
-    .expect("Failed to create exporter");
+    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string())
+        .await
+        .expect("Failed to create exporter");
 
     // Parse FSH extension
     let fsh = r#"
@@ -55,10 +52,16 @@ Description: "An extension for patients"
     // Validate structure
     assert_eq!(structure_def.resource_type, "StructureDefinition");
     assert_eq!(structure_def.name, "PatientExtension");
-    assert_eq!(structure_def.url, "http://example.org/fhir/Extension/PatientExtension");
+    assert_eq!(
+        structure_def.url,
+        "http://example.org/fhir/Extension/PatientExtension"
+    );
     assert_eq!(structure_def.id, Some("patient-extension".to_string()));
     assert_eq!(structure_def.title, Some("Patient Extension".to_string()));
-    assert_eq!(structure_def.description, Some("An extension for patients".to_string()));
+    assert_eq!(
+        structure_def.description,
+        Some("An extension for patients".to_string())
+    );
     assert_eq!(structure_def.type_field, "Extension");
     assert_eq!(structure_def.kind, StructureDefinitionKind::ComplexType);
     assert_eq!(
@@ -77,27 +80,33 @@ Description: "An extension for patients"
     // Check differential
     assert!(structure_def.differential.is_some());
     let differential = structure_def.differential.as_ref().unwrap();
-    assert!(!differential.element.is_empty(), "Differential should have elements");
+    assert!(
+        !differential.element.is_empty(),
+        "Differential should have elements"
+    );
 
     // Check that Extension.url is fixed
     let url_element = differential
         .element
         .iter()
         .find(|e| e.path == "Extension.url");
-    assert!(url_element.is_some(), "Extension.url should be in differential");
+    assert!(
+        url_element.is_some(),
+        "Extension.url should be in differential"
+    );
     let url_element = url_element.unwrap();
-    assert!(url_element.fixed.is_some(), "Extension.url should have fixed value");
+    assert!(
+        url_element.fixed.is_some(),
+        "Extension.url should have fixed value"
+    );
 }
 
 #[tokio::test]
 async fn test_export_extension_with_cardinality() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(
-        session.clone(),
-        "http://example.org/fhir".to_string(),
-    )
-    .await
-    .expect("Failed to create exporter");
+    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string())
+        .await
+        .expect("Failed to create exporter");
 
     // Parse FSH extension with cardinality rules
     let fsh = r#"
@@ -150,12 +159,9 @@ Description: "Race extension"
 #[tokio::test]
 async fn test_export_extension_metadata() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(
-        session.clone(),
-        "http://test.org".to_string(),
-    )
-    .await
-    .expect("Failed to create exporter");
+    let exporter = ExtensionExporter::new(session.clone(), "http://test.org".to_string())
+        .await
+        .expect("Failed to create exporter");
 
     // Parse FSH extension with all metadata
     let fsh = r#"
@@ -196,12 +202,9 @@ Description: "A test extension with metadata"
 #[tokio::test]
 async fn test_export_extension_without_id() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(
-        session.clone(),
-        "http://example.org/fhir".to_string(),
-    )
-    .await
-    .expect("Failed to create exporter");
+    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string())
+        .await
+        .expect("Failed to create exporter");
 
     // Parse FSH extension without Id
     let fsh = r#"
@@ -224,7 +227,10 @@ Title: "Minimal Extension"
 
     // Should still export successfully
     assert_eq!(structure_def.name, "MinimalExtension");
-    assert_eq!(structure_def.url, "http://example.org/fhir/Extension/MinimalExtension");
+    assert_eq!(
+        structure_def.url,
+        "http://example.org/fhir/Extension/MinimalExtension"
+    );
     // Note: id is inherited from base Extension, not overridden when not specified in FSH
     // The important thing is that we don't crash and the profile-specific metadata is set correctly
 }
@@ -232,12 +238,9 @@ Title: "Minimal Extension"
 #[tokio::test]
 async fn test_extension_structure_validation() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(
-        session.clone(),
-        "http://example.org/fhir".to_string(),
-    )
-    .await
-    .expect("Failed to create exporter");
+    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string())
+        .await
+        .expect("Failed to create exporter");
 
     let fsh = r#"
 Extension: ValidExtension

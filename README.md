@@ -7,6 +7,8 @@
 [![codecov](https://codecov.io/gh/octofhir/maki/branch/main/graph/badge.svg)](https://codecov.io/gh/octofhir/maki)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
+> **⚠️ ACTIVE DEVELOPMENT**: This project is currently in active development. APIs and features may change. Production use is not yet recommended.
+
 A high-performance toolchain for FHIR Shorthand (FSH), written in Rust.
 
 Part of the [OctoFHIR](https://github.com/octofhir) ecosystem.
