@@ -37,13 +37,13 @@ install-tools:
 test:
 	cargo nextest run --no-fail-fast || cargo test --no-fail-fast
 
-# Run tests for a specific crate (e.g., just test-crate fsh-lint-core)
+# Run tests for a specific crate (e.g., just test-crate maki-core)
 test-crate name:
 	cargo nextest run -p {{name}} --no-fail-fast || cargo test -p {{name}} --no-fail-fast
 
 # Test a specific rule by name (converts to snake_case automatically)
 test-rule name:
-	cargo test -p fsh-lint-rules -- {{snakecase(name)}} --show-output
+	cargo test -p maki-rules -- {{snakecase(name)}} --show-output
 
 # Run quick smoke tests
 test-quick:
@@ -55,26 +55,26 @@ test-doc:
 
 # Run integration tests
 test-integration:
-	cargo test --package fsh-lint-integration-tests
+	cargo test --package maki-integration-tests
 
 # Run all GritQL tests
 test-gritql:
-	cargo test --package fsh-lint-rules --test gritql_integration_test
-	cargo test --package fsh-lint-rules --test gritql_full_integration_test
-	cargo test --package fsh-lint-rules --test gritql_real_file_test
+	cargo test --package maki-rules --test gritql_integration_test
+	cargo test --package maki-rules --test gritql_full_integration_test
+	cargo test --package maki-rules --test gritql_real_file_test
 
 # Test CLI against example files
 test-examples:
-	cargo run --bin fsh-lint -- lint examples/*.fsh
+	cargo run --bin maki -- lint examples/*.fsh
 
 # Test with different config files
 test-configs:
 	@echo "Testing with base config..."
-	cargo run --bin fsh-lint -- lint --config examples/configs/base.json examples/
+	cargo run --bin maki -- lint --config examples/configs/base.json examples/
 	@echo "\nTesting with full config..."
-	cargo run --bin fsh-lint -- lint --config examples/configs/full.jsonc examples/
+	cargo run --bin maki -- lint --config examples/configs/full.jsonc examples/
 	@echo "\nTesting with minimal config..."
-	cargo run --bin fsh-lint -- lint --config examples/configs/minimal.json examples/
+	cargo run --bin maki -- lint --config examples/configs/minimal.json examples/
 
 # ============================================================================
 # Snapshot Testing (insta)
@@ -169,7 +169,7 @@ ci:
 
 # Build release binary
 build-release:
-	cargo build --release --bin fsh-lint
+	cargo build --release --bin maki
 
 # ============================================================================
 # Demo & Documentation
@@ -178,11 +178,11 @@ build-release:
 # Run the CLI on examples with pretty output
 demo:
 	@echo "=== Demo: Linting examples directory ==="
-	cargo run --bin fsh-lint -- lint examples/
+	cargo run --bin maki -- lint examples/
 	@echo "\n=== Demo: List rules ==="
-	cargo run --bin fsh-lint -- rules --detailed
+	cargo run --bin maki -- rules --detailed
 	@echo "\n=== Demo: Format check ==="
-	cargo run --bin fsh-lint -- fmt --check examples/
+	cargo run --bin maki -- fmt --check examples/
 
 # Generate and view documentation
 docs:
@@ -198,11 +198,11 @@ docs-no-open:
 
 # Run benchmarks
 bench:
-	cargo bench --package fsh-lint-bench
+	cargo bench --package maki-bench
 
 # Run specific benchmark
 bench-one name:
-	cargo bench --package fsh-lint-bench --bench {{name}}
+	cargo bench --package maki-bench --bench {{name}}
 
 # ============================================================================
 # Dependency Management
@@ -259,97 +259,97 @@ watch-clippy:
 # Validate all example configs
 validate-configs:
 	@echo "Validating configuration files..."
-	cargo run --bin fsh-lint -- config validate examples/configs/base.json
-	cargo run --bin fsh-lint -- config validate examples/configs/full.jsonc
-	cargo run --bin fsh-lint -- config validate examples/configs/minimal.json
+	cargo run --bin maki -- config validate examples/configs/base.json
+	cargo run --bin maki -- config validate examples/configs/full.jsonc
+	cargo run --bin maki -- config validate examples/configs/minimal.json
 
 # Lint examples with dry-run (show fixes without applying)
 lint-dry-run:
-	cargo run --bin fsh-lint -- lint --dry-run examples/
+	cargo run --bin maki -- lint --dry-run examples/
 
 # Apply safe autofixes to examples
 lint-write:
-	cargo run --bin fsh-lint -- lint --write examples/
+	cargo run --bin maki -- lint --write examples/
 
 # Show rule documentation
 show-rule rule:
-	cargo run --bin fsh-lint -- rules explain {{rule}}
+	cargo run --bin maki -- rules explain {{rule}}
 
 # List all available rules
 list-rules:
-	cargo run --bin fsh-lint -- rules
+	cargo run --bin maki -- rules
 
 # Search rules by query
 search-rules query:
-	cargo run --bin fsh-lint -- rules search {{query}}
+	cargo run --bin maki -- rules search {{query}}
 
 # Lint examples and output JSON
 lint-json:
-	cargo run --bin fsh-lint -- lint --format json examples/
+	cargo run --bin maki -- lint --format json examples/
 
 # Lint examples and output SARIF
 lint-sarif:
-	cargo run --bin fsh-lint -- lint --format sarif examples/
+	cargo run --bin maki -- lint --format sarif examples/
 
 # Lint examples and output compact format
 lint-compact:
-	cargo run --bin fsh-lint -- lint --format compact examples/
+	cargo run --bin maki -- lint --format compact examples/
 
 # Lint examples in GitHub Actions format
 lint-github:
-	cargo run --bin fsh-lint -- lint --format github examples/
+	cargo run --bin maki -- lint --format github examples/
 
 # Format examples (dry-run by default)
 fmt-examples:
-	cargo run --bin fsh-lint -- fmt examples/
+	cargo run --bin maki -- fmt examples/
 
 # Format examples and write changes
 fmt-write:
-	cargo run --bin fsh-lint -- fmt --write examples/
+	cargo run --bin maki -- fmt --write examples/
 
 # Format examples and show diff
 fmt-diff:
-	cargo run --bin fsh-lint -- fmt --diff examples/
+	cargo run --bin maki -- fmt --diff examples/
 
 # Check if examples are formatted correctly
 fmt-check:
-	cargo run --bin fsh-lint -- fmt --check examples/
+	cargo run --bin maki -- fmt --check examples/
 
 # Initialize a new config file (JSON)
 config-init:
-	cargo run --bin fsh-lint -- config init
+	cargo run --bin maki -- config init
 
 # Initialize a new config file with examples
 config-init-examples:
-	cargo run --bin fsh-lint -- config init --with-examples
+	cargo run --bin maki -- config init --with-examples
 
 # Initialize a new config file (TOML)
 config-init-toml:
-	cargo run --bin fsh-lint -- config init --format toml
+	cargo run --bin maki -- config init --format toml
 
 # Validate current config file
 config-validate:
-	cargo run --bin fsh-lint -- config validate
+	cargo run --bin maki -- config validate
 
 # Show current configuration
 config-show:
-	cargo run --bin fsh-lint -- config show
+	cargo run --bin maki -- config show
 
 # Show resolved configuration
 config-show-resolved:
-	cargo run --bin fsh-lint -- config show --resolved
+	cargo run --bin maki -- config show --resolved
 
 # Generate shell completions (bash)
 gen-completions shell="bash":
-	cargo run --bin fsh-lint -- --generate-completion {{shell}}
+	cargo run --bin maki -- --generate-completion {{shell}}
 
 # Show version information
 version:
-	cargo run --bin fsh-lint -- version
+	cargo run --bin maki -- version
 
 # Show detailed version information
 version-detailed:
-	cargo run --bin fsh-lint -- version --detailed
+	cargo run --bin maki -- version --detailed
 
 # ============================================================================
 # Real-world Testing Commands
@@ -357,28 +357,28 @@ version-detailed:
 
 # Lint mcode-ig example project
 lint-mcode:
-	cargo run --bin fsh-lint -- lint examples/mcode-ig/
+	cargo run --bin maki -- lint examples/mcode-ig/
 
 # Lint mcode-ig with verbose output
 lint-mcode-verbose:
-	cargo run --bin fsh-lint -- lint -vv examples/mcode-ig/
+	cargo run --bin maki -- lint -vv examples/mcode-ig/
 
 # Lint mcode-ig and show statistics
 lint-mcode-stats:
-	cargo run --bin fsh-lint -- lint --progress examples/mcode-ig/
+	cargo run --bin maki -- lint --progress examples/mcode-ig/
 
 # Format mcode-ig example project (dry-run)
 fmt-mcode:
-	cargo run --bin fsh-lint -- fmt examples/mcode-ig/
+	cargo run --bin maki -- fmt examples/mcode-ig/
 
 # Test lint on all example directories
 test-all-examples:
 	@echo "Testing examples/..."
-	cargo run --bin fsh-lint -- lint examples/*.fsh
+	cargo run --bin maki -- lint examples/*.fsh
 	@echo "\nTesting examples/gritql/..."
-	cargo run --bin fsh-lint -- lint examples/gritql/
+	cargo run --bin maki -- lint examples/gritql/
 	@echo "\nTesting examples/mcode-ig/..."
-	cargo run --bin fsh-lint -- lint examples/mcode-ig/
+	cargo run --bin maki -- lint examples/mcode-ig/
 
 # ============================================================================
 # Development Utilities
@@ -394,11 +394,11 @@ build-all:
 
 # Build and install the CLI locally
 install:
-	cargo install --path crates/fsh-lint-cli --force
+	cargo install --path crates/maki-cli --force
 
 # Uninstall the CLI
 uninstall:
-	cargo uninstall fsh-lint
+	cargo uninstall maki
 
 # Show workspace dependency tree
 tree:
@@ -422,7 +422,7 @@ security-audit:
 
 # Run cargo bloat to analyze binary size
 bloat:
-	cargo bloat --release --bin fsh-lint
+	cargo bloat --release --bin maki
 
 # Run cargo bloat for specific crate
 bloat-crate name:
@@ -432,13 +432,13 @@ bloat-crate name:
 profile-parse:
 	cargo build --release
 	@echo "Profiling parser on examples/mcode-ig..."
-	hyperfine './target/release/fsh-lint lint examples/mcode-ig/ --format compact'
+	hyperfine './target/release/maki lint examples/mcode-ig/ --format compact'
 
 # Profile formatting performance
 profile-fmt:
 	cargo build --release
 	@echo "Profiling formatter on examples/mcode-ig..."
-	hyperfine './target/release/fsh-lint fmt --check examples/mcode-ig/'
+	hyperfine './target/release/maki fmt --check examples/mcode-ig/'
 
 # ============================================================================
 # Cleanup & Maintenance
@@ -467,5 +467,5 @@ clean-snapshots:
 # Create a new builtin rule stub (CST/AST-based)
 new-builtin-rule name category:
 	@echo "Creating new builtin rule: {{name}} in category {{category}}"
-	@echo "// TODO: Implement rule {{name}}" >> crates/fsh-lint-rules/src/builtin/{{snakecase(category)}}.rs
+	@echo "// TODO: Implement rule {{name}}" >> crates/maki-rules/src/builtin/{{snakecase(category)}}.rs
 	just format

@@ -204,9 +204,9 @@
       "type": "object"
     }
   },
-  "$id": "https://octofhir.github.io/fsh-lint-rs/schema/v1.json",
+  "$id": "https://octofhir.github.io/maki-rs/schema/v1.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "description": "Configuration file schema for fsh-lint - validates fsh-lint.json and fsh-lint.jsonc files",
+  "description": "Configuration file schema for maki - validates maki.json and maki.jsonc files",
   "properties": {
     "extends": {
       "description": "Inherit from other config files (relative or absolute paths)",

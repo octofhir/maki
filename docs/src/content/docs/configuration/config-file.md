@@ -3,17 +3,17 @@ title: Configuration File
 description: Learn how to configure FSH Lint
 ---
 
-FSH Lint uses a `fsh-lint.json` or `fsh-lint.jsonc` configuration file.
+FSH Lint uses a `maki.json` or `maki.jsonc` configuration file.
 
 ## Creating a Config File
 
 Run the init command to create a default configuration:
 
 ```bash
-fsh-lint init
+maki init
 ```
 
-This creates `fsh-lint.json` in your current directory with recommended defaults.
+This creates `maki.json` in your current directory with recommended defaults.
 
 ## Config File Format
 
@@ -21,7 +21,7 @@ This creates `fsh-lint.json` in your current directory with recommended defaults
 
 ```jsonc
 {
-  "$schema": "https://octofhir.github.io/fsh-lint-rs/schema/v1.json",
+  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json",
   "root": true,
   "linter": {
     "enabled": true,
@@ -36,7 +36,7 @@ This creates `fsh-lint.json` in your current directory with recommended defaults
 
 ```jsonc
 {
-  "$schema": "https://octofhir.github.io/fsh-lint-rs/schema/v1.json",
+  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json",
   "root": true,
 
   // Extend from base config
@@ -83,7 +83,7 @@ The `$schema` field enables IDE autocomplete and validation:
 
 ```jsonc
 {
-  "$schema": "https://octofhir.github.io/fsh-lint-rs/schema/v1.json"
+  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json"
 }
 ```
 
@@ -112,7 +112,7 @@ Inherit from other config files:
 FSH Lint automatically searches for config files by:
 
 1. Starting from current directory
-2. Looking for `fsh-lint.jsonc` or `fsh-lint.json`
+2. Looking for `maki.jsonc` or `maki.json`
 3. Moving up to parent directories
 4. Stopping at `root: true` or filesystem root
 

@@ -54,8 +54,8 @@ jobs:
 
       - name: Generate schema and config examples
         run: |
-          cargo build --release --bin fsh-lint-devtools
-          cargo run --release --bin fsh-lint-devtools -- generate-all -o docs
+          cargo build --release --bin maki-devtools
+          cargo run --release --bin maki-devtools -- generate-all -o docs
 
       - name: Build Astro site
         working-directory: docs

@@ -18,7 +18,7 @@ const gritqlGrammar = JSON.parse(
 // https://astro.build/config
 export default defineConfig({
 	site: 'https://octofhir.github.io',
-	base: '/fsh-lint-rs/',  // Important: subpath for GitHub Pages
+	base: '/maki-rs/',  // Important: subpath for GitHub Pages
 
 	integrations: [
 		starlight({
@@ -31,11 +31,11 @@ export default defineConfig({
 			},
 
 			social: [
-				{ icon: 'github', label: 'GitHub', href: 'https://github.com/octofhir/fsh-lint-rs' },
+				{ icon: 'github', label: 'GitHub', href: 'https://github.com/octofhir/maki-rs' },
 			],
 
 			editLink: {
-				baseUrl: 'https://github.com/octofhir/fsh-lint-rs/edit/main/docs/',
+				baseUrl: 'https://github.com/octofhir/maki-rs/edit/main/docs/',
 			},
 
 			expressiveCode: {
@@ -108,7 +108,7 @@ export default defineConfig({
 					tag: 'meta',
 					attrs: {
 						property: 'og:image',
-						content: 'https://octofhir.github.io/fsh-lint-rs/og-image.png',
+						content: 'https://octofhir.github.io/maki-rs/og-image.png',
 					},
 				},
 			],

@@ -35,7 +35,7 @@ Ensures that Profiles, CodeSystems, and ValueSets have required fields (Name, Id
 }
 ```
 
-**Learn more**: [Required Field Present](https://octofhir.github.io/fsh-lint-rs/rules/correctness/required-field-present)
+**Learn more**: [Required Field Present](https://octofhir.github.io/maki-rs/rules/correctness/required-field-present)
 
 ---
 
@@ -62,7 +62,7 @@ Detects invalid cardinality expressions such as reversed bounds (1..0), invalid 
 }
 ```
 
-**Learn more**: [Invalid Cardinality](https://octofhir.github.io/fsh-lint-rs/rules/correctness/invalid-cardinality)
+**Learn more**: [Invalid Cardinality](https://octofhir.github.io/maki-rs/rules/correctness/invalid-cardinality)
 
 ---
 
@@ -89,7 +89,7 @@ Ensures that bindings to value sets specify strength (required, extensible, pref
 }
 ```
 
-**Learn more**: [Binding Strength Present](https://octofhir.github.io/fsh-lint-rs/rules/correctness/binding-strength-present)
+**Learn more**: [Binding Strength Present](https://octofhir.github.io/maki-rs/rules/correctness/binding-strength-present)
 
 ---
 
@@ -116,7 +116,7 @@ Prevents duplicate resource names, IDs, and canonical URLs which would cause con
 }
 ```
 
-**Learn more**: [Duplicate Definition](https://octofhir.github.io/fsh-lint-rs/rules/correctness/duplicate-definition)
+**Learn more**: [Duplicate Definition](https://octofhir.github.io/maki-rs/rules/correctness/duplicate-definition)
 
 ---
 

@@ -5,12 +5,12 @@ description: FSH Lint command-line interface reference
 
 Complete reference for all FSH Lint commands.
 
-## `fsh-lint lint`
+## `maki lint`
 
 Lint FSH files and report diagnostics.
 
 ```bash
-fsh-lint lint [OPTIONS] <FILES>...
+maki lint [OPTIONS] <FILES>...
 ```
 
 ### Options
@@ -26,24 +26,24 @@ fsh-lint lint [OPTIONS] <FILES>...
 
 ```bash
 # Lint all FSH files
-fsh-lint lint **/*.fsh
+maki lint **/*.fsh
 
 # Lint with automatic fixes
-fsh-lint lint --fix input/fsh/*.fsh
+maki lint --fix input/fsh/*.fsh
 
 # Show only errors
-fsh-lint lint --severity error **/*.fsh
+maki lint --severity error **/*.fsh
 
 # Output JSON format
-fsh-lint lint --format json **/*.fsh > diagnostics.json
+maki lint --format json **/*.fsh > diagnostics.json
 ```
 
-## `fsh-lint format`
+## `maki format`
 
 Format FSH files.
 
 ```bash
-fsh-lint format [OPTIONS] <FILES>...
+maki format [OPTIONS] <FILES>...
 ```
 
 ### Options
@@ -56,41 +56,41 @@ fsh-lint format [OPTIONS] <FILES>...
 
 ```bash
 # Format all FSH files
-fsh-lint format **/*.fsh
+maki format **/*.fsh
 
 # Check formatting without modifying
-fsh-lint format --check **/*.fsh
+maki format --check **/*.fsh
 ```
 
-## `fsh-lint init`
+## `maki init`
 
 Initialize configuration file.
 
 ```bash
-fsh-lint init [OPTIONS]
+maki init [OPTIONS]
 ```
 
 ### Options
 
 - `--full` - Generate full example configuration
-- `--output <PATH>` - Output path (default: `fsh-lint.json`)
+- `--output <PATH>` - Output path (default: `maki.json`)
 
 ### Examples
 
 ```bash
 # Create default config
-fsh-lint init
+maki init
 
 # Create full example
-fsh-lint init --full
+maki init --full
 ```
 
-## `fsh-lint rules`
+## `maki rules`
 
 List available rules.
 
 ```bash
-fsh-lint rules [OPTIONS]
+maki rules [OPTIONS]
 ```
 
 ### Options
@@ -103,21 +103,21 @@ fsh-lint rules [OPTIONS]
 
 ```bash
 # List all rules
-fsh-lint rules
+maki rules
 
 # Show detailed info for a category
-fsh-lint rules --detailed --category style
+maki rules --detailed --category style
 
 # Search for specific rules
-fsh-lint rules --search naming
+maki rules --search naming
 ```
 
-## `fsh-lint check`
+## `maki check`
 
 Check configuration validity.
 
 ```bash
-fsh-lint check [OPTIONS]
+maki check [OPTIONS]
 ```
 
 ### Options
@@ -128,10 +128,10 @@ fsh-lint check [OPTIONS]
 
 ```bash
 # Check default config
-fsh-lint check
+maki check
 
 # Check specific config
-fsh-lint check --config custom-config.json
+maki check --config custom-config.json
 ```
 
 ## Global Options

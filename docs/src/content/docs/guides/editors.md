@@ -24,7 +24,7 @@ Add to `.vscode/settings.json`:
 {
   "fsh.lint.enabled": true,
   "fsh.lint.run": "onType",
-  "fsh.lint.path": "fsh-lint",
+  "fsh.lint.path": "maki",
   "fsh.lint.autoFixOnSave": true
 }
 ```
@@ -40,7 +40,7 @@ Create `.vscode/tasks.json`:
     {
       "label": "FSH Lint",
       "type": "shell",
-      "command": "fsh-lint",
+      "command": "maki",
       "args": ["lint", "${workspaceFolder}/**/*.fsh"],
       "problemMatcher": []
     }
@@ -58,7 +58,7 @@ Create `.vscode/tasks.json`:
    - Name: FSH Lint
    - File type: FSH (or Custom)
    - Scope: Project Files
-   - Program: `fsh-lint`
+   - Program: `maki`
    - Arguments: `lint --fix $FilePath$`
    - Working directory: `$ProjectFileDir$`
 
@@ -70,11 +70,11 @@ Add to `.vimrc` or `init.vim`:
 
 ```vim
 let g:ale_linters = {
-\   'fsh': ['fsh-lint'],
+\   'fsh': ['maki'],
 \}
 
 let g:ale_fixers = {
-\   'fsh': ['fsh-lint'],
+\   'fsh': ['maki'],
 \}
 
 let g:ale_fix_on_save = 1
@@ -93,15 +93,15 @@ Add to your Emacs config:
 ```elisp
 (require 'flycheck)
 
-(flycheck-define-checker fsh-lint
-  "FSH linter using fsh-lint."
-  :command ("fsh-lint" "lint" source)
+(flycheck-define-checker maki
+  "FSH linter using maki."
+  :command ("maki" "lint" source)
   :error-patterns
   ((error line-start (file-name) ":" line ":" column ": error: " (message))
    (warning line-start (file-name) ":" line ":" column ": warning: " (message)))
   :modes (fsh-mode))
 
-(add-to-list 'flycheck-checkers 'fsh-lint)
+(add-to-list 'flycheck-checkers 'maki)
 ```
 
 ## Sublime Text
@@ -114,8 +114,8 @@ Add to your Emacs config:
 ```python
 from SublimeLinter.lint import Linter
 
-class FshLint(Linter):
-    cmd = 'fsh-lint lint ${file}'
+class Maki(Linter):
+    cmd = 'maki lint ${file}'
     regex = r'^.+:(?P<line>\d+):(?P<col>\d+):\s+(?:(?P<error>error)|(?P<warning>warning)):\s+(?P<message>.+)$'
     tempfile_suffix = 'fsh'
 ```
@@ -129,13 +129,13 @@ For editors without specific plugins:
 Configure your editor to run on save:
 
 ```bash
-fsh-lint lint --fix /path/to/file.fsh
+maki lint --fix /path/to/file.fsh
 ```
 
 ### External Tool
 
 Set up FSH Lint as an external tool with:
-- Command: `fsh-lint`
+- Command: `maki`
 - Arguments: `lint --fix $FILE`
 - Working directory: `$PROJECT_DIR`
 
@@ -157,7 +157,7 @@ Add to your editor's PATH or specify full path:
 
 ```json
 {
-  "fsh.lint.path": "/usr/local/bin/fsh-lint"
+  "fsh.lint.path": "/usr/local/bin/maki"
 }
 ```
 

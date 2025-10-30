@@ -19,13 +19,13 @@ We are committed to providing a welcoming and inspiring community for all. Pleas
 1. Fork the repository on GitHub
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/fsh-lint-rs.git
-   cd fsh-lint-rs
+   git clone https://github.com/YOUR_USERNAME/maki-rs.git
+   cd maki-rs
    ```
 
 3. Add the upstream repository:
    ```bash
-   git remote add upstream https://github.com/octofhir/fsh-lint-rs.git
+   git remote add upstream https://github.com/octofhir/maki-rs.git
    ```
 
 4. Build the project:
@@ -43,9 +43,9 @@ We are committed to providing a welcoming and inspiring community for all. Pleas
 This is a Rust workspace with the following crates:
 
 ```
-fsh-lint-rs/
+maki-rs/
 ├── crates/
-│   ├── fsh-lint-core/        # Core linting engine
+│   ├── maki-core/        # Core linting engine
 │   │   ├── src/
 │   │   │   ├── cst/           # Concrete Syntax Tree implementation
 │   │   │   ├── config/        # Configuration system
@@ -56,20 +56,20 @@ fsh-lint-rs/
 │   │   │   └── formatter.rs   # Code formatter
 │   │   └── tests/             # Core tests
 │   │
-│   ├── fsh-lint-rules/        # Rule engine and built-in rules
+│   ├── maki-rules/        # Rule engine and built-in rules
 │   │   ├── src/
 │   │   │   ├── builtin/       # Built-in rules
 │   │   │   ├── gritql/        # GritQL integration
 │   │   │   └── engine.rs      # Rule execution engine
 │   │   └── tests/             # Rule tests
 │   │
-│   ├── fsh-lint-cli/          # Command-line interface
+│   ├── maki-cli/          # Command-line interface
 │   │   ├── src/
 │   │   │   ├── commands.rs    # CLI commands
 │   │   │   └── output.rs      # Output formatting
 │   │   └── tests/             # CLI tests
 │   │
-│   └── fsh-lint-devtools/     # Developer tools
+│   └── maki-devtools/     # Developer tools
 │       └── src/
 │           └── schema.rs      # Schema generation
 │
@@ -138,12 +138,12 @@ chore: update dependencies
 
 ## Adding a New Built-in Rule
 
-1. Create a new file in `crates/fsh-lint-rules/src/builtin/` (or add to an existing category file)
+1. Create a new file in `crates/maki-rules/src/builtin/` (or add to an existing category file)
 
 2. Implement your rule:
    ```rust
    use crate::engine::{Rule, RuleCategory, RuleSeverity, RuleContext};
-   use fsh_lint_core::diagnostics::Diagnostic;
+   use maki_core::diagnostics::Diagnostic;
 
    pub struct MyNewRule;
 
@@ -175,7 +175,7 @@ chore: update dependencies
    }
    ```
 
-3. Register your rule in `crates/fsh-lint-rules/src/builtin/mod.rs`:
+3. Register your rule in `crates/maki-rules/src/builtin/mod.rs`:
    ```rust
    pub fn all_builtin_rules() -> Vec<Box<dyn Rule>> {
        vec![
@@ -185,11 +185,11 @@ chore: update dependencies
    }
    ```
 
-4. Add tests for your rule in `crates/fsh-lint-rules/tests/`
+4. Add tests for your rule in `crates/maki-rules/tests/`
 
 5. Update documentation by running:
    ```bash
-   cargo run --bin fsh-lint-devtools -- generate-rule-docs
+   cargo run --bin maki-devtools -- generate-rule-docs
    ```
 
 ## Writing Custom GritQL Rules
@@ -209,9 +209,9 @@ GritQL rules are pattern-matching rules that can be written without Rust code:
    }
    ```
 
-3. Test your GritQL pattern in `crates/fsh-lint-rules/tests/gritql_integration_test.rs`
+3. Test your GritQL pattern in `crates/maki-rules/tests/gritql_integration_test.rs`
 
-See [Writing Custom Rules Guide](https://octofhir.github.io/fsh-lint-rs/guides/custom-rules/) for more details.
+See [Writing Custom Rules Guide](https://octofhir.github.io/maki-rs/guides/custom-rules/) for more details.
 
 ## Running Tests
 
@@ -220,9 +220,9 @@ See [Writing Custom Rules Guide](https://octofhir.github.io/fsh-lint-rs/guides/c
 cargo test --workspace
 
 # Run tests for a specific crate
-cargo test --package fsh-lint-core
-cargo test --package fsh-lint-rules
-cargo test --package fsh-lint-cli
+cargo test --package maki-core
+cargo test --package maki-rules
+cargo test --package maki-cli
 
 # Run a specific test
 cargo test test_name
@@ -357,7 +357,7 @@ cargo insta review
 
 When reporting bugs, please include:
 
-- FSH Lint version (`fsh-lint --version`)
+- FSH Lint version (`maki --version`)
 - Operating system
 - Minimal reproducible example
 - Expected vs actual behavior
@@ -394,9 +394,9 @@ Visit http://localhost:4321 to view the docs.
 
 ## Getting Help
 
-- **Documentation**: https://octofhir.github.io/fsh-lint-rs/
-- **GitHub Issues**: https://github.com/octofhir/fsh-lint-rs/issues
-- **Discussions**: https://github.com/octofhir/fsh-lint-rs/discussions
+- **Documentation**: https://octofhir.github.io/maki-rs/
+- **GitHub Issues**: https://github.com/octofhir/maki-rs/issues
+- **Discussions**: https://github.com/octofhir/maki-rs/discussions
 
 ## Useful Resources
 

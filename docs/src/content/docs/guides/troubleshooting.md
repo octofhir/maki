@@ -9,7 +9,7 @@ Solutions to common problems when using FSH Lint.
 
 ### Cargo Install Fails
 
-**Problem**: `cargo install fsh-lint` fails
+**Problem**: `cargo install maki` fails
 
 **Solutions**:
 
@@ -21,17 +21,17 @@ rustup update stable
 2. Clear cargo cache:
 ```bash
 rm -rf ~/.cargo/registry
-cargo install fsh-lint
+cargo install maki
 ```
 
 3. Build with verbose output:
 ```bash
-cargo install fsh-lint -v
+cargo install maki -v
 ```
 
 ### Binary Not Found
 
-**Problem**: `fsh-lint: command not found`
+**Problem**: `maki: command not found`
 
 **Solution**: Add Cargo bin to PATH:
 
@@ -50,7 +50,7 @@ Add to `.bashrc` or `.zshrc` for persistence.
 **Solution**: Create config in project root:
 
 ```bash
-fsh-lint init
+maki init
 ```
 
 ### Invalid Configuration
@@ -60,7 +60,7 @@ fsh-lint init
 **Solution**: Validate against schema:
 
 ```bash
-fsh-lint check --config fsh-lint.json
+maki check --config maki.json
 ```
 
 ## Linting Issues
@@ -73,12 +73,12 @@ fsh-lint check --config fsh-lint.json
 
 1. Start with errors only:
 ```bash
-fsh-lint lint --severity error **/*.fsh
+maki lint --severity error **/*.fsh
 ```
 
 2. Fix automatically:
 ```bash
-fsh-lint lint --fix **/*.fsh
+maki lint --fix **/*.fsh
 ```
 
 3. Temporarily disable rules:
@@ -100,7 +100,7 @@ fsh-lint lint --fix **/*.fsh
 
 1. Disable inline:
 ```fsh
-// fsh-lint-disable-next-line rule-name
+// maki-disable-next-line rule-name
 Profile: MyProfile
 ```
 
@@ -134,7 +134,7 @@ Profile: MyProfile
 
 2. Limit file scope:
 ```bash
-fsh-lint lint input/fsh/ --ignore-pattern "**/*.generated.fsh"
+maki lint input/fsh/ --ignore-pattern "**/*.generated.fsh"
 ```
 
 ### High Memory Usage
@@ -144,7 +144,7 @@ fsh-lint lint input/fsh/ --ignore-pattern "**/*.generated.fsh"
 **Solution**: Process files in batches:
 
 ```bash
-find . -name "*.fsh" -print0 | xargs -0 -n 10 fsh-lint lint
+find . -name "*.fsh" -print0 | xargs -0 -n 10 maki lint
 ```
 
 ## CI/CD Issues
@@ -158,8 +158,8 @@ find . -name "*.fsh" -print0 | xargs -0 -n 10 fsh-lint lint
 ```yaml
 - name: Download FSH Lint
   run: |
-    curl -L https://github.com/octofhir/fsh-lint-rs/releases/latest/download/fsh-lint-linux.tar.gz | tar xz
-    sudo mv fsh-lint /usr/local/bin/
+    curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-linux.tar.gz | tar xz
+    sudo mv maki /usr/local/bin/
 ```
 
 ### Inconsistent Results
@@ -169,7 +169,7 @@ find . -name "*.fsh" -print0 | xargs -0 -n 10 fsh-lint lint
 **Solution**: Pin FSH Lint version:
 
 ```bash
-cargo install fsh-lint --version 0.1.0
+cargo install maki --version 0.1.0
 ```
 
 ## Output Issues
@@ -181,7 +181,7 @@ cargo install fsh-lint --version 0.1.0
 **Solution**: Force color output:
 
 ```bash
-fsh-lint --color always lint **/*.fsh
+maki --color always lint **/*.fsh
 ```
 
 ### Garbled Output
@@ -192,17 +192,17 @@ fsh-lint --color always lint **/*.fsh
 
 ```bash
 export LANG=en_US.UTF-8
-fsh-lint lint **/*.fsh
+maki lint **/*.fsh
 ```
 
 ## Getting Help
 
 If you're still stuck:
 
-1. Check [GitHub Issues](https://github.com/octofhir/fsh-lint-rs/issues)
-2. Search [Discussions](https://github.com/octofhir/fsh-lint-rs/discussions)
+1. Check [GitHub Issues](https://github.com/octofhir/maki-rs/issues)
+2. Search [Discussions](https://github.com/octofhir/maki-rs/discussions)
 3. Open a new issue with:
-   - FSH Lint version (`fsh-lint --version`)
+   - FSH Lint version (`maki --version`)
    - OS and version
    - Minimal reproduction example
    - Full error output
@@ -225,4 +225,4 @@ If you're still stuck:
 
 **Cause**: Referenced rule doesn't exist
 
-**Solution**: Run `fsh-lint rules` to see available rules
+**Solution**: Run `maki rules` to see available rules

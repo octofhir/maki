@@ -33,7 +33,7 @@ Ensures that Profiles, CodeSystems, and ValueSets have required fields (Name, Id
 }
 ```
 
-**Learn more**: [Required Field Present](https://octofhir.github.io/fsh-lint-rs/rules/correctness/required-field-present)
+**Learn more**: [Required Field Present](https://octofhir.github.io/maki-rs/rules/correctness/required-field-present)
 
 ---
 
@@ -60,7 +60,7 @@ Detects invalid cardinality expressions such as reversed bounds (1..0), invalid 
 }
 ```
 
-**Learn more**: [Invalid Cardinality](https://octofhir.github.io/fsh-lint-rs/rules/correctness/invalid-cardinality)
+**Learn more**: [Invalid Cardinality](https://octofhir.github.io/maki-rs/rules/correctness/invalid-cardinality)
 
 ---
 
@@ -87,7 +87,7 @@ Ensures that bindings to value sets specify strength (required, extensible, pref
 }
 ```
 
-**Learn more**: [Binding Strength Present](https://octofhir.github.io/fsh-lint-rs/rules/correctness/binding-strength-present)
+**Learn more**: [Binding Strength Present](https://octofhir.github.io/maki-rs/rules/correctness/binding-strength-present)
 
 ---
 
@@ -114,7 +114,7 @@ Prevents duplicate resource names, IDs, and canonical URLs which would cause con
 }
 ```
 
-**Learn more**: [Duplicate Definition](https://octofhir.github.io/fsh-lint-rs/rules/correctness/duplicate-definition)
+**Learn more**: [Duplicate Definition](https://octofhir.github.io/maki-rs/rules/correctness/duplicate-definition)
 
 ---
 
@@ -141,7 +141,7 @@ Detects invalid or misspelled FSH keywords like 'Profil' instead of 'Profile'
 }
 ```
 
-**Learn more**: [Invalid Keyword](https://octofhir.github.io/fsh-lint-rs/rules/correctness/invalid-keyword)
+**Learn more**: [Invalid Keyword](https://octofhir.github.io/maki-rs/rules/correctness/invalid-keyword)
 
 ---
 
@@ -168,7 +168,7 @@ Detects malformed alias declarations with syntax errors
 }
 ```
 
-**Learn more**: [Malformed Alias](https://octofhir.github.io/fsh-lint-rs/rules/correctness/malformed-alias)
+**Learn more**: [Malformed Alias](https://octofhir.github.io/maki-rs/rules/correctness/malformed-alias)
 
 ---
 
@@ -195,7 +195,7 @@ Detects invalid caret path syntax in FSH rules
 }
 ```
 
-**Learn more**: [Invalid Caret Path](https://octofhir.github.io/fsh-lint-rs/rules/correctness/invalid-caret-path)
+**Learn more**: [Invalid Caret Path](https://octofhir.github.io/maki-rs/rules/correctness/invalid-caret-path)
 
 ---
 
@@ -222,7 +222,7 @@ Detects profile declarations without proper identifiers
 }
 ```
 
-**Learn more**: [Missing Profile ID](https://octofhir.github.io/fsh-lint-rs/rules/correctness/missing-profile-id)
+**Learn more**: [Missing Profile ID](https://octofhir.github.io/maki-rs/rules/correctness/missing-profile-id)
 
 ---
 
@@ -249,7 +249,7 @@ Detects invalid identifier syntax in FSH files
 }
 ```
 
-**Learn more**: [Invalid Identifier](https://octofhir.github.io/fsh-lint-rs/rules/correctness/invalid-identifier)
+**Learn more**: [Invalid Identifier](https://octofhir.github.io/maki-rs/rules/correctness/invalid-identifier)
 
 ---
 
@@ -276,7 +276,7 @@ Detects invalid slicing rule syntax and semantic issues
 }
 ```
 
-**Learn more**: [Invalid Slicing](https://octofhir.github.io/fsh-lint-rs/rules/correctness/invalid-slicing)
+**Learn more**: [Invalid Slicing](https://octofhir.github.io/maki-rs/rules/correctness/invalid-slicing)
 
 ---
 
@@ -303,7 +303,7 @@ Detects duplicate canonical URLs across FHIR resources
 }
 ```
 
-**Learn more**: [Duplicate Canonical URL](https://octofhir.github.io/fsh-lint-rs/rules/correctness/duplicate-canonical-url)
+**Learn more**: [Duplicate Canonical URL](https://octofhir.github.io/maki-rs/rules/correctness/duplicate-canonical-url)
 
 ---
 
@@ -330,7 +330,7 @@ Detects duplicate resource identifiers within FSH files
 }
 ```
 
-**Learn more**: [Duplicate Identifier](https://octofhir.github.io/fsh-lint-rs/rules/correctness/duplicate-identifier)
+**Learn more**: [Duplicate Identifier](https://octofhir.github.io/maki-rs/rules/correctness/duplicate-identifier)
 
 ---
 
@@ -357,7 +357,7 @@ Detects invalid constraint expressions and FHIRPath syntax
 }
 ```
 
-**Learn more**: [Invalid Constraint](https://octofhir.github.io/fsh-lint-rs/rules/correctness/invalid-constraint)
+**Learn more**: [Invalid Constraint](https://octofhir.github.io/maki-rs/rules/correctness/invalid-constraint)
 
 ---
 
@@ -384,7 +384,7 @@ Detects profiles without explicit parent profile declarations
 }
 ```
 
-**Learn more**: [Missing Parent Profile](https://octofhir.github.io/fsh-lint-rs/rules/correctness/missing-parent-profile)
+**Learn more**: [Missing Parent Profile](https://octofhir.github.io/maki-rs/rules/correctness/missing-parent-profile)
 
 ---
 
@@ -411,7 +411,7 @@ Detects invalid status values in FHIR resource metadata
 }
 ```
 
-**Learn more**: [Invalid Status](https://octofhir.github.io/fsh-lint-rs/rules/correctness/invalid-status)
+**Learn more**: [Invalid Status](https://octofhir.github.io/maki-rs/rules/correctness/invalid-status)
 
 ---
 
@@ -438,7 +438,7 @@ Ensures that profiles have ^status and ^abstract assignments, and Parent declara
 }
 ```
 
-**Learn more**: [Profile Assignment Present](https://octofhir.github.io/fsh-lint-rs/rules/correctness/profile-assignment-present)
+**Learn more**: [Profile Assignment Present](https://octofhir.github.io/maki-rs/rules/correctness/profile-assignment-present)
 
 ---
 
@@ -465,7 +465,7 @@ Ensures that extensions have ^context specifications indicating where they can b
 }
 ```
 
-**Learn more**: [Extension Context Missing](https://octofhir.github.io/fsh-lint-rs/rules/correctness/extension-context-missing)
+**Learn more**: [Extension Context Missing](https://octofhir.github.io/maki-rs/rules/correctness/extension-context-missing)
 
 ---
 

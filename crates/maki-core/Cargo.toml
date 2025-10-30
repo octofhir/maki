@@ -1,0 +1,52 @@
+[package]
+name = "maki-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Core MAKI engine for parsing, linting, and analyzing FHIR Shorthand (FSH) projects"
+
+[dependencies]
+chumsky = { workspace = true }
+ariadne = { workspace = true }
+rowan = { workspace = true }
+biome_text_size = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+json5 = "0.4"                             # JSONC support (comments + trailing commas)
+schemars = "1.0"                          # JSON Schema generation
+tokio = { workspace = true }
+rayon = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+walkdir = { workspace = true }
+glob = { workspace = true }
+notify = { workspace = true }
+dashmap = { workspace = true }
+octofhir-canonical-manager = { workspace = true }
+regex = "1.10"
+is-terminal = "0.4"
+
+# Terminal/console output
+term_size = "0.3"     # Terminal width detection
+unicode-width = "0.2" # Unicode character width calculation
+
+# Diff rendering
+similar = { version = "2.6", features = [
+  "inline",
+] } # Text diffing for suggestions
+
+[dev-dependencies]
+octofhir-canonical-manager = { workspace = true, features = ["test-utils"] }
+criterion = { workspace = true }
+insta = { workspace = true }
+tokio-test = "0.4"
+tempfile = "3.8"
+wiremock = "0.6"
+flate2 = "1.0"
+tar = "0.4"

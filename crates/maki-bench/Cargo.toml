@@ -1,0 +1,18 @@
+[package]
+name = "maki-bench"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+criterion = { workspace = true }
+maki-core = { path = "../maki-core" }
+maki-rules = { path = "../maki-rules" }
+
+[[bench]]
+name = "lint_benchmark"
+harness = false

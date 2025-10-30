@@ -1,11 +1,11 @@
 [workspace]
 members = [
-  "crates/fsh-lint-core",
-  "crates/fsh-lint-cli",
-  "crates/fsh-lint-rules",
-  "crates/fsh-lint-devtools",
-  "crates/fsh-lint-bench",
-  "crates/fsh-lint-integration-tests",
+  "crates/maki-core",
+  "crates/maki-cli",
+  "crates/maki-rules",
+  "crates/maki-devtools",
+  "crates/maki-bench",
+  "crates/maki-integration-tests",
 ]
 resolver = "3"
 
@@ -13,7 +13,7 @@ resolver = "3"
 version = "0.0.2"
 authors = ["OctoFHIR Team <funyloony@gmail.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/octofhir/fsh-lint-rs"
+repository = "https://github.com/octofhir/maki-rs"
 homepage = "https://github.com/octofhir"
 edition = "2024"
 
@@ -55,6 +55,9 @@ notify = "8"
 
 # Caching
 dashmap = "6"
+
+# Canonical package management
+octofhir-canonical-manager = { path = "../canonical-manager", default-features = false, features = ["cli"] }
 
 # Testing
 criterion = { version = "0.7", features = ["html_reports"] }

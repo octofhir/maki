@@ -12,8 +12,8 @@ Complete reference for all command-line options.
 Print help information for the command.
 
 ```bash
-fsh-lint --help
-fsh-lint lint --help
+maki --help
+maki lint --help
 ```
 
 ### `--version, -V`
@@ -21,8 +21,8 @@ fsh-lint lint --help
 Print version information.
 
 ```bash
-fsh-lint --version
-# Output: fsh-lint 0.1.0
+maki --version
+# Output: maki 0.1.0
 ```
 
 ### `--verbose, -v`
@@ -30,7 +30,7 @@ fsh-lint --version
 Enable verbose logging output.
 
 ```bash
-fsh-lint --verbose lint **/*.fsh
+maki --verbose lint **/*.fsh
 ```
 
 ### `--color <WHEN>`
@@ -41,8 +41,8 @@ Control color output:
 - `never` - Never colorize
 
 ```bash
-fsh-lint --color always lint **/*.fsh
-fsh-lint --color never lint **/*.fsh > output.txt
+maki --color always lint **/*.fsh
+maki --color never lint **/*.fsh > output.txt
 ```
 
 ## Lint Options
@@ -52,7 +52,7 @@ fsh-lint --color never lint **/*.fsh > output.txt
 Automatically apply safe fixes.
 
 ```bash
-fsh-lint lint --fix **/*.fsh
+maki lint --fix **/*.fsh
 ```
 
 ### `--severity <LEVEL>`
@@ -64,7 +64,7 @@ Filter diagnostics by minimum severity:
 - `error`
 
 ```bash
-fsh-lint lint --severity error **/*.fsh
+maki lint --severity error **/*.fsh
 ```
 
 ### `--format <FORMAT>`
@@ -76,8 +76,8 @@ Output format:
 - `github` - GitHub Actions annotations
 
 ```bash
-fsh-lint lint --format json **/*.fsh
-fsh-lint lint --format github **/*.fsh
+maki lint --format json **/*.fsh
+maki lint --format github **/*.fsh
 ```
 
 ### `--config <PATH>`
@@ -85,7 +85,7 @@ fsh-lint lint --format github **/*.fsh
 Specify configuration file path.
 
 ```bash
-fsh-lint lint --config custom-config.json **/*.fsh
+maki lint --config custom-config.json **/*.fsh
 ```
 
 ### `--no-config`
@@ -93,7 +93,7 @@ fsh-lint lint --config custom-config.json **/*.fsh
 Ignore all configuration files.
 
 ```bash
-fsh-lint lint --no-config **/*.fsh
+maki lint --no-config **/*.fsh
 ```
 
 ### `--max-diagnostics <N>`
@@ -101,7 +101,7 @@ fsh-lint lint --no-config **/*.fsh
 Limit number of diagnostics shown.
 
 ```bash
-fsh-lint lint --max-diagnostics 50 **/*.fsh
+maki lint --max-diagnostics 50 **/*.fsh
 ```
 
 ### `--rule <RULE>`
@@ -109,8 +109,8 @@ fsh-lint lint --max-diagnostics 50 **/*.fsh
 Enable only specific rules.
 
 ```bash
-fsh-lint lint --rule style/naming-convention **/*.fsh
-fsh-lint lint --rule correctness/** **/*.fsh
+maki lint --rule style/naming-convention **/*.fsh
+maki lint --rule correctness/** **/*.fsh
 ```
 
 ### `--ignore-pattern <PATTERN>`
@@ -118,7 +118,7 @@ fsh-lint lint --rule correctness/** **/*.fsh
 Ignore files matching pattern.
 
 ```bash
-fsh-lint lint --ignore-pattern "**/*.generated.fsh" **/*.fsh
+maki lint --ignore-pattern "**/*.generated.fsh" **/*.fsh
 ```
 
 ## Format Options
@@ -128,7 +128,7 @@ fsh-lint lint --ignore-pattern "**/*.generated.fsh" **/*.fsh
 Check formatting without modifying files.
 
 ```bash
-fsh-lint format --check **/*.fsh
+maki format --check **/*.fsh
 ```
 
 ### `--diff`
@@ -136,7 +136,7 @@ fsh-lint format --check **/*.fsh
 Show formatting differences.
 
 ```bash
-fsh-lint format --diff **/*.fsh
+maki format --diff **/*.fsh
 ```
 
 ## Init Options
@@ -146,7 +146,7 @@ fsh-lint format --diff **/*.fsh
 Generate full example configuration.
 
 ```bash
-fsh-lint init --full
+maki init --full
 ```
 
 ### `--output <PATH>`
@@ -154,7 +154,7 @@ fsh-lint init --full
 Specify output path for configuration.
 
 ```bash
-fsh-lint init --output .fshlintrc.json
+maki init --output .makirc.json
 ```
 
 ## Rules Options
@@ -164,7 +164,7 @@ fsh-lint init --output .fshlintrc.json
 Show detailed rule information.
 
 ```bash
-fsh-lint rules --detailed
+maki rules --detailed
 ```
 
 ### `--category <CATEGORY>`
@@ -176,7 +176,7 @@ Filter rules by category:
 - `suspicious`
 
 ```bash
-fsh-lint rules --category style
+maki rules --category style
 ```
 
 ### `--search <QUERY>`
@@ -184,7 +184,7 @@ fsh-lint rules --category style
 Search rules by name or description.
 
 ```bash
-fsh-lint rules --search naming
+maki rules --search naming
 ```
 
 ## Environment Variables
@@ -195,7 +195,7 @@ Override configuration file path.
 
 ```bash
 export FSH_LINT_CONFIG=custom-config.json
-fsh-lint lint **/*.fsh
+maki lint **/*.fsh
 ```
 
 ### `FSH_LINT_NO_COLOR`
@@ -204,7 +204,7 @@ Disable color output.
 
 ```bash
 export FSH_LINT_NO_COLOR=1
-fsh-lint lint **/*.fsh
+maki lint **/*.fsh
 ```
 
 ### `FSH_LINT_CACHE_DIR`
@@ -212,6 +212,6 @@ fsh-lint lint **/*.fsh
 Set cache directory location.
 
 ```bash
-export FSH_LINT_CACHE_DIR=.fsh-lint-cache
-fsh-lint lint **/*.fsh
+export FSH_LINT_CACHE_DIR=.maki-cache
+maki lint **/*.fsh
 ```

@@ -31,9 +31,9 @@ Profile: $name where {
 }
 ```
 
-### 3. Configure fsh-lint
+### 3. Configure maki
 
-Add to `.fshlintrc.json`:
+Add to `.makirc.json`:
 
 ```json
 {
@@ -46,7 +46,7 @@ Add to `.fshlintrc.json`:
 ### 4. Run the Linter
 
 ```bash
-fsh-lint lint my-profile.fsh
+maki lint my-profile.fsh
 ```
 
 ## GritQL Basics
@@ -216,7 +216,7 @@ Extension: MyExtension
 EOFF
 
 # Run linter
-fsh-lint lint test.fsh
+maki lint test.fsh
 
 # Should show violation from your custom rule
 ```
@@ -225,13 +225,13 @@ fsh-lint lint test.fsh
 
 ```bash
 # List all rules (including custom)
-fsh-lint rules --detailed
+maki rules --detailed
 
 # Filter custom rules
-fsh-lint rules --category custom
+maki rules --category custom
 
 # Search for your rule
-fsh-lint rules search "my-rule"
+maki rules search "my-rule"
 ```
 
 ### Debug Mode
@@ -239,7 +239,7 @@ fsh-lint rules search "my-rule"
 Run with verbose logging:
 
 ```bash
-fsh-lint lint test.fsh -vv 2>&1 | grep -i "custom\|gritql"
+maki lint test.fsh -vv 2>&1 | grep -i "custom\|gritql"
 ```
 
 ## Advanced Patterns
@@ -425,7 +425,7 @@ Profile: $name where {
 - [GritQL Documentation](https://docs.grit.io/)
 - [FSH Specification](https://hl7.org/fhir/uv/shorthand/)
 - [Example Rules](/examples/gritql/)
-- [fsh-lint Configuration Guide](/docs/configuration.md)
+- [maki Configuration Guide](/docs/configuration.md)
 
 ## Contributing
 
@@ -438,4 +438,4 @@ Have you written a useful rule? Consider contributing it back!
 
 ---
 
-**Need Help?** Open an issue on [GitHub](https://github.com/octofhir/fsh-lint-rs/issues)
+**Need Help?** Open an issue on [GitHub](https://github.com/octofhir/maki-rs/issues)

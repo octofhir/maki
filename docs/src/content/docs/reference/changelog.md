@@ -70,7 +70,7 @@ Initial release - no migration needed.
 
 ## Future Roadmap
 
-See [GitHub Milestones](https://github.com/octofhir/fsh-lint-rs/milestones) for planned features.
+See [GitHub Milestones](https://github.com/octofhir/maki-rs/milestones) for planned features.
 
 ### Planned for 0.2.0
 - LSP server for real-time linting

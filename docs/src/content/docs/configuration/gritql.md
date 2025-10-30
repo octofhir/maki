@@ -75,7 +75,7 @@ message "Add MS (Must Support) flag to constraint"
 
 ### Loading Custom Rules
 
-Configure custom rule directories in `fsh-lint.json`:
+Configure custom rule directories in `maki.json`:
 
 ```jsonc
 {
@@ -190,10 +190,10 @@ Test your rules before deploying:
 
 ```bash
 # Run only custom rules
-fsh-lint lint --only-custom-rules **/*.fsh
+maki lint --only-custom-rules **/*.fsh
 
 # Test specific rule
-fsh-lint lint --rule custom/require-ms-flag test.fsh
+maki lint --rule custom/require-ms-flag test.fsh
 ```
 
 ## Best Practices

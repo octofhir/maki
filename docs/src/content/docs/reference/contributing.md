@@ -26,13 +26,13 @@ Thank you for your interest in contributing to FSH Lint!
 
 1. Fork the repository:
 ```bash
-gh repo fork octofhir/fsh-lint-rs
+gh repo fork octofhir/maki-rs
 ```
 
 2. Clone your fork:
 ```bash
-git clone https://github.com/YOUR_USERNAME/fsh-lint-rs.git
-cd fsh-lint-rs
+git clone https://github.com/YOUR_USERNAME/maki-rs.git
+cd maki-rs
 ```
 
 3. Build the project:
@@ -58,10 +58,10 @@ git checkout -b fix/issue-123
 ### 2. Make Changes
 
 Follow the project structure:
-- `crates/fsh-lint-core` - Core linting engine
-- `crates/fsh-lint-rules` - Rule engine and built-in rules
-- `crates/fsh-lint-cli` - Command-line interface
-- `crates/fsh-lint-devtools` - Developer tools
+- `crates/maki-core` - Core linting engine
+- `crates/maki-rules` - Rule engine and built-in rules
+- `crates/maki-cli` - Command-line interface
+- `crates/maki-devtools` - Developer tools
 
 ### 3. Write Tests
 
@@ -86,7 +86,7 @@ mod tests {
 cargo test --workspace
 
 # Run specific test
-cargo test --package fsh-lint-core --test my_test
+cargo test --package maki-core --test my_test
 
 # With output
 cargo test -- --nocapture
@@ -154,10 +154,10 @@ Follow Rust API Guidelines:
 
 ## Adding a New Rule
 
-1. Create rule file in `crates/fsh-lint-rules/src/builtin/`:
+1. Create rule file in `crates/maki-rules/src/builtin/`:
 
 ```rust
-use fsh_lint_core::{LintContext, Diagnostic, Severity};
+use maki_core::{LintContext, Diagnostic, Severity};
 use crate::Rule;
 
 pub struct MyRule;
@@ -181,9 +181,9 @@ impl Rule for MyRule {
 }
 ```
 
-2. Register in `crates/fsh-lint-rules/src/lib.rs`
+2. Register in `crates/maki-rules/src/lib.rs`
 
-3. Add tests in `crates/fsh-lint-rules/tests/`
+3. Add tests in `crates/maki-rules/tests/`
 
 4. Add documentation in `docs/`
 

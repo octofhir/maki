@@ -23,4 +23,4 @@ Thumbs.db
 /benches/target/
 
 # Local configuration
-.fshlintrc.local.*
+.makirc.local.*

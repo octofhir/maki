@@ -21,24 +21,24 @@ jobs:
           # Linux
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: fsh-lint-linux-x64
+            artifact_name: maki-linux-x64
           # Note: Linux ARM64 build excluded due to UPX incompatibility
 
           # macOS
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: fsh-lint-macos-x64
+            artifact_name: maki-macos-x64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: fsh-lint-macos-arm64
+            artifact_name: maki-macos-arm64
 
           # Windows
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: fsh-lint-windows-x64.exe
+            artifact_name: maki-windows-x64.exe
           - os: windows-latest
             target: aarch64-pc-windows-msvc
-            artifact_name: fsh-lint-windows-arm64.exe
+            artifact_name: maki-windows-arm64.exe
 
     steps:
       - name: Checkout
@@ -66,12 +66,12 @@ jobs:
         env:
           RUSTFLAGS: "-C opt-level=z -C lto=fat -C embed-bitcode=yes -C strip=symbols"
         run: |
-          cargo build --release --target ${{ matrix.target }} --bin fsh-lint
+          cargo build --release --target ${{ matrix.target }} --bin maki
 
       - name: Strip binary (Unix)
         if: runner.os != 'Windows'
         run: |
-          strip target/${{ matrix.target }}/release/fsh-lint || true
+          strip target/${{ matrix.target }}/release/maki || true
 
       - name: Install UPX
         # UPX doesn't work on macOS
@@ -84,7 +84,7 @@ jobs:
         # UPX doesn't work on macOS
         if: matrix.target != 'aarch64-apple-darwin' && matrix.target != 'x86_64-apple-darwin'
         run: |
-          upx --best --lzma target/${{ matrix.target }}/release/fsh-lint* || true
+          upx --best --lzma target/${{ matrix.target }}/release/maki* || true
         continue-on-error: true
 
       - name: Prepare artifact
@@ -92,9 +92,9 @@ jobs:
         run: |
           mkdir -p dist
           if [ "${{ runner.os }}" = "Windows" ]; then
-            cp target/${{ matrix.target }}/release/fsh-lint.exe dist/${{ matrix.artifact_name }}
+            cp target/${{ matrix.target }}/release/maki.exe dist/${{ matrix.artifact_name }}
           else
-            cp target/${{ matrix.target }}/release/fsh-lint dist/${{ matrix.artifact_name }}
+            cp target/${{ matrix.target }}/release/maki dist/${{ matrix.artifact_name }}
           fi
 
       - name: Upload artifact

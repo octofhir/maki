@@ -1,10 +1,10 @@
 # Custom GritQL Rules for FSH Lint
 
-This directory contains example custom GritQL rules that can be used with `fsh-lint` to enforce project-specific conventions and requirements.
+This directory contains example custom GritQL rules that can be used with `maki` to enforce project-specific conventions and requirements.
 
 ## Using Custom Rules
 
-To use these rules (or your own custom rules), add the directory to your `.fshlintrc.json`:
+To use these rules (or your own custom rules), add the directory to your `.makirc.json`:
 
 ```json
 {
@@ -106,13 +106,13 @@ Test your custom rules:
 
 ```bash
 # Lint with custom rules
-fsh-lint lint --config .fshlintrc.json your-file.fsh
+maki lint --config .makirc.json your-file.fsh
 
 # List all loaded rules (including custom)
-fsh-lint rules --detailed
+maki rules --detailed
 
 # Check specific custom rule
-fsh-lint rules --category custom
+maki rules --category custom
 ```
 
 ## Rule Naming Convention
@@ -126,7 +126,7 @@ Custom rule files should:
 
 - [GritQL Documentation](https://docs.grit.io/)
 - [FSH Specification](https://hl7.org/fhir/uv/shorthand/)
-- [fsh-lint Documentation](https://octofhir.github.io/fsh-lint-rs/)
+- [maki Documentation](https://octofhir.github.io/maki-rs/)
 
 ## Contributing
 

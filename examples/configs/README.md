@@ -1,6 +1,6 @@
 # Configuration Examples
 
-This directory contains example configuration files for fsh-lint-rs.
+This directory contains example configuration files for maki-rs.
 
 ## Files
 
@@ -17,16 +17,16 @@ A comprehensive configuration showing all available options. Uses JSONC format (
 
 ### Using a configuration file
 
-Place a `fsh-lint.json` or `fsh-lint.jsonc` file in your project root:
+Place a `maki.json` or `maki.jsonc` file in your project root:
 
 ```bash
 # Copy a template
-cp examples/configs/minimal.json ./fsh-lint.json
+cp examples/configs/minimal.json ./maki.json
 
 # Or create your own
-cat > fsh-lint.json << 'EOF'
+cat > maki.json << 'EOF'
 {
-  "$schema": "https://octofhir.github.io/fsh-lint-rs/schema/v1.json",
+  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json",
   "root": true,
   "linter": {
     "enabled": true,
@@ -57,10 +57,10 @@ You can extend other configurations using the `extends` field:
 
 ### Configuration discovery
 
-fsh-lint will automatically discover configuration files by searching upward from the current directory:
+maki will automatically discover configuration files by searching upward from the current directory:
 
 1. Starts from the current directory
-2. Looks for `fsh-lint.jsonc` or `fsh-lint.json`
+2. Looks for `maki.jsonc` or `maki.json`
 3. If not found, moves up to the parent directory
 4. Stops when a config with `"root": true` is found or reaches filesystem root
 
@@ -75,7 +75,7 @@ Just include the `$schema` field in your config:
 
 ```json
 {
-  "$schema": "https://octofhir.github.io/fsh-lint-rs/schema/v1.json"
+  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json"
 }
 ```
 

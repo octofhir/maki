@@ -18,41 +18,41 @@ Part of the [OctoFHIR](https://github.com/octofhir) ecosystem.
 
 ### Download Pre-built Binary
 
-Download the latest binary for your platform from [GitHub Releases](https://github.com/octofhir/fsh-lint-rs/releases/latest):
+Download the latest binary for your platform from [GitHub Releases](https://github.com/octofhir/maki-rs/releases/latest):
 
 **Linux:**
 ```bash
 # x86_64 (ARM64 not currently available)
-wget https://github.com/octofhir/fsh-lint-rs/releases/latest/download/fsh-lint-linux-x64
-chmod +x fsh-lint-linux-x64
-sudo mv fsh-lint-linux-x64 /usr/local/bin/fsh-lint
+wget https://github.com/octofhir/maki-rs/releases/latest/download/maki-linux-x64
+chmod +x maki-linux-x64
+sudo mv maki-linux-x64 /usr/local/bin/maki
 ```
 
 **macOS:**
 ```bash
 # Intel
-curl -L https://github.com/octofhir/fsh-lint-rs/releases/latest/download/fsh-lint-macos-x64 -o fsh-lint
-chmod +x fsh-lint
-sudo mv fsh-lint /usr/local/bin/
+curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-macos-x64 -o maki
+chmod +x maki
+sudo mv maki /usr/local/bin/
 
 # Apple Silicon
-curl -L https://github.com/octofhir/fsh-lint-rs/releases/latest/download/fsh-lint-macos-arm64 -o fsh-lint
-chmod +x fsh-lint
-sudo mv fsh-lint /usr/local/bin/
+curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-macos-arm64 -o maki
+chmod +x maki
+sudo mv maki /usr/local/bin/
 ```
 
 **Windows:**
 
-Download `fsh-lint-windows-x64.exe` or `fsh-lint-windows-arm64.exe` from the releases page and add it to your PATH.
+Download `maki-windows-x64.exe` or `maki-windows-arm64.exe` from the releases page and add it to your PATH.
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/octofhir/fsh-lint-rs.git
-cd fsh-lint-rs
-cargo build --release --bin fsh-lint
+git clone https://github.com/octofhir/maki-rs.git
+cd maki-rs
+cargo build --release --bin maki
 
-# Binary will be at: target/release/fsh-lint
+# Binary will be at: target/release/maki
 ```
 
 ## Usage
@@ -60,59 +60,59 @@ cargo build --release --bin fsh-lint
 ### Initialize Configuration
 
 ```bash
-# Create a .fshlintrc.json config file in the current directory
-fsh-lint config init
+# Create a .makirc.json config file in the current directory
+maki config init
 
 # Initialize with JSONC format (supports comments)
-fsh-lint config init --format jsonc
+maki config init --format jsonc
 ```
 
 ### Lint Files
 
 ```bash
 # Lint specific files
-fsh-lint lint file1.fsh file2.fsh
+maki lint file1.fsh file2.fsh
 
 # Lint all FSH files in a directory
-fsh-lint lint input/
+maki lint input/
 
 # Lint with glob patterns
-fsh-lint lint "**/*.fsh"
+maki lint "**/*.fsh"
 
 # Auto-fix issues
-fsh-lint lint --fix input/
+maki lint --fix input/
 
 # Output as JSON
-fsh-lint lint --format json input/
+maki lint --format json input/
 
 # Output as SARIF (for CI integration)
-fsh-lint lint --format sarif input/
+maki lint --format sarif input/
 ```
 
 ### List Available Rules
 
 ```bash
 # List all rules
-fsh-lint rules
+maki rules
 
 # List with detailed information
-fsh-lint rules --detailed
+maki rules --detailed
 
 # Filter by category
-fsh-lint rules --category documentation
-fsh-lint rules --category correctness
+maki rules --category documentation
+maki rules --category correctness
 ```
 
 ### Validate Configuration
 
 ```bash
-# Validate your .fshlintrc.json
-fsh-lint config validate
+# Validate your .makirc.json
+maki config validate
 ```
 
 ## Configuration
 
-FSH Lint supports configuration files in JSON or JSONC format. Place a `.fshlintrc.json` file in your project root:
+FSH Lint supports configuration files in JSON or JSONC format. Place a `.makirc.json` file in your project root:
 
 ```jsonc
 {
@@ -180,7 +180,7 @@ FSH Lint includes comprehensive built-in rules organized by category:
 - `suspicious/unused-ruleset` - Detect unused RuleSets
 - `suspicious/unreferenced-profile` - Detect unreferenced profiles
 
-For a complete list, run `fsh-lint rules --detailed`.
+For a complete list, run `maki rules --detailed`.
 
 ## Custom Rules with GritQL
 
@@ -226,11 +226,11 @@ jobs:
 
       - name: Download FSH Lint
         run: |
-          curl -L https://github.com/octofhir/fsh-lint-rs/releases/latest/download/fsh-lint-linux-x64 -o fsh-lint
-          chmod +x fsh-lint
+          curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-linux-x64 -o maki
+          chmod +x maki
 
       - name: Lint FSH files
-        run: ./fsh-lint lint --format sarif input/ > results.sarif
+        run: ./maki lint --format sarif input/ > results.sarif
 
       - name: Upload SARIF results
         uses: github/codeql-action/upload-sarif@v3
@@ -242,39 +242,39 @@ jobs:
 ### GitLab CI
 
 ```yaml
-fsh-lint:
+maki:
   image: ubuntu:latest
   script:
-    - curl -L https://github.com/octofhir/fsh-lint-rs/releases/latest/download/fsh-lint-linux-x64 -o fsh-lint
-    - chmod +x fsh-lint
-    - ./fsh-lint lint input/
+    - curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-linux-x64 -o maki
+    - chmod +x maki
+    - ./maki lint input/
 ```
 
 ## Project Structure
 
 This is a Rust workspace with the following crates:
 
-- **`fsh-lint-core`** - Core linting engine containing:
+- **`maki-core`** - Core linting engine containing:
   - CST/AST parser
   - Semantic analyzer
   - Diagnostic system
   - Autofix engine
   - Formatter
 
-- **`fsh-lint-rules`** - Rule engine and built-in rules:
+- **`maki-rules`** - Rule engine and built-in rules:
   - GritQL-based pattern matching
   - AST-based rule engine
   - Built-in rule implementations
 
-- **`fsh-lint-cli`** - Command-line interface (binary: `fsh-lint`)
+- **`maki-cli`** - Command-line interface (binary: `maki`)
 
-- **`fsh-lint-devtools`** - Developer tools for schema generation and docs
+- **`maki-devtools`** - Developer tools for schema generation and docs
 
 ## Documentation
 
 For comprehensive documentation, guides, and API references, visit:
 
-**https://octofhir.github.io/fsh-lint-rs/**
+**https://octofhir.github.io/maki-rs/**
 
 Topics covered:
 - Getting Started Guide
@@ -322,8 +322,8 @@ cargo test --workspace
 cargo test --test integration_test
 
 # Run specific crate tests
-cargo test --package fsh-lint-core
-cargo test --package fsh-lint-rules
+cargo test --package maki-core
+cargo test --package maki-rules
 
 # Run with verbose output
 cargo test -- --nocapture

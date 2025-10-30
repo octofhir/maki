@@ -117,10 +117,10 @@ Test your rules before deploying:
 
 ```bash
 # Test on specific files
-fsh-lint lint --rule custom/profile-naming test.fsh
+maki lint --rule custom/profile-naming test.fsh
 
 # Run only custom rules
-fsh-lint lint --only-custom **/*.fsh
+maki lint --only-custom **/*.fsh
 ```
 
 ## Advanced Patterns
@@ -172,13 +172,13 @@ Share rules across projects:
 
 ```bash
 # Create shared rules repository
-git clone https://github.com/yourorg/fsh-lint-rules.git
+git clone https://github.com/yourorg/maki-rules.git
 
 # Reference in config
 {
   "linter": {
     "ruleDirectories": [
-      "./fsh-lint-rules"
+      "./maki-rules"
     ]
   }
 }

@@ -24,10 +24,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       
       - name: Install FSH Lint
-        run: cargo install fsh-lint
+        run: cargo install maki
       
       - name: Lint FSH files
-        run: fsh-lint lint **/*.fsh
+        run: maki lint **/*.fsh
 ```
 
 ### With Caching
@@ -50,16 +50,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/fsh-lint
+            ~/.cargo/bin/maki
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-fsh-lint
+          key: ${{ runner.os }}-cargo-maki
       
       - name: Install FSH Lint
-        run: cargo install fsh-lint || true
+        run: cargo install maki || true
       
       - name: Lint with fixes
-        run: fsh-lint lint --fix **/*.fsh
+        run: maki lint --fix **/*.fsh
       
       - name: Commit fixes
         uses: stefanzweifel/git-auto-commit-action@v5
@@ -83,8 +83,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install fsh-lint
-      - run: fsh-lint lint **/*.fsh
+      - run: cargo install maki
+      - run: maki lint **/*.fsh
 ```
 
 ## GitLab CI
@@ -95,9 +95,9 @@ jobs:
 lint:
   image: rust:latest
   before_script:
-    - cargo install fsh-lint
+    - cargo install maki
   script:
-    - fsh-lint lint **/*.fsh
+    - maki lint **/*.fsh
   only:
     - merge_requests
     - main
@@ -113,9 +113,9 @@ lint:
       - .cargo/
   before_script:
     - export CARGO_HOME="$(pwd)/.cargo"
-    - cargo install fsh-lint
+    - cargo install maki
   script:
-    - fsh-lint lint **/*.fsh
+    - maki lint **/*.fsh
 ```
 
 ### Artifacts
@@ -124,7 +124,7 @@ lint:
 lint:
   image: rust:latest
   script:
-    - fsh-lint lint --format json **/*.fsh > lint-report.json
+    - maki lint --format json **/*.fsh > lint-report.json
   artifacts:
     reports:
       codequality: lint-report.json
@@ -142,13 +142,13 @@ pipeline {
     stages {
         stage('Setup') {
             steps {
-                sh 'cargo install fsh-lint'
+                sh 'cargo install maki'
             }
         }
         
         stage('Lint') {
             steps {
-                sh 'fsh-lint lint **/*.fsh'
+                sh 'maki lint **/*.fsh'
             }
         }
     }
@@ -177,14 +177,14 @@ jobs:
             - cargo-cache-{{ checksum "Cargo.lock" }}
       - run:
           name: Install FSH Lint
-          command: cargo install fsh-lint
+          command: cargo install maki
       - save_cache:
           paths:
             - ~/.cargo
           key: cargo-cache-{{ checksum "Cargo.lock" }}
       - run:
           name: Lint FSH files
-          command: fsh-lint lint **/*.fsh
+          command: maki lint **/*.fsh
 
 workflows:
   version: 2
@@ -207,10 +207,10 @@ steps:
   inputs:
     rustVersion: 'stable'
 
-- script: cargo install fsh-lint
+- script: cargo install maki
   displayName: 'Install FSH Lint'
 
-- script: fsh-lint lint **/*.fsh
+- script: maki lint **/*.fsh
   displayName: 'Lint FSH files'
 ```
 
@@ -222,9 +222,9 @@ Install FSH Lint as a pre-commit hook:
 repos:
   - repo: local
     hooks:
-      - id: fsh-lint
+      - id: maki
         name: FSH Lint
-        entry: fsh-lint lint --fix
+        entry: maki lint --fix
         language: system
         files: \.fsh$
 ```
@@ -244,8 +244,8 @@ repos:
 Use binary releases instead of building from source:
 
 ```bash
-curl -L https://github.com/octofhir/fsh-lint-rs/releases/latest/download/fsh-lint-linux.tar.gz | tar xz
-sudo mv fsh-lint /usr/local/bin/
+curl -L https://github.com/octofhir/maki-rs/releases/latest/download/maki-linux.tar.gz | tar xz
+sudo mv maki /usr/local/bin/
 ```
 
 ### Memory Issues
@@ -254,5 +254,5 @@ Limit parallel execution:
 
 ```bash
 export CARGO_BUILD_JOBS=2
-cargo install fsh-lint
+cargo install maki
 ```

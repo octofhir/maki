@@ -12,7 +12,7 @@ FSH Lint uses specific exit codes to indicate different outcomes.
 No errors found. May contain warnings or hints.
 
 ```bash
-fsh-lint lint file.fsh
+maki lint file.fsh
 echo $?  # 0
 ```
 
@@ -21,7 +21,7 @@ echo $?  # 0
 Lint errors were found in the files.
 
 ```bash
-fsh-lint lint invalid.fsh
+maki lint invalid.fsh
 echo $?  # 1
 ```
 
@@ -30,7 +30,7 @@ echo $?  # 1
 Configuration file is invalid or malformed.
 
 ```bash
-fsh-lint lint --config invalid.json *.fsh
+maki lint --config invalid.json *.fsh
 echo $?  # 2
 ```
 
@@ -39,7 +39,7 @@ echo $?  # 2
 Specified files or directories not found.
 
 ```bash
-fsh-lint lint nonexistent.fsh
+maki lint nonexistent.fsh
 echo $?  # 3
 ```
 
@@ -48,7 +48,7 @@ echo $?  # 3
 Invalid command-line arguments provided.
 
 ```bash
-fsh-lint lint --unknown-flag *.fsh
+maki lint --unknown-flag *.fsh
 echo $?  # 4
 ```
 
@@ -70,7 +70,7 @@ Use exit codes in CI/CD pipelines:
 ```yaml
 - name: Lint FSH files
   run: |
-    fsh-lint lint **/*.fsh
+    maki lint **/*.fsh
     if [ $? -eq 1 ]; then
       echo "Lint errors found"
       exit 1
@@ -82,7 +82,7 @@ Use exit codes in CI/CD pipelines:
 ```yaml
 lint:
   script:
-    - fsh-lint lint **/*.fsh
+    - maki lint **/*.fsh
   allow_failure: false
 ```
 
@@ -92,7 +92,7 @@ lint:
 stage('Lint') {
   steps {
     sh '''
-      fsh-lint lint **/*.fsh
+      maki lint **/*.fsh
       EXIT_CODE=$?
       if [ $EXIT_CODE -ne 0 ]; then
         echo "Linting failed with code $EXIT_CODE"
@@ -108,7 +108,7 @@ stage('Lint') {
 Treat warnings as errors for stricter CI:
 
 ```bash
-fsh-lint lint --severity warn **/*.fsh
+maki lint --severity warn **/*.fsh
 ```
 
 This will exit with code `1` if any warnings are found.
@@ -118,5 +118,5 @@ This will exit with code `1` if any warnings are found.
 Continue on warnings but fail on errors:
 
 ```bash
-fsh-lint lint **/*.fsh || [ $? -eq 0 -o $? -eq 1 ] && echo "OK"
+maki lint **/*.fsh || [ $? -eq 0 -o $? -eq 1 ] && echo "OK"
 ```

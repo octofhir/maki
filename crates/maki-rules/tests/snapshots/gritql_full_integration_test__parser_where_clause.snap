@@ -1,0 +1,7 @@
+---
+source: crates/maki-rules/tests/gritql_full_integration_test.rs
+expression: result.unwrap()
+---
+Where:
+  - NodeKind: profile
+  - FieldExists: description

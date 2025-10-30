@@ -127,7 +127,7 @@ Version detection: Currently defaults to R4, with R5 support available via `chec
 Run validation on test examples:
 
 ```bash
-fsh-lint lint examples/test-parent-validation.fsh
+maki lint examples/test-parent-validation.fsh
 ```
 
 ## Future Enhancements
@@ -135,7 +135,7 @@ fsh-lint lint examples/test-parent-validation.fsh
 ### Potential Improvements
 1. **FHIR Version Detection**: Auto-detect FHIR version from project configuration
 2. **External Profile Cache**: Download and cache external IG definitions for verification
-3. **Configuration Support**: Allow users to specify known external profiles in `.fshlintrc`
+3. **Configuration Support**: Allow users to specify known external profiles in `.makirc`
 4. **Canonical URL Resolution**: Resolve and verify canonical URLs against known registries
 5. **Symbol Table Enhancement**: Index profiles by both name and ID for faster lookup
 

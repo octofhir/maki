@@ -22,7 +22,7 @@ This directory contains example FSH files demonstrating various linting scenario
 
 ## Configuration Templates
 
-### [configs/default.fshlintrc](configs/default.fshlintrc)
+### [configs/default.makirc](configs/default.makirc)
 
 Balanced configuration suitable for most projects:
 - All correctness rules as errors
@@ -32,10 +32,10 @@ Balanced configuration suitable for most projects:
 **Use when:** Starting a new project or maintaining existing FSH code
 
 ```bash
-fsh-lint --config examples/configs/default.fshlintrc your-file.fsh
+maki --config examples/configs/default.makirc your-file.fsh
 ```
 
-### [configs/strict.fshlintrc](configs/strict.fshlintrc)
+### [configs/strict.makirc](configs/strict.makirc)
 
 Strict enforcement with all rules as errors:
 - All naming conventions must be followed exactly
@@ -45,10 +45,10 @@ Strict enforcement with all rules as errors:
 **Use when:** Publishing official FHIR implementation guides or maintaining critical healthcare systems
 
 ```bash
-fsh-lint --config examples/configs/strict.fshlintrc your-file.fsh
+maki --config examples/configs/strict.makirc your-file.fsh
 ```
 
-### [configs/minimal.fshlintrc](configs/minimal.fshlintrc)
+### [configs/minimal.makirc](configs/minimal.makirc)
 
 Minimal configuration with only critical correctness rules:
 - Required fields must be present
@@ -59,7 +59,7 @@ Minimal configuration with only critical correctness rules:
 **Use when:** Rapid prototyping, early development, or migrating legacy code
 
 ```bash
-fsh-lint --config examples/configs/minimal.fshlintrc your-file.fsh
+maki --config examples/configs/minimal.makirc your-file.fsh
 ```
 
 ## Testing the Examples
@@ -69,7 +69,7 @@ fsh-lint --config examples/configs/minimal.fshlintrc your-file.fsh
 ```bash
 just test-examples
 # or
-fsh-lint examples/*.fsh
+maki examples/*.fsh
 ```
 
 ### Test with Different Configs
@@ -77,38 +77,38 @@ fsh-lint examples/*.fsh
 ```bash
 just test-configs
 # or manually:
-fsh-lint --config examples/configs/default.fshlintrc examples/*.fsh
-fsh-lint --config examples/configs/strict.fshlintrc examples/*.fsh
-fsh-lint --config examples/configs/minimal.fshlintrc examples/*.fsh
+maki --config examples/configs/default.makirc examples/*.fsh
+maki --config examples/configs/strict.makirc examples/*.fsh
+maki --config examples/configs/minimal.makirc examples/*.fsh
 ```
 
 ### Apply Safe Fixes
 
 ```bash
 # Dry run to see what would be fixed
-fsh-lint fix --dry-run examples/invalid-cardinality.fsh
+maki fix --dry-run examples/invalid-cardinality.fsh
 
 # Apply safe fixes only
-fsh-lint fix examples/invalid-cardinality.fsh
+maki fix examples/invalid-cardinality.fsh
 
 # Apply all fixes including unsafe (with confirmation)
-fsh-lint fix --unsafe examples/invalid-cardinality.fsh
+maki fix --unsafe examples/invalid-cardinality.fsh
 
 # Interactive mode - confirm each unsafe fix
-fsh-lint fix --interactive examples/invalid-cardinality.fsh
+maki fix --interactive examples/invalid-cardinality.fsh
 ```
 
 ### Output Formats
 
 ```bash
 # Human-readable (default)
-fsh-lint examples/patient-profile.fsh
+maki examples/patient-profile.fsh
 
 # JSON output
-fsh-lint --format json examples/patient-profile.fsh
+maki --format json examples/patient-profile.fsh
 
 # SARIF output for CI/CD integration
-fsh-lint --format sarif examples/patient-profile.fsh > results.sarif
+maki --format sarif examples/patient-profile.fsh > results.sarif
 ```
 
 ## Expected Diagnostics
@@ -186,7 +186,7 @@ When adding new example files:
 2. **Comment extensively:** Mark each issue with ERROR, WARNING, or INFO comments
 3. **Include good examples:** Show the correct way alongside errors
 4. **Update this README:** Add entry in the table above
-5. **Add golden tests:** Create corresponding test in `crates/fsh-lint-core/tests/golden_files/`
+5. **Add golden tests:** Create corresponding test in `crates/maki-core/tests/golden_files/`
 
 ## Using Examples in Tests
 
@@ -202,4 +202,4 @@ fn test_invalid_cardinality_diagnostics() {
 }
 ```
 
-See [`crates/fsh-lint-core/tests/golden_file_tests.rs`](../crates/fsh-lint-core/tests/golden_file_tests.rs) for implementation.
+See [`crates/maki-core/tests/golden_file_tests.rs`](../crates/maki-core/tests/golden_file_tests.rs) for implementation.

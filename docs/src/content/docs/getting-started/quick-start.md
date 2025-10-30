@@ -13,13 +13,13 @@ Get up and running with FSH Lint in just a few minutes.
 ## Step 1: Install FSH Lint
 
 ```bash
-cargo install fsh-lint
+cargo install maki
 ```
 
 Verify the installation:
 
 ```bash
-fsh-lint --version
+maki --version
 ```
 
 ## Step 2: Initialize Configuration
@@ -28,14 +28,14 @@ Create a default configuration file in your FSH project:
 
 ```bash
 cd your-fsh-project
-fsh-lint init
+maki init
 ```
 
-This creates `fsh-lint.json` with recommended settings:
+This creates `maki.json` with recommended settings:
 
 ```json
 {
-  "$schema": "https://octofhir.github.io/fsh-lint-rs/schema/v1.json",
+  "$schema": "https://octofhir.github.io/maki-rs/schema/v1.json",
   "root": true,
   "linter": {
     "enabled": true,
@@ -51,13 +51,13 @@ This creates `fsh-lint.json` with recommended settings:
 Lint all FSH files in the current directory:
 
 ```bash
-fsh-lint lint **/*.fsh
+maki lint **/*.fsh
 ```
 
 Or lint specific files:
 
 ```bash
-fsh-lint lint input/fsh/profiles.fsh
+maki lint input/fsh/profiles.fsh
 ```
 
 ## Step 4: Review Diagnostics
@@ -79,14 +79,14 @@ error[correctness/duplicate-definition]: Duplicate profile definition
 Many issues can be fixed automatically:
 
 ```bash
-fsh-lint lint --fix **/*.fsh
+maki lint --fix **/*.fsh
 ```
 
 FSH Lint will apply safe fixes and report what was changed.
 
 ## Step 6: Customize Rules
 
-Edit `fsh-lint.json` to customize rule behavior:
+Edit `maki.json` to customize rule behavior:
 
 ```jsonc
 {
@@ -115,26 +115,26 @@ Edit `fsh-lint.json` to customize rule behavior:
 
 ```bash
 # Lint with automatic fixes
-fsh-lint lint --fix **/*.fsh
+maki lint --fix **/*.fsh
 
 # Lint and show only errors
-fsh-lint lint --severity error **/*.fsh
+maki lint --severity error **/*.fsh
 
 # List all available rules
-fsh-lint rules
+maki rules
 
 # Get detailed information about a specific rule
-fsh-lint rules --detailed style/naming-convention
+maki rules --detailed style/naming-convention
 
 # Format FSH files
-fsh-lint format **/*.fsh
+maki format **/*.fsh
 
 # Format with automatic fixes
-fsh-lint format --fix **/*.fsh
+maki format --fix **/*.fsh
 ```
 
 ## Help and Support
 
-- Run `fsh-lint --help` for command-line help
-- Run `fsh-lint <command> --help` for command-specific help
+- Run `maki --help` for command-line help
+- Run `maki <command> --help` for command-specific help
 - Check the [Troubleshooting Guide](/guides/troubleshooting/) for common issues

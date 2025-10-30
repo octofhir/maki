@@ -7,7 +7,7 @@ Learn how to configure FSH Lint rules to match your project's requirements.
 
 ## Configuration File
 
-Rules are configured in `fsh-lint.json` (or `.jsonc`) in the `linter.rules` section:
+Rules are configured in `maki.json` (or `.jsonc`) in the `linter.rules` section:
 
 ```jsonc
 {
@@ -188,28 +188,28 @@ Rules from extended configurations can be overridden:
 Disable rules for specific code sections using comments:
 
 ```fsh
-// fsh-lint-disable-next-line style/naming-convention
+// maki-disable-next-line style/naming-convention
 Profile: patient_profile
 Parent: Patient
 
-// fsh-lint-disable style/naming-convention
+// maki-disable style/naming-convention
 Profile: observation_profile
 Profile: condition_profile
-// fsh-lint-enable style/naming-convention
+// maki-enable style/naming-convention
 ```
 
 ## Per-File Configuration
 
-Use `.fshlintrc.json` in subdirectories for file-specific rules:
+Use `.makirc.json` in subdirectories for file-specific rules:
 
 ```
 project/
-├── fsh-lint.json          # Root config
+├── maki.json          # Root config
 ├── profiles/
-│   ├── .fshlintrc.json    # Profile-specific rules
+│   ├── .makirc.json    # Profile-specific rules
 │   └── *.fsh
 └── valuesets/
-    ├── .fshlintrc.json    # ValueSet-specific rules
+    ├── .makirc.json    # ValueSet-specific rules
     └── *.fsh
 ```
 

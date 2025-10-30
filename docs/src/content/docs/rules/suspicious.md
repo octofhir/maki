@@ -33,7 +33,7 @@ Detects unexpected trailing text after FSH statements
 }
 ```
 
-**Learn more**: [Trailing Text](https://octofhir.github.io/fsh-lint-rs/rules/suspicious/trailing-text)
+**Learn more**: [Trailing Text](https://octofhir.github.io/maki-rs/rules/suspicious/trailing-text)
 
 ---
 
@@ -60,7 +60,7 @@ Detects inconsistent metadata fields across related FHIR resources
 }
 ```
 
-**Learn more**: [Inconsistent Metadata](https://octofhir.github.io/fsh-lint-rs/rules/suspicious/inconsistent-metadata)
+**Learn more**: [Inconsistent Metadata](https://octofhir.github.io/maki-rs/rules/suspicious/inconsistent-metadata)
 
 ---
 

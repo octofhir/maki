@@ -8,10 +8,10 @@ FSH Lint provides a Rust API for programmatic use.
 ## Crate Structure
 
 ```
-fsh-lint/
-├── fsh-lint-core     # Core linting engine
-├── fsh-lint-rules    # Rule engine and built-in rules
-└── fsh-lint-cli      # Command-line interface
+maki/
+├── maki-core     # Core linting engine
+├── maki-rules    # Rule engine and built-in rules
+└── maki-cli      # Command-line interface
 ```
 
 ## Using as a Library
@@ -20,15 +20,15 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-fsh-lint-core = "0.1"
-fsh-lint-rules = "0.1"
+maki-core = "0.1"
+maki-rules = "0.1"
 ```
 
 ## Basic Usage
 
 ```rust
-use fsh_lint_core::{LintContext, Parser};
-use fsh_lint_rules::RuleRegistry;
+use maki_core::{LintContext, Parser};
+use maki_rules::RuleRegistry;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse FSH file
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## API Reference
 
-### fsh-lint-core
+### maki-core
 
 #### Parser
 
@@ -102,7 +102,7 @@ pub enum Severity {
 }
 ```
 
-### fsh-lint-rules
+### maki-rules
 
 #### RuleRegistry
 
@@ -135,8 +135,8 @@ pub trait Rule {
 Implement the `Rule` trait:
 
 ```rust
-use fsh_lint_core::{LintContext, Diagnostic, Severity};
-use fsh_lint_rules::Rule;
+use maki_core::{LintContext, Diagnostic, Severity};
+use maki_rules::Rule;
 
 struct MyCustomRule;
 
@@ -174,7 +174,7 @@ impl Rule for MyCustomRule {
 Generate complete API docs:
 
 ```bash
-cargo doc --open --no-deps -p fsh-lint-core -p fsh-lint-rules
+cargo doc --open --no-deps -p maki-core -p maki-rules
 ```
 
-Online documentation: https://docs.rs/fsh-lint-core
+Online documentation: https://docs.rs/maki-core

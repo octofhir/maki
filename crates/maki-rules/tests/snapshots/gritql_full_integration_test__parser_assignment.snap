@@ -1,0 +1,8 @@
+---
+source: crates/maki-rules/tests/gritql_full_integration_test.rs
+expression: result.unwrap()
+---
+Assignment:
+  var: name
+  value:
+    NodeKind: profile

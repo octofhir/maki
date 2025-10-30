@@ -1,5 +1,5 @@
 {
-  "name": "fsh-lint-docs",
+  "name": "maki-docs",
   "type": "module",
   "version": "0.1.0",
   "scripts": {
@@ -9,10 +9,10 @@
     "build:full": "pnpm run generate-all && astro check && astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "generate-schema": "cd .. && cargo run --bin fsh-lint-devtools -- generate-schema -o docs/public/schema/v1.json",
-    "generate-config": "cd .. && cargo run --bin fsh-lint-devtools -- generate-config -o docs/examples/config.json",
-    "generate-rule-docs": "cd .. && cargo run --bin fsh-lint-devtools -- generate-rule-docs -o docs/src/content/docs/rules",
-    "generate-all": "cd .. && cargo run --bin fsh-lint-devtools -- generate-all -o docs"
+    "generate-schema": "cd .. && cargo run --bin maki-devtools -- generate-schema -o docs/public/schema/v1.json",
+    "generate-config": "cd .. && cargo run --bin maki-devtools -- generate-config -o docs/examples/config.json",
+    "generate-rule-docs": "cd .. && cargo run --bin maki-devtools -- generate-rule-docs -o docs/src/content/docs/rules",
+    "generate-all": "cd .. && cargo run --bin maki-devtools -- generate-all -o docs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.36.0",
