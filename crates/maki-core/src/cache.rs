@@ -306,10 +306,10 @@ impl CacheManager {
     /// Handle file change events and invalidate cache as needed
     pub fn handle_file_change(&self, event: &FileChangeEvent) {
         // Only invalidate for FSH files
-        if let Some(extension) = event.path.extension() {
-            if extension == "fsh" {
-                self.parse_cache.invalidate_on_file_change(event);
-            }
+        if let Some(extension) = event.path.extension()
+            && extension == "fsh"
+        {
+            self.parse_cache.invalidate_on_file_change(event);
         }
     }
 

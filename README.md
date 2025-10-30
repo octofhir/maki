@@ -1,18 +1,33 @@
-# FSH Lint
+# MAKI - FSH Toolchain
 
-Linter for FHIR Shorthand (FSH).
+**M**odern **A**nalysis and **K**it for **I**mplementation Guides
+
+[![CI](https://github.com/octofhir/maki-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/octofhir/maki-rs/actions/workflows/ci.yml)
+[![Security Audit](https://github.com/octofhir/maki-rs/actions/workflows/security-audit.yml/badge.svg)](https://github.com/octofhir/maki-rs/actions/workflows/security-audit.yml)
+[![codecov](https://codecov.io/gh/octofhir/maki-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/octofhir/maki-rs)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+
+A high-performance toolchain for FHIR Shorthand (FSH), written in Rust.
 
 Part of the [OctoFHIR](https://github.com/octofhir) ecosystem.
 
 ## Features
 
-- Built in Rust for performance
-- Comprehensive validation rules for FSH files
-- Diagnostics with code frames
-- Custom rules using GritQL
-- Configurable via JSON/JSONC files
-- Auto-fix capabilities
-- Multiple output formats: JSON, SARIF, human-readable
+### Current Features
+- **Fast Linting**: Built in Rust for maximum performance
+- **Comprehensive Validation**: Built-in rules for FSH syntax and semantics
+- **Smart Diagnostics**: Rich error messages with code frames
+- **Auto-fix Capabilities**: Automatic fixes for many issues
+- **Custom Rules**: Extend with GritQL-based pattern matching
+- **Flexible Configuration**: JSON/TOML configuration files
+- **Multiple Output Formats**: Human-readable, JSON, SARIF, GitHub Actions
+- **Formatter**: Consistent code formatting for FSH files
+
+### Future Features (Planned)
+- **SUSHI-Compatible Build**: Compile FSH to FHIR resources
+- **LSP Server**: IDE support for FSH development
+- **Test Framework**: Testing capabilities for FSH resources
+- **Project Scaffolding**: Initialize new FSH projects
 
 ## Quick Start
 
@@ -254,21 +269,41 @@ maki:
 
 This is a Rust workspace with the following crates:
 
-- **`maki-core`** - Core linting engine containing:
-  - CST/AST parser
+### Core Crates
+
+- **`maki-core`** - Core library containing:
+  - CST/AST parser (Rowan-based lossless syntax tree)
   - Semantic analyzer
   - Diagnostic system
   - Autofix engine
   - Formatter
+  - FHIR exporters (stub for future implementation)
+  - Canonical package management
 
 - **`maki-rules`** - Rule engine and built-in rules:
   - GritQL-based pattern matching
   - AST-based rule engine
-  - Built-in rule implementations
+  - Built-in rule implementations (naming, metadata, cardinality, etc.)
+  - Rule registry and management
 
-- **`maki-cli`** - Command-line interface (binary: `maki`)
+- **`maki-cli`** - Command-line interface (binary: `maki`):
+  - Lint command
+  - Format command
+  - Rules management
+  - Configuration management
+  - Stubs for future commands (build, init, test, lsp)
+
+### Future Crates (Stubs)
+
+- **`maki-lsp`** - Language Server Protocol implementation (future)
+- **`maki-formatter`** - Formatter API wrapper (wraps maki-core formatter)
+- **`maki-test`** - Testing framework for FSH resources (future)
+
+### Development Crates
 
 - **`maki-devtools`** - Developer tools for schema generation and docs
+- **`maki-bench`** - Performance benchmarks
+- **`maki-integration-tests`** - Integration test suite
 
 ## Documentation
 

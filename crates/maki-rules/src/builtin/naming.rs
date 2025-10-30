@@ -18,15 +18,16 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
 
     // Check Profile names (should be PascalCase)
     for profile in document.profiles() {
-        if let Some(name) = profile.name() {
-            if !is_pascal_case(&name) {
-                let location = model.source_map.node_to_diagnostic_location(
-                    profile.syntax(),
-                    &model.source,
-                    &model.source_file,
-                );
+        if let Some(name) = profile.name()
+            && !is_pascal_case(&name)
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                profile.syntax(),
+                &model.source,
+                &model.source_file,
+            );
 
-                diagnostics.push(
+            diagnostics.push(
                     Diagnostic::new(
                         NAMING_CONVENTION,
                         Severity::Warning,
@@ -41,213 +42,192 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
                         location,
                     )),
                 );
-            }
         }
 
         // Check ID naming (should be kebab-case)
-        if let Some(id_clause) = profile.id() {
-            if let Some(id) = id_clause.value() {
-                if !is_kebab_case(&id) {
-                    let location = model.source_map.node_to_diagnostic_location(
-                        profile.syntax(),
-                        &model.source,
-                        &model.source_file,
-                    );
+        if let Some(id_clause) = profile.id()
+            && let Some(id) = id_clause.value()
+            && !is_kebab_case(&id)
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                profile.syntax(),
+                &model.source,
+                &model.source_file,
+            );
 
-                    diagnostics.push(
-                        Diagnostic::new(
-                            NAMING_CONVENTION,
-                            Severity::Warning,
-                            format!(
-                                "Profile ID '{id}' should use kebab-case (e.g., 'my-profile-id')"
-                            ),
-                            location.clone(),
-                        )
-                        .with_suggestion(
-                            maki_core::CodeSuggestion::unsafe_fix(
-                                "Convert to kebab-case",
-                                to_kebab_case(&id),
-                                location,
-                            ),
-                        ),
-                    );
-                }
-            }
+            diagnostics.push(
+                Diagnostic::new(
+                    NAMING_CONVENTION,
+                    Severity::Warning,
+                    format!("Profile ID '{id}' should use kebab-case (e.g., 'my-profile-id')"),
+                    location.clone(),
+                )
+                .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
+                    "Convert to kebab-case",
+                    to_kebab_case(&id),
+                    location,
+                )),
+            );
         }
     }
 
     // Check Extension names (should be PascalCase)
     for extension in document.extensions() {
-        if let Some(name) = extension.name() {
-            if !is_pascal_case(&name) {
-                let location = model.source_map.node_to_diagnostic_location(
-                    extension.syntax(),
-                    &model.source,
-                    &model.source_file,
-                );
+        if let Some(name) = extension.name()
+            && !is_pascal_case(&name)
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                extension.syntax(),
+                &model.source,
+                &model.source_file,
+            );
 
-                diagnostics.push(
-                    Diagnostic::new(
-                        NAMING_CONVENTION,
-                        Severity::Warning,
-                        format!(
-                            "Extension name '{name}' should use PascalCase (e.g., 'MyExtension')"
-                        ),
-                        location.clone(),
-                    )
-                    .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
-                        "Convert to PascalCase",
-                        to_pascal_case(&name),
-                        location,
-                    )),
-                );
-            }
+            diagnostics.push(
+                Diagnostic::new(
+                    NAMING_CONVENTION,
+                    Severity::Warning,
+                    format!("Extension name '{name}' should use PascalCase (e.g., 'MyExtension')"),
+                    location.clone(),
+                )
+                .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
+                    "Convert to PascalCase",
+                    to_pascal_case(&name),
+                    location,
+                )),
+            );
         }
 
-        if let Some(id_clause) = extension.id() {
-            if let Some(id) = id_clause.value() {
-                if !is_kebab_case(&id) {
-                    let location = model.source_map.node_to_diagnostic_location(
-                        extension.syntax(),
-                        &model.source,
-                        &model.source_file,
-                    );
+        if let Some(id_clause) = extension.id()
+            && let Some(id) = id_clause.value()
+            && !is_kebab_case(&id)
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                extension.syntax(),
+                &model.source,
+                &model.source_file,
+            );
 
-                    diagnostics.push(
-                        Diagnostic::new(
-                            NAMING_CONVENTION,
-                            Severity::Warning,
-                            format!(
-                                "Extension ID '{id}' should use kebab-case (e.g., 'my-extension-id')"
-                            ),
-                            location.clone(),
-                        )
-                        .with_suggestion(
-                            maki_core::CodeSuggestion::unsafe_fix(
-                                "Convert to kebab-case",
-                                to_kebab_case(&id),
-                                location,
-                            ),
-                        ),
-                    );
-                }
-            }
+            diagnostics.push(
+                Diagnostic::new(
+                    NAMING_CONVENTION,
+                    Severity::Warning,
+                    format!("Extension ID '{id}' should use kebab-case (e.g., 'my-extension-id')"),
+                    location.clone(),
+                )
+                .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
+                    "Convert to kebab-case",
+                    to_kebab_case(&id),
+                    location,
+                )),
+            );
         }
     }
 
     // Check ValueSet names (should be PascalCase)
     for value_set in document.value_sets() {
-        if let Some(name) = value_set.name() {
-            if !is_pascal_case(&name) {
-                let location = model.source_map.node_to_diagnostic_location(
-                    value_set.syntax(),
-                    &model.source,
-                    &model.source_file,
-                );
+        if let Some(name) = value_set.name()
+            && !is_pascal_case(&name)
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                value_set.syntax(),
+                &model.source,
+                &model.source_file,
+            );
 
-                diagnostics.push(
-                    Diagnostic::new(
-                        NAMING_CONVENTION,
-                        Severity::Warning,
-                        format!(
-                            "ValueSet name '{name}' should use PascalCase (e.g., 'MyValueSet')"
-                        ),
-                        location.clone(),
-                    )
-                    .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
-                        "Convert to PascalCase",
-                        to_pascal_case(&name),
-                        location,
-                    )),
-                );
-            }
+            diagnostics.push(
+                Diagnostic::new(
+                    NAMING_CONVENTION,
+                    Severity::Warning,
+                    format!("ValueSet name '{name}' should use PascalCase (e.g., 'MyValueSet')"),
+                    location.clone(),
+                )
+                .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
+                    "Convert to PascalCase",
+                    to_pascal_case(&name),
+                    location,
+                )),
+            );
         }
 
-        if let Some(id_clause) = value_set.id() {
-            if let Some(id) = id_clause.value() {
-                if !is_kebab_case(&id) {
-                    let location = model.source_map.node_to_diagnostic_location(
-                        value_set.syntax(),
-                        &model.source,
-                        &model.source_file,
-                    );
+        if let Some(id_clause) = value_set.id()
+            && let Some(id) = id_clause.value()
+            && !is_kebab_case(&id)
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                value_set.syntax(),
+                &model.source,
+                &model.source_file,
+            );
 
-                    diagnostics.push(
-                        Diagnostic::new(
-                            NAMING_CONVENTION,
-                            Severity::Warning,
-                            format!(
-                                "ValueSet ID '{id}' should use kebab-case (e.g., 'my-value-set-id')"
-                            ),
-                            location.clone(),
-                        )
-                        .with_suggestion(
-                            maki_core::CodeSuggestion::unsafe_fix(
-                                "Convert to kebab-case",
-                                to_kebab_case(&id),
-                                location,
-                            ),
-                        ),
-                    );
-                }
-            }
+            diagnostics.push(
+                Diagnostic::new(
+                    NAMING_CONVENTION,
+                    Severity::Warning,
+                    format!("ValueSet ID '{id}' should use kebab-case (e.g., 'my-value-set-id')"),
+                    location.clone(),
+                )
+                .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
+                    "Convert to kebab-case",
+                    to_kebab_case(&id),
+                    location,
+                )),
+            );
         }
     }
 
     // Check CodeSystem names (should be PascalCase)
     for code_system in document.code_systems() {
-        if let Some(name) = code_system.name() {
-            if !is_pascal_case(&name) {
-                let location = model.source_map.node_to_diagnostic_location(
-                    code_system.syntax(),
-                    &model.source,
-                    &model.source_file,
-                );
+        if let Some(name) = code_system.name()
+            && !is_pascal_case(&name)
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                code_system.syntax(),
+                &model.source,
+                &model.source_file,
+            );
 
-                diagnostics.push(
-                    Diagnostic::new(
-                        NAMING_CONVENTION,
-                        Severity::Warning,
-                        format!(
-                            "CodeSystem name '{name}' should use PascalCase (e.g., 'MyCodeSystem')"
-                        ),
-                        location.clone(),
-                    )
-                    .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
-                        "Convert to PascalCase",
-                        to_pascal_case(&name),
-                        location,
-                    )),
-                );
-            }
+            diagnostics.push(
+                Diagnostic::new(
+                    NAMING_CONVENTION,
+                    Severity::Warning,
+                    format!(
+                        "CodeSystem name '{name}' should use PascalCase (e.g., 'MyCodeSystem')"
+                    ),
+                    location.clone(),
+                )
+                .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
+                    "Convert to PascalCase",
+                    to_pascal_case(&name),
+                    location,
+                )),
+            );
         }
 
-        if let Some(id_clause) = code_system.id() {
-            if let Some(id) = id_clause.value() {
-                if !is_kebab_case(&id) {
-                    let location = model.source_map.node_to_diagnostic_location(
-                        code_system.syntax(),
-                        &model.source,
-                        &model.source_file,
-                    );
+        if let Some(id_clause) = code_system.id()
+            && let Some(id) = id_clause.value()
+            && !is_kebab_case(&id)
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                code_system.syntax(),
+                &model.source,
+                &model.source_file,
+            );
 
-                    diagnostics.push(
-                        Diagnostic::new(
-                            NAMING_CONVENTION,
-                            Severity::Warning,
-                            format!(
-                                "CodeSystem ID '{id}' should use kebab-case (e.g., 'my-code-system-id')"
-                            ),
-                            location.clone(),
-                        )
-                        .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
-                            "Convert to kebab-case",
-                            to_kebab_case(&id),
-                            location,
-                        )),
-                    );
-                }
-            }
+            diagnostics.push(
+                Diagnostic::new(
+                    NAMING_CONVENTION,
+                    Severity::Warning,
+                    format!(
+                        "CodeSystem ID '{id}' should use kebab-case (e.g., 'my-code-system-id')"
+                    ),
+                    location.clone(),
+                )
+                .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
+                    "Convert to kebab-case",
+                    to_kebab_case(&id),
+                    location,
+                )),
+            );
         }
     }
 
@@ -345,6 +325,7 @@ mod tests {
             cst,
             resources: Vec::new(),
             symbols: Default::default(),
+            aliases: maki_core::semantic::AliasTable::new(),
             references: Vec::new(),
             source_file: PathBuf::from("test.fsh"),
             source_map,

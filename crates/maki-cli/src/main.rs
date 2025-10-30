@@ -2,7 +2,7 @@
 //!
 //! Command-line interface for the MAKI FSH tooling suite
 
-mod commands;
+mod commands; // Contains current commands: lint, format, rules, config
 mod output;
 
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
@@ -344,14 +344,13 @@ async fn main() -> Result<()> {
     init_tracing();
 
     // Set thread pool size if specified
-    if let Some(threads) = cli.threads {
-        if let Err(e) = rayon::ThreadPoolBuilder::new()
+    if let Some(threads) = cli.threads
+        && let Err(e) = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .build_global()
-        {
-            error!("Failed to set thread pool size: {}", e);
-            std::process::exit(1);
-        }
+    {
+        error!("Failed to set thread pool size: {}", e);
+        std::process::exit(1);
     }
 
     match run_command(cli).await {

@@ -1,0 +1,26 @@
+[package]
+name = "maki-formatter"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+description = "Formatter for FHIR Shorthand files"
+
+[dependencies]
+# Internal dependencies
+maki-core = { path = "../maki-core" }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+insta.workspace = true

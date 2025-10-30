@@ -445,10 +445,10 @@ pub enum FshFile<'a> {
 
 impl<'a> FshBinding<'a> {
     pub fn list_items(&self) -> Option<impl Iterator<Item = FshGritNode> + Clone> {
-        if let Self::Node(node) = self {
-            if node.is_list() {
-                return Some(node.named_children());
-            }
+        if let Self::Node(node) = self
+            && node.is_list()
+        {
+            return Some(node.named_children());
         }
         None
     }

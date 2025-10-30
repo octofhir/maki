@@ -3,6 +3,30 @@
 //! This module provides semantic analysis over the CST using the typed AST layer.
 //! It extracts FHIR resources, builds symbol tables, and tracks references.
 
+pub mod alias;
+pub mod dependency_graph;
+pub mod invariant;
+pub mod path_resolver;
+pub mod ruleset;
+pub mod slicing;
+pub mod symbol_table;
+
+pub use alias::{Alias, AliasError, AliasTable};
+pub use dependency_graph::{
+    DependencyAnalyzer, DependencyEdge, DependencyError, DependencyGraph, DependencyType,
+};
+pub use invariant::{ConstraintSeverity, Invariant, InvariantError, InvariantRegistry};
+pub use path_resolver::{
+    Bracket, ElementDefinition, ElementType, PathError, PathResolver, PathSegment,
+    SoftIndexOp, StructureDefinition,
+};
+pub use ruleset::{RuleSet, RuleSetError, RuleSetExpander, RuleSetInsert};
+pub use slicing::{
+    Discriminator, DiscriminatorType, SliceDefinition, SlicingConfiguration, SlicingError,
+    SlicingHandler, SlicingRules,
+};
+pub use symbol_table::{CombinedSymbolTable, EnhancedSymbolTable, SymbolError, UnresolvedRef};
+
 use crate::cst::{FshSyntaxNode, ast::*};
 use crate::{Diagnostic, Location, MakiError, Result};
 use std::collections::HashMap;
@@ -20,6 +44,8 @@ pub struct SemanticModel {
     pub resources: Vec<FhirResource>,
     /// Symbol table for cross-reference tracking
     pub symbols: SymbolTable,
+    /// Alias table for URL resolution
+    pub aliases: AliasTable,
     /// References between resources and elements
     pub references: Vec<Reference>,
     /// Source file path
@@ -40,6 +66,7 @@ impl SemanticModel {
             cst,
             resources: Vec::new(),
             symbols: SymbolTable::default(),
+            aliases: AliasTable::new(),
             references: Vec::new(),
             source_file,
             source_map,
@@ -54,6 +81,7 @@ impl SemanticModel {
             cst,
             resources: Vec::new(),
             symbols: SymbolTable::default(),
+            aliases: AliasTable::new(),
             references: Vec::new(),
             source_file,
             source_map,
@@ -87,6 +115,39 @@ impl SemanticModel {
     /// Add a reference to the model
     pub fn add_reference(&mut self, reference: Reference) {
         self.references.push(reference);
+    }
+
+    /// Add an alias to the model
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The alias name doesn't start with '$'
+    /// - The alias is already defined
+    /// - The URL is invalid
+    pub fn add_alias(&mut self, alias: Alias) -> Result<()> {
+        self.aliases
+            .add_alias(alias)
+            .map_err(|e| MakiError::SemanticError {
+                message: e.to_string(),
+            })
+    }
+
+    /// Resolve an alias to its URL
+    ///
+    /// Returns `None` if the alias is not defined.
+    pub fn resolve_alias(&self, name: &str) -> Option<&str> {
+        self.aliases.resolve(name)
+    }
+
+    /// Check if a name is a defined alias
+    pub fn is_alias(&self, name: &str) -> bool {
+        self.aliases.is_alias(name)
+    }
+
+    /// Get the alias table
+    pub fn aliases(&self) -> &AliasTable {
+        &self.aliases
     }
 
     /// Get resource by ID
@@ -274,7 +335,7 @@ pub struct Symbol {
 }
 
 /// Types of symbols
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SymbolType {
     Profile,
     Extension,
@@ -730,18 +791,18 @@ impl DefaultSemanticAnalyzer {
             ));
         }
 
-        if let Some(type_info) = &element.type_info {
-            if !self.is_valid_fhir_type(&type_info.type_name) {
-                diagnostics.push(Diagnostic::new(
-                    "invalid-fhir-type",
-                    crate::Severity::Error,
-                    format!(
-                        "Invalid FHIR type '{}' in resource '{}'.",
-                        type_info.type_name, resource.id
-                    ),
-                    element.location.clone(),
-                ));
-            }
+        if let Some(type_info) = &element.type_info
+            && !self.is_valid_fhir_type(&type_info.type_name)
+        {
+            diagnostics.push(Diagnostic::new(
+                "invalid-fhir-type",
+                crate::Severity::Error,
+                format!(
+                    "Invalid FHIR type '{}' in resource '{}'.",
+                    type_info.type_name, resource.id
+                ),
+                element.location.clone(),
+            ));
         }
 
         diagnostics

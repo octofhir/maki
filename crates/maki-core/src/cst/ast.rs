@@ -614,7 +614,11 @@ impl AstNode for CardRule {
 
 impl CardRule {
     pub fn path(&self) -> Option<Path> {
-        child_of_kind(&self.syntax, FshSyntaxKind::Path).and_then(Path::cast)
+        // The path is the previous sibling of the rule node, not a child
+        self.syntax
+            .prev_sibling()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .and_then(Path::cast)
     }
 
     pub fn cardinality(&self) -> Option<String> {
@@ -666,7 +670,11 @@ impl AstNode for FlagRule {
 
 impl FlagRule {
     pub fn path(&self) -> Option<Path> {
-        child_of_kind(&self.syntax, FshSyntaxKind::Path).and_then(Path::cast)
+        // The path is the previous sibling of the rule node, not a child
+        self.syntax
+            .prev_sibling()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .and_then(Path::cast)
     }
 
     pub fn flags(&self) -> Vec<String> {
@@ -705,20 +713,43 @@ impl AstNode for ValueSetRule {
 
 impl ValueSetRule {
     pub fn path(&self) -> Option<Path> {
-        child_of_kind(&self.syntax, FshSyntaxKind::Path).and_then(Path::cast)
+        // The path is the previous sibling of the rule node, not a child
+        self.syntax
+            .prev_sibling()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .and_then(Path::cast)
     }
 
     pub fn value_set(&self) -> Option<String> {
-        get_ident_text(&self.syntax)
+        // ValueSet can be:
+        // 1. A simple identifier: "MyValueSet"
+        // 2. A URL: "http://hl7.org/fhir/ValueSet/marital-status"
+        //
+        // URLs are problematic because the lexer treats "//" as a comment.
+        // We need to collect all tokens after "from" until we hit "(" or newline
+
+        let text = self.syntax.text().to_string();
+
+        // Remove "from" keyword and any leading/trailing whitespace
+        let after_from = text.trim_start().strip_prefix("from")?;
+        let after_from = after_from.trim_start();
+
+        // Find the binding strength part (if exists) and extract everything before it
+        if let Some(paren_pos) = after_from.find('(') {
+            Some(after_from[..paren_pos].trim().to_string())
+        } else {
+            // No binding strength, take everything until newline
+            Some(after_from.trim().to_string())
+        }
     }
 
     pub fn strength(&self) -> Option<String> {
         // Extract binding strength from parentheses: (required), (extensible), etc.
         let text = self.syntax.text().to_string();
-        if let Some(start) = text.find('(') {
-            if let Some(end) = text.find(')') {
-                return Some(text[start + 1..end].trim().to_string());
-            }
+        if let Some(start) = text.find('(')
+            && let Some(end) = text.find(')')
+        {
+            return Some(text[start + 1..end].trim().to_string());
         }
         None
     }
@@ -750,15 +781,25 @@ impl AstNode for FixedValueRule {
 
 impl FixedValueRule {
     pub fn path(&self) -> Option<Path> {
-        child_of_kind(&self.syntax, FshSyntaxKind::Path).and_then(Path::cast)
+        // The path is the previous sibling of the rule node, not a child
+        self.syntax
+            .prev_sibling()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .and_then(Path::cast)
     }
 
     pub fn value(&self) -> Option<String> {
-        // Value can be string, number, or identifier
+        // Value can be string, number, identifier, or boolean
         get_string_text(&self.syntax)
             .or_else(|| get_ident_text(&self.syntax))
             .or_else(|| {
                 token_of_kind(&self.syntax, FshSyntaxKind::Integer).map(|t| t.text().to_string())
+            })
+            .or_else(|| {
+                token_of_kind(&self.syntax, FshSyntaxKind::True).map(|t| t.text().to_string())
+            })
+            .or_else(|| {
+                token_of_kind(&self.syntax, FshSyntaxKind::False).map(|t| t.text().to_string())
             })
     }
 }
@@ -789,7 +830,11 @@ impl AstNode for PathRule {
 
 impl PathRule {
     pub fn path(&self) -> Option<Path> {
-        child_of_kind(&self.syntax, FshSyntaxKind::Path).and_then(Path::cast)
+        // The path is the previous sibling of the rule node, not a child
+        self.syntax
+            .prev_sibling()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .and_then(Path::cast)
     }
 }
 

@@ -1,6 +1,14 @@
 //! CLI command implementations
 //!
-//! This module contains the implementation of all CLI commands
+//! This module contains the implementation of all CLI commands.
+//!
+//! Current commands are implemented directly in this file.
+//! Future SUSHI-compatible commands (build, init, etc.) are organized
+//! in the commands/ subdirectory as stubs for future implementation.
+
+// Future command modules (stubs)
+pub mod build;
+pub mod init;
 
 use maki_core::{
     AstFormatter, AutofixEngine, CachedFshParser, ConfigLoader, DefaultAutofixEngine,
@@ -160,81 +168,73 @@ pub async fn lint_command(
     debug!("Loaded {} built-in rules", compiled_rules.len());
 
     // Load custom GritQL rules from configured directories
-    if let Some(linter_config) = &config.linter {
-        if let Some(rule_dirs) = &linter_config.rule_directories {
-            if !rule_dirs.is_empty() {
-                info!(
-                    "Loading custom GritQL rules from {} directories",
-                    rule_dirs.len()
-                );
+    if let Some(linter_config) = &config.linter
+        && let Some(rule_dirs) = &linter_config.rule_directories
+        && !rule_dirs.is_empty()
+    {
+        info!(
+            "Loading custom GritQL rules from {} directories",
+            rule_dirs.len()
+        );
 
-                // Resolve paths (handle both absolute and relative)
-                let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                let rule_paths: Vec<PathBuf> = rule_dirs
-                    .iter()
-                    .map(|s| {
-                        let path = PathBuf::from(s);
-                        if path.is_absolute() {
-                            path
-                        } else {
-                            current_dir.join(path)
+        // Resolve paths (handle both absolute and relative)
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let rule_paths: Vec<PathBuf> = rule_dirs
+            .iter()
+            .map(|s| {
+                let path = PathBuf::from(s);
+                if path.is_absolute() {
+                    path
+                } else {
+                    current_dir.join(path)
+                }
+            })
+            .collect();
+
+        let rule_path_refs: Vec<&Path> = rule_paths.iter().map(|p| p.as_path()).collect();
+
+        match GritQLRuleLoader::load_from_directories(&rule_path_refs) {
+            Ok(gritql_loader) => {
+                info!("Loaded {} custom GritQL rules", gritql_loader.len());
+
+                // Convert GritQL rules to Rule objects and compile them
+                for loaded_rule in gritql_loader.all_rules() {
+                    let custom_rule = Rule {
+                        id: loaded_rule.id().to_string(),
+                        severity: maki_core::Severity::Warning, // Default severity
+                        description: format!(
+                            "Custom GritQL rule from {}",
+                            loaded_rule.source_path().display()
+                        ),
+                        gritql_pattern: loaded_rule.pattern().pattern.clone(),
+                        autofix: None,
+                        metadata: RuleMetadata {
+                            id: loaded_rule.id().to_string(),
+                            name: loaded_rule.id().to_string(),
+                            description: format!("Custom GritQL rule: {}", loaded_rule.id()),
+                            severity: maki_core::Severity::Warning,
+                            category: RuleCategory::Custom("gritql".to_string()),
+                            tags: vec!["custom".to_string(), "gritql".to_string()],
+                            version: Some("1.0.0".to_string()),
+                            docs_url: None,
+                        },
+                        is_ast_rule: false,
+                    };
+
+                    match rule_engine.compile_rule(&custom_rule) {
+                        Ok(compiled_rule) => {
+                            rule_engine.registry_mut().register(compiled_rule.clone());
+                            compiled_rules.push(compiled_rule);
+                            debug!("Compiled custom rule: {}", loaded_rule.id());
                         }
-                    })
-                    .collect();
-
-                let rule_path_refs: Vec<&Path> = rule_paths.iter().map(|p| p.as_path()).collect();
-
-                match GritQLRuleLoader::load_from_directories(&rule_path_refs) {
-                    Ok(gritql_loader) => {
-                        info!("Loaded {} custom GritQL rules", gritql_loader.len());
-
-                        // Convert GritQL rules to Rule objects and compile them
-                        for loaded_rule in gritql_loader.all_rules() {
-                            let custom_rule = Rule {
-                                id: loaded_rule.id().to_string(),
-                                severity: maki_core::Severity::Warning, // Default severity
-                                description: format!(
-                                    "Custom GritQL rule from {}",
-                                    loaded_rule.source_path().display()
-                                ),
-                                gritql_pattern: loaded_rule.pattern().pattern.clone(),
-                                autofix: None,
-                                metadata: RuleMetadata {
-                                    id: loaded_rule.id().to_string(),
-                                    name: loaded_rule.id().to_string(),
-                                    description: format!(
-                                        "Custom GritQL rule: {}",
-                                        loaded_rule.id()
-                                    ),
-                                    severity: maki_core::Severity::Warning,
-                                    category: RuleCategory::Custom("gritql".to_string()),
-                                    tags: vec!["custom".to_string(), "gritql".to_string()],
-                                    version: Some("1.0.0".to_string()),
-                                    docs_url: None,
-                                },
-                                is_ast_rule: false,
-                            };
-
-                            match rule_engine.compile_rule(&custom_rule) {
-                                Ok(compiled_rule) => {
-                                    rule_engine.registry_mut().register(compiled_rule.clone());
-                                    compiled_rules.push(compiled_rule);
-                                    debug!("Compiled custom rule: {}", loaded_rule.id());
-                                }
-                                Err(e) => {
-                                    error!(
-                                        "Failed to compile custom rule {}: {}",
-                                        loaded_rule.id(),
-                                        e
-                                    );
-                                }
-                            }
+                        Err(e) => {
+                            error!("Failed to compile custom rule {}: {}", loaded_rule.id(), e);
                         }
-                    }
-                    Err(e) => {
-                        error!("Failed to load GritQL rules: {}", e);
                     }
                 }
+            }
+            Err(e) => {
+                error!("Failed to load GritQL rules: {}", e);
             }
         }
     }
@@ -599,10 +599,10 @@ pub async fn rules_list_command(
         };
 
         // Apply category filter
-        if let Some(ref filter_cat) = category {
-            if rule_category != filter_cat.as_str() {
-                continue;
-            }
+        if let Some(ref filter_cat) = category
+            && rule_category != filter_cat.as_str()
+        {
+            continue;
         }
 
         // Apply tag filter (if tags exist)

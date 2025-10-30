@@ -19,11 +19,13 @@ toml = { workspace = true }
 json5 = "0.4"                             # JSONC support (comments + trailing commas)
 schemars = "1.0"                          # JSON Schema generation
 tokio = { workspace = true }
+async-trait = { workspace = true }
 rayon = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
+semver = { workspace = true }
 walkdir = { workspace = true }
 glob = { workspace = true }
 notify = { workspace = true }
@@ -31,6 +33,7 @@ dashmap = { workspace = true }
 octofhir-canonical-manager = { workspace = true }
 regex = "1.10"
 is-terminal = "0.4"
+petgraph = "0.6"  # Graph data structure and algorithms
 
 # Terminal/console output
 term_size = "0.3"     # Terminal width detection

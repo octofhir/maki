@@ -27,258 +27,250 @@ pub fn check_duplicates(model: &SemanticModel) -> Vec<Diagnostic> {
 
     // Check profiles
     for profile in document.profiles() {
-        if let Some(name) = profile.name() {
-            if let Some(first_location) =
+        if let Some(name) = profile.name()
+            && let Some(first_location) =
                 profile_names.insert(name.clone(), profile.syntax().clone())
-            {
-                let location = model.source_map.node_to_diagnostic_location(
-                    profile.syntax(),
-                    &model.source,
-                    &model.source_file,
-                );
-                let first_loc = model.source_map.node_to_diagnostic_location(
-                    &first_location,
-                    &model.source,
-                    &model.source_file,
-                );
-                diagnostics.push(
-                    Diagnostic::new(
-                        DUPLICATE_DEFINITION,
-                        Severity::Error,
-                        format!(
-                            "Duplicate Profile name '{}' (first defined at {}:{})",
-                            name, first_loc.line, first_loc.column
-                        ),
-                        location,
-                    )
-                    .with_code("duplicate-profile-name".to_string()),
-                );
-            }
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                profile.syntax(),
+                &model.source,
+                &model.source_file,
+            );
+            let first_loc = model.source_map.node_to_diagnostic_location(
+                &first_location,
+                &model.source,
+                &model.source_file,
+            );
+            diagnostics.push(
+                Diagnostic::new(
+                    DUPLICATE_DEFINITION,
+                    Severity::Error,
+                    format!(
+                        "Duplicate Profile name '{}' (first defined at {}:{})",
+                        name, first_loc.line, first_loc.column
+                    ),
+                    location,
+                )
+                .with_code("duplicate-profile-name".to_string()),
+            );
         }
 
         // Check ID duplicates across resource types
-        if let Some(id_clause) = profile.id() {
-            if let Some(id) = id_clause.value() {
-                if let Some((res_type, first_location)) = ids.insert(
-                    id.clone(),
-                    ("Profile".to_string(), profile.syntax().clone()),
-                ) {
-                    let location = model.source_map.node_to_diagnostic_location(
-                        profile.syntax(),
-                        &model.source,
-                        &model.source_file,
-                    );
-                    let first_loc = model.source_map.node_to_diagnostic_location(
-                        &first_location,
-                        &model.source,
-                        &model.source_file,
-                    );
-                    diagnostics.push(
-                        Diagnostic::new(
-                            DUPLICATE_DEFINITION,
-                            Severity::Error,
-                            format!(
-                                "Duplicate resource ID '{}' (first used in {} at {}:{})",
-                                id, res_type, first_loc.line, first_loc.column
-                            ),
-                            location,
-                        )
-                        .with_code("duplicate-resource-id".to_string()),
-                    );
-                }
-            }
+        if let Some(id_clause) = profile.id()
+            && let Some(id) = id_clause.value()
+            && let Some((res_type, first_location)) = ids.insert(
+                id.clone(),
+                ("Profile".to_string(), profile.syntax().clone()),
+            )
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                profile.syntax(),
+                &model.source,
+                &model.source_file,
+            );
+            let first_loc = model.source_map.node_to_diagnostic_location(
+                &first_location,
+                &model.source,
+                &model.source_file,
+            );
+            diagnostics.push(
+                Diagnostic::new(
+                    DUPLICATE_DEFINITION,
+                    Severity::Error,
+                    format!(
+                        "Duplicate resource ID '{}' (first used in {} at {}:{})",
+                        id, res_type, first_loc.line, first_loc.column
+                    ),
+                    location,
+                )
+                .with_code("duplicate-resource-id".to_string()),
+            );
         }
     }
 
     // Check extensions
     for extension in document.extensions() {
-        if let Some(name) = extension.name() {
-            if let Some(first_location) =
+        if let Some(name) = extension.name()
+            && let Some(first_location) =
                 extension_names.insert(name.clone(), extension.syntax().clone())
-            {
-                let location = model.source_map.node_to_diagnostic_location(
-                    extension.syntax(),
-                    &model.source,
-                    &model.source_file,
-                );
-                let first_loc = model.source_map.node_to_diagnostic_location(
-                    &first_location,
-                    &model.source,
-                    &model.source_file,
-                );
-                diagnostics.push(
-                    Diagnostic::new(
-                        DUPLICATE_DEFINITION,
-                        Severity::Error,
-                        format!(
-                            "Duplicate Extension name '{}' (first defined at {}:{})",
-                            name, first_loc.line, first_loc.column
-                        ),
-                        location,
-                    )
-                    .with_code("duplicate-extension-name".to_string()),
-                );
-            }
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                extension.syntax(),
+                &model.source,
+                &model.source_file,
+            );
+            let first_loc = model.source_map.node_to_diagnostic_location(
+                &first_location,
+                &model.source,
+                &model.source_file,
+            );
+            diagnostics.push(
+                Diagnostic::new(
+                    DUPLICATE_DEFINITION,
+                    Severity::Error,
+                    format!(
+                        "Duplicate Extension name '{}' (first defined at {}:{})",
+                        name, first_loc.line, first_loc.column
+                    ),
+                    location,
+                )
+                .with_code("duplicate-extension-name".to_string()),
+            );
         }
 
-        if let Some(id_clause) = extension.id() {
-            if let Some(id) = id_clause.value() {
-                if let Some((res_type, first_location)) = ids.insert(
-                    id.clone(),
-                    ("Extension".to_string(), extension.syntax().clone()),
-                ) {
-                    let location = model.source_map.node_to_diagnostic_location(
-                        extension.syntax(),
-                        &model.source,
-                        &model.source_file,
-                    );
-                    let first_loc = model.source_map.node_to_diagnostic_location(
-                        &first_location,
-                        &model.source,
-                        &model.source_file,
-                    );
-                    diagnostics.push(
-                        Diagnostic::new(
-                            DUPLICATE_DEFINITION,
-                            Severity::Error,
-                            format!(
-                                "Duplicate resource ID '{}' (first used in {} at {}:{})",
-                                id, res_type, first_loc.line, first_loc.column
-                            ),
-                            location,
-                        )
-                        .with_code("duplicate-resource-id".to_string()),
-                    );
-                }
-            }
+        if let Some(id_clause) = extension.id()
+            && let Some(id) = id_clause.value()
+            && let Some((res_type, first_location)) = ids.insert(
+                id.clone(),
+                ("Extension".to_string(), extension.syntax().clone()),
+            )
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                extension.syntax(),
+                &model.source,
+                &model.source_file,
+            );
+            let first_loc = model.source_map.node_to_diagnostic_location(
+                &first_location,
+                &model.source,
+                &model.source_file,
+            );
+            diagnostics.push(
+                Diagnostic::new(
+                    DUPLICATE_DEFINITION,
+                    Severity::Error,
+                    format!(
+                        "Duplicate resource ID '{}' (first used in {} at {}:{})",
+                        id, res_type, first_loc.line, first_loc.column
+                    ),
+                    location,
+                )
+                .with_code("duplicate-resource-id".to_string()),
+            );
         }
     }
 
     // Check value sets
     for value_set in document.value_sets() {
-        if let Some(name) = value_set.name() {
-            if let Some(first_location) =
+        if let Some(name) = value_set.name()
+            && let Some(first_location) =
                 value_set_names.insert(name.clone(), value_set.syntax().clone())
-            {
-                let location = model.source_map.node_to_diagnostic_location(
-                    value_set.syntax(),
-                    &model.source,
-                    &model.source_file,
-                );
-                let first_loc = model.source_map.node_to_diagnostic_location(
-                    &first_location,
-                    &model.source,
-                    &model.source_file,
-                );
-                diagnostics.push(
-                    Diagnostic::new(
-                        DUPLICATE_DEFINITION,
-                        Severity::Error,
-                        format!(
-                            "Duplicate ValueSet name '{}' (first defined at {}:{})",
-                            name, first_loc.line, first_loc.column
-                        ),
-                        location,
-                    )
-                    .with_code("duplicate-valueset-name".to_string()),
-                );
-            }
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                value_set.syntax(),
+                &model.source,
+                &model.source_file,
+            );
+            let first_loc = model.source_map.node_to_diagnostic_location(
+                &first_location,
+                &model.source,
+                &model.source_file,
+            );
+            diagnostics.push(
+                Diagnostic::new(
+                    DUPLICATE_DEFINITION,
+                    Severity::Error,
+                    format!(
+                        "Duplicate ValueSet name '{}' (first defined at {}:{})",
+                        name, first_loc.line, first_loc.column
+                    ),
+                    location,
+                )
+                .with_code("duplicate-valueset-name".to_string()),
+            );
         }
 
-        if let Some(id_clause) = value_set.id() {
-            if let Some(id) = id_clause.value() {
-                if let Some((res_type, first_location)) = ids.insert(
-                    id.clone(),
-                    ("ValueSet".to_string(), value_set.syntax().clone()),
-                ) {
-                    let location = model.source_map.node_to_diagnostic_location(
-                        value_set.syntax(),
-                        &model.source,
-                        &model.source_file,
-                    );
-                    let first_loc = model.source_map.node_to_diagnostic_location(
-                        &first_location,
-                        &model.source,
-                        &model.source_file,
-                    );
-                    diagnostics.push(
-                        Diagnostic::new(
-                            DUPLICATE_DEFINITION,
-                            Severity::Error,
-                            format!(
-                                "Duplicate resource ID '{}' (first used in {} at {}:{})",
-                                id, res_type, first_loc.line, first_loc.column
-                            ),
-                            location,
-                        )
-                        .with_code("duplicate-resource-id".to_string()),
-                    );
-                }
-            }
+        if let Some(id_clause) = value_set.id()
+            && let Some(id) = id_clause.value()
+            && let Some((res_type, first_location)) = ids.insert(
+                id.clone(),
+                ("ValueSet".to_string(), value_set.syntax().clone()),
+            )
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                value_set.syntax(),
+                &model.source,
+                &model.source_file,
+            );
+            let first_loc = model.source_map.node_to_diagnostic_location(
+                &first_location,
+                &model.source,
+                &model.source_file,
+            );
+            diagnostics.push(
+                Diagnostic::new(
+                    DUPLICATE_DEFINITION,
+                    Severity::Error,
+                    format!(
+                        "Duplicate resource ID '{}' (first used in {} at {}:{})",
+                        id, res_type, first_loc.line, first_loc.column
+                    ),
+                    location,
+                )
+                .with_code("duplicate-resource-id".to_string()),
+            );
         }
     }
 
     // Check code systems
     for code_system in document.code_systems() {
-        if let Some(name) = code_system.name() {
-            if let Some(first_location) =
+        if let Some(name) = code_system.name()
+            && let Some(first_location) =
                 code_system_names.insert(name.clone(), code_system.syntax().clone())
-            {
-                let location = model.source_map.node_to_diagnostic_location(
-                    code_system.syntax(),
-                    &model.source,
-                    &model.source_file,
-                );
-                let first_loc = model.source_map.node_to_diagnostic_location(
-                    &first_location,
-                    &model.source,
-                    &model.source_file,
-                );
-                diagnostics.push(
-                    Diagnostic::new(
-                        DUPLICATE_DEFINITION,
-                        Severity::Error,
-                        format!(
-                            "Duplicate CodeSystem name '{}' (first defined at {}:{})",
-                            name, first_loc.line, first_loc.column
-                        ),
-                        location,
-                    )
-                    .with_code("duplicate-codesystem-name".to_string()),
-                );
-            }
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                code_system.syntax(),
+                &model.source,
+                &model.source_file,
+            );
+            let first_loc = model.source_map.node_to_diagnostic_location(
+                &first_location,
+                &model.source,
+                &model.source_file,
+            );
+            diagnostics.push(
+                Diagnostic::new(
+                    DUPLICATE_DEFINITION,
+                    Severity::Error,
+                    format!(
+                        "Duplicate CodeSystem name '{}' (first defined at {}:{})",
+                        name, first_loc.line, first_loc.column
+                    ),
+                    location,
+                )
+                .with_code("duplicate-codesystem-name".to_string()),
+            );
         }
 
-        if let Some(id_clause) = code_system.id() {
-            if let Some(id) = id_clause.value() {
-                if let Some((res_type, first_location)) = ids.insert(
-                    id.clone(),
-                    ("CodeSystem".to_string(), code_system.syntax().clone()),
-                ) {
-                    let location = model.source_map.node_to_diagnostic_location(
-                        code_system.syntax(),
-                        &model.source,
-                        &model.source_file,
-                    );
-                    let first_loc = model.source_map.node_to_diagnostic_location(
-                        &first_location,
-                        &model.source,
-                        &model.source_file,
-                    );
-                    diagnostics.push(
-                        Diagnostic::new(
-                            DUPLICATE_DEFINITION,
-                            Severity::Error,
-                            format!(
-                                "Duplicate resource ID '{}' (first used in {} at {}:{})",
-                                id, res_type, first_loc.line, first_loc.column
-                            ),
-                            location,
-                        )
-                        .with_code("duplicate-resource-id".to_string()),
-                    );
-                }
-            }
+        if let Some(id_clause) = code_system.id()
+            && let Some(id) = id_clause.value()
+            && let Some((res_type, first_location)) = ids.insert(
+                id.clone(),
+                ("CodeSystem".to_string(), code_system.syntax().clone()),
+            )
+        {
+            let location = model.source_map.node_to_diagnostic_location(
+                code_system.syntax(),
+                &model.source,
+                &model.source_file,
+            );
+            let first_loc = model.source_map.node_to_diagnostic_location(
+                &first_location,
+                &model.source,
+                &model.source_file,
+            );
+            diagnostics.push(
+                Diagnostic::new(
+                    DUPLICATE_DEFINITION,
+                    Severity::Error,
+                    format!(
+                        "Duplicate resource ID '{}' (first used in {} at {}:{})",
+                        id, res_type, first_loc.line, first_loc.column
+                    ),
+                    location,
+                )
+                .with_code("duplicate-resource-id".to_string()),
+            );
         }
     }
 

@@ -156,14 +156,13 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
                         let mut terminated = false;
                         while end < len {
                             if let Some((c, step)) = next_char(input, end) {
-                                if c == '*' {
-                                    if let Some((peek, peek_size)) = next_char(input, end + step) {
-                                        if peek == '/' {
-                                            end += step + peek_size;
-                                            terminated = true;
-                                            break;
-                                        }
-                                    }
+                                if c == '*'
+                                    && let Some((peek, peek_size)) = next_char(input, end + step)
+                                    && peek == '/'
+                                {
+                                    end += step + peek_size;
+                                    terminated = true;
+                                    break;
                                 }
                                 end += step;
                             } else {

@@ -14,11 +14,15 @@ pub mod diagnostics;
 pub mod discovery;
 pub mod error;
 pub mod executor;
+pub mod export; // FHIR exporters (profiles, instances, etc.)
 pub mod formatter;
 pub mod parser;
 pub mod result;
 pub mod rules;
 pub mod semantic;
+
+// Alias for FHIR utilities (canonical package management)
+pub use canonical as fhir;
 
 // Re-export commonly used types
 pub use autofix::{
@@ -32,6 +36,10 @@ pub use canonical::{
     CanonicalFacade, CanonicalLoaderError, CanonicalOptions, CanonicalResult, DefinitionResource,
     DefinitionSession, FhirRelease, PackageCoordinate,
 };
+// Re-export fishable types for convenience
+pub use canonical::fishable::{FhirMetadata, FhirType, Fishable};
+// Re-export version types for convenience
+pub use canonical::version::{FhirVersionExt, VersionError, VersionResolver, VersionSpecifier};
 // Configuration system
 pub use config::{
     ConfigLoader, FilesConfiguration, FormatterConfiguration, LinterConfiguration,
@@ -53,6 +61,7 @@ pub use executor::{
     DefaultExecutor, ExecutionContext, Executor, FileExecutionResult, ProgressCallback,
     ProgressInfo, ResourceStats,
 };
+pub use export::{InstanceExporter, ProfileExporter};
 pub use formatter::{
     AstFormatter, CaretAlignment, DiffChange, DiffChangeType, FormatDiff, FormatMode, FormatResult,
     Formatter, FormatterManager, Range,
@@ -66,9 +75,10 @@ pub use rules::{
     RuleEngine, RuleEngineConfig, RuleMetadata,
 };
 pub use semantic::{
-    Cardinality, Constraint, ConstraintType, DefaultSemanticAnalyzer, Element, ElementFlag,
-    FhirResource, Reference, ReferenceType, ResourceMetadata, ResourceType, SemanticAnalyzer,
-    SemanticAnalyzerConfig, SemanticModel, Symbol, SymbolTable, SymbolType, TypeInfo,
+    Cardinality, CombinedSymbolTable, Constraint, ConstraintType, DefaultSemanticAnalyzer, Element,
+    ElementFlag, EnhancedSymbolTable, FhirResource, Reference, ReferenceType, ResourceMetadata,
+    ResourceType, SemanticAnalyzer, SemanticAnalyzerConfig, SemanticModel, Symbol, SymbolError,
+    SymbolTable, SymbolType, TypeInfo, UnresolvedRef,
 };
 
 /// Initialize the tracing subscriber for logging

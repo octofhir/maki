@@ -1,0 +1,32 @@
+[package]
+name = "maki-test"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+description = "Testing framework for FHIR Shorthand files"
+
+[dependencies]
+# Internal dependencies
+maki-core = { path = "../maki-core" }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Async runtime
+tokio.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# File system
+walkdir.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

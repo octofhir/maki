@@ -1,6 +1,5 @@
 ---
 source: crates/maki-core/src/cst/formatter_insta_tests.rs
-assertion_line: 28
 expression: formatted
 ---
 Profile: MyPatient
@@ -8,6 +7,6 @@ Parent: Patient
 Id: my-patient
 Title: "My Patient Profile"
 
-*  1..* MS
-*  1..1 MS
-*  1..1
+* identifier 1..* MS
+* name       1..1 MS
+* gender     1..1

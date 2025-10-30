@@ -45,17 +45,17 @@ fn check_profile_metadata(profile: &Profile, model: &SemanticModel) -> Vec<Diagn
     let mut diagnostics = Vec::new();
 
     // Description is important for understanding the profile
-    if profile.description().is_none() {
-        if let Some(name) = profile.name() {
-            diagnostics.push(create_missing_metadata_diagnostic(
-                "Profile",
-                &name,
-                "Description",
-                profile.syntax(),
-                model,
-                "Profiles should have a Description field for documentation",
-            ));
-        }
+    if profile.description().is_none()
+        && let Some(name) = profile.name()
+    {
+        diagnostics.push(create_missing_metadata_diagnostic(
+            "Profile",
+            &name,
+            "Description",
+            profile.syntax(),
+            model,
+            "Profiles should have a Description field for documentation",
+        ));
     }
 
     diagnostics
@@ -66,17 +66,17 @@ fn check_extension_metadata(extension: &Extension, model: &SemanticModel) -> Vec
     let mut diagnostics = Vec::new();
 
     // Description is important for understanding the extension
-    if extension.description().is_none() {
-        if let Some(name) = extension.name() {
-            diagnostics.push(create_missing_metadata_diagnostic(
-                "Extension",
-                &name,
-                "Description",
-                extension.syntax(),
-                model,
-                "Extensions should have a Description field for documentation",
-            ));
-        }
+    if extension.description().is_none()
+        && let Some(name) = extension.name()
+    {
+        diagnostics.push(create_missing_metadata_diagnostic(
+            "Extension",
+            &name,
+            "Description",
+            extension.syntax(),
+            model,
+            "Extensions should have a Description field for documentation",
+        ));
     }
 
     diagnostics
@@ -87,17 +87,17 @@ fn check_value_set_metadata(value_set: &ValueSet, model: &SemanticModel) -> Vec<
     let mut diagnostics = Vec::new();
 
     // Description is important for understanding what values are included
-    if value_set.description().is_none() {
-        if let Some(name) = value_set.name() {
-            diagnostics.push(create_missing_metadata_diagnostic(
-                "ValueSet",
-                &name,
-                "Description",
-                value_set.syntax(),
-                model,
-                "ValueSets should have a Description field explaining the purpose and contents",
-            ));
-        }
+    if value_set.description().is_none()
+        && let Some(name) = value_set.name()
+    {
+        diagnostics.push(create_missing_metadata_diagnostic(
+            "ValueSet",
+            &name,
+            "Description",
+            value_set.syntax(),
+            model,
+            "ValueSets should have a Description field explaining the purpose and contents",
+        ));
     }
 
     diagnostics
@@ -108,17 +108,17 @@ fn check_code_system_metadata(code_system: &CodeSystem, model: &SemanticModel) -
     let mut diagnostics = Vec::new();
 
     // Description is important for understanding the code system
-    if code_system.description().is_none() {
-        if let Some(name) = code_system.name() {
-            diagnostics.push(create_missing_metadata_diagnostic(
-                "CodeSystem",
-                &name,
-                "Description",
-                code_system.syntax(),
-                model,
-                "CodeSystems should have a Description field explaining the codes",
-            ));
-        }
+    if code_system.description().is_none()
+        && let Some(name) = code_system.name()
+    {
+        diagnostics.push(create_missing_metadata_diagnostic(
+            "CodeSystem",
+            &name,
+            "Description",
+            code_system.syntax(),
+            model,
+            "CodeSystems should have a Description field explaining the codes",
+        ));
     }
 
     diagnostics
@@ -191,6 +191,7 @@ mod tests {
             cst,
             resources: Vec::new(),
             symbols: Default::default(),
+            aliases: maki_core::semantic::AliasTable::new(),
             references: Vec::new(),
             source_file: PathBuf::from("test.fsh"),
             source_map,

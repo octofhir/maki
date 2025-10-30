@@ -29,8 +29,14 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable]
+        rust: [stable, nightly]
+        # Allow nightly failures
+        include:
+          - rust: nightly
+            experimental: true
 
+    # Allow nightly to fail without failing the entire job
+    continue-on-error: ${{ matrix.experimental || false }}
     steps:
       - uses: actions/checkout@v4
 
@@ -57,7 +63,8 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --all-targets --all-features
+        # Fail on warnings for stricter quality control
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Test
         run: cargo test --workspace --verbose

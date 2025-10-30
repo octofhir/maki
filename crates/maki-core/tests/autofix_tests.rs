@@ -345,7 +345,7 @@ fn test_fix_preview_generation() {
         "preview-rule".to_string(),
     );
 
-    let previews = engine.preview_fixes(&[fix.clone()]).unwrap();
+    let previews = engine.preview_fixes(std::slice::from_ref(&fix)).unwrap();
 
     assert_eq!(previews.len(), 1);
     assert_eq!(previews[0].file, file_path);

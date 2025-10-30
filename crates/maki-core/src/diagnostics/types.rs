@@ -781,49 +781,49 @@ impl DiagnosticFormatter {
 
         let mut parts = Vec::new();
 
-        if let Some(&error_count) = counts.get(&Severity::Error) {
-            if error_count > 0 {
-                parts.push(self.colorize(
-                    &format!(
-                        "{} error{}",
-                        error_count,
-                        if error_count == 1 { "" } else { "s" }
-                    ),
-                    Color::Red,
-                ));
-            }
+        if let Some(&error_count) = counts.get(&Severity::Error)
+            && error_count > 0
+        {
+            parts.push(self.colorize(
+                &format!(
+                    "{} error{}",
+                    error_count,
+                    if error_count == 1 { "" } else { "s" }
+                ),
+                Color::Red,
+            ));
         }
 
-        if let Some(&warning_count) = counts.get(&Severity::Warning) {
-            if warning_count > 0 {
-                parts.push(self.colorize(
-                    &format!(
-                        "{} warning{}",
-                        warning_count,
-                        if warning_count == 1 { "" } else { "s" }
-                    ),
-                    Color::Yellow,
-                ));
-            }
+        if let Some(&warning_count) = counts.get(&Severity::Warning)
+            && warning_count > 0
+        {
+            parts.push(self.colorize(
+                &format!(
+                    "{} warning{}",
+                    warning_count,
+                    if warning_count == 1 { "" } else { "s" }
+                ),
+                Color::Yellow,
+            ));
         }
 
-        if let Some(&info_count) = counts.get(&Severity::Info) {
-            if info_count > 0 {
-                parts.push(self.colorize(&format!("{info_count} info"), Color::Blue));
-            }
+        if let Some(&info_count) = counts.get(&Severity::Info)
+            && info_count > 0
+        {
+            parts.push(self.colorize(&format!("{info_count} info"), Color::Blue));
         }
 
-        if let Some(&hint_count) = counts.get(&Severity::Hint) {
-            if hint_count > 0 {
-                parts.push(self.colorize(
-                    &format!(
-                        "{} hint{}",
-                        hint_count,
-                        if hint_count == 1 { "" } else { "s" }
-                    ),
-                    Color::Cyan,
-                ));
-            }
+        if let Some(&hint_count) = counts.get(&Severity::Hint)
+            && hint_count > 0
+        {
+            parts.push(self.colorize(
+                &format!(
+                    "{} hint{}",
+                    hint_count,
+                    if hint_count == 1 { "" } else { "s" }
+                ),
+                Color::Cyan,
+            ));
         }
 
         format!(

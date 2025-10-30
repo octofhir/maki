@@ -269,25 +269,23 @@ pub fn check_extension_context(model: &SemanticModel) -> Vec<Diagnostic> {
             syntax_text.contains("^context") || syntax_text.contains("Context:")
         });
 
-        if !has_context_rule {
-            if let Some(name) = extension.name() {
-                let location = model.source_map.node_to_diagnostic_location(
-                    extension.syntax(),
-                    &model.source,
-                    &model.source_file,
-                );
-                diagnostics.push(
-                    Diagnostic::new(
-                        EXTENSION_CONTEXT_MISSING,
-                        Severity::Warning,
-                        format!(
-                            "Extension '{name}' should specify where it can be used with ^context rules"
-                        ),
-                        location,
-                    )
-                    .with_code("missing-extension-context".to_string()),
-                );
-            }
+        if !has_context_rule && let Some(name) = extension.name() {
+            let location = model.source_map.node_to_diagnostic_location(
+                extension.syntax(),
+                &model.source,
+                &model.source_file,
+            );
+            diagnostics.push(
+                Diagnostic::new(
+                    EXTENSION_CONTEXT_MISSING,
+                    Severity::Warning,
+                    format!(
+                        "Extension '{name}' should specify where it can be used with ^context rules"
+                    ),
+                    location,
+                )
+                .with_code("missing-extension-context".to_string()),
+            );
         }
     }
 

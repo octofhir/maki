@@ -85,8 +85,8 @@ impl DiagnosticRenderer {
     pub fn render(&self, diagnostic: &Diagnostic) -> String {
         match self.output_format {
             OutputFormat::Text => self.render_text(diagnostic),
-            OutputFormat::Json => self.render_json(&[diagnostic.clone()], false),
-            OutputFormat::JsonPretty => self.render_json(&[diagnostic.clone()], true),
+            OutputFormat::Json => self.render_json(std::slice::from_ref(diagnostic), false),
+            OutputFormat::JsonPretty => self.render_json(std::slice::from_ref(diagnostic), true),
         }
     }
 

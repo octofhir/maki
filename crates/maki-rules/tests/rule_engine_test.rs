@@ -88,6 +88,7 @@ fn create_mock_semantic_model() -> SemanticModel {
         source_map: maki_core::SourceMap::new(&source),
         resources: Vec::new(),
         symbols: SymbolTable::default(),
+        aliases: maki_core::semantic::AliasTable::new(),
         references: Vec::new(),
     }
 }

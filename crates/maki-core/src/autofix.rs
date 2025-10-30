@@ -713,10 +713,11 @@ impl AutofixEngine for DefaultAutofixEngine {
         }
 
         // Validate syntax if requested
-        if config.validate_syntax && applied_count > 0 {
-            if let Err(e) = self.validate_syntax(&modified_content, file) {
-                errors.push(format!("Syntax validation failed: {e}"));
-            }
+        if config.validate_syntax
+            && applied_count > 0
+            && let Err(e) = self.validate_syntax(&modified_content, file)
+        {
+            errors.push(format!("Syntax validation failed: {e}"));
         }
 
         // Write the modified content if not in dry-run mode
@@ -1135,12 +1136,11 @@ impl RollbackPlan {
         use std::fs;
 
         for file in self.original_contents.keys() {
-            if let Ok(metadata) = fs::metadata(file) {
-                if let Ok(modified) = metadata.modified() {
-                    if modified > self.created_at {
-                        return false;
-                    }
-                }
+            if let Ok(metadata) = fs::metadata(file)
+                && let Ok(modified) = metadata.modified()
+                && modified > self.created_at
+            {
+                return false;
             }
         }
 

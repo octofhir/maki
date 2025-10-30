@@ -566,10 +566,10 @@ impl Executor for DefaultExecutor {
         });
 
         // Shutdown resource monitor if it was started
-        if let Some(_stats) = monitor_handle {
-            if let Some(monitor) = &self.context.resource_monitor {
-                monitor.shutdown();
-            }
+        if let Some(_stats) = monitor_handle
+            && let Some(monitor) = &self.context.resource_monitor
+        {
+            monitor.shutdown();
         }
 
         Ok(final_results)

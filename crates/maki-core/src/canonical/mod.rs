@@ -5,6 +5,12 @@
 //! canonical manager crate so the rest of `maki-core` can depend on a stable,
 //! async-friendly API with caching, version awareness, and ergonomic errors.
 
+pub mod codesystem;
+pub mod extension;
+pub mod fishable;
+pub mod valueset;
+pub mod version;
+
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

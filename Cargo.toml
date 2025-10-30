@@ -3,6 +3,9 @@ members = [
   "crates/maki-core",
   "crates/maki-cli",
   "crates/maki-rules",
+  "crates/maki-lsp",
+  "crates/maki-formatter",
+  "crates/maki-test",
   "crates/maki-devtools",
   "crates/maki-bench",
   "crates/maki-integration-tests",
@@ -36,6 +39,7 @@ clap = { version = "4.0", features = ["derive", "env"] }
 
 # Async runtime
 tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
 
 # Parallel processing
 rayon = "1.7"
@@ -47,6 +51,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Error handling
 thiserror = "2"
 anyhow = "1.0"
+
+# Version handling
+semver = { version = "1.0", features = ["serde"] }
 
 # File system operations
 walkdir = "2.3"
@@ -65,6 +72,16 @@ insta = { version = "1.40", features = ["yaml"] }
 assert_cmd = "2.0"
 predicates = "3.0"
 tempfile = "3.0"
+
+# LSP
+tower-lsp = "0.20"
+
+# Internal crate dependencies
+maki-core = { path = "crates/maki-core" }
+maki-rules = { path = "crates/maki-rules" }
+maki-lsp = { path = "crates/maki-lsp" }
+maki-formatter = { path = "crates/maki-formatter" }
+maki-test = { path = "crates/maki-test" }
 
 [profile.release]
 lto = true

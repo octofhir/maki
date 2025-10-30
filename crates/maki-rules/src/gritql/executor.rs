@@ -354,12 +354,12 @@ impl CompiledGritQLPattern {
         })?;
 
         // Find "Profile:" and extract the identifier after it
-        if let Some(profile_line) = text.lines().next() {
-            if let Some(name_start) = profile_line.find("Profile:") {
-                let name = profile_line[name_start + 8..].trim();
-                if !name.is_empty() {
-                    return Ok(Some(name.to_string()));
-                }
+        if let Some(profile_line) = text.lines().next()
+            && let Some(name_start) = profile_line.find("Profile:")
+        {
+            let name = profile_line[name_start + 8..].trim();
+            if !name.is_empty() {
+                return Ok(Some(name.to_string()));
             }
         }
 

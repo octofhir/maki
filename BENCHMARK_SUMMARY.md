@@ -122,13 +122,13 @@ Extrapolating:
 
 ```bash
 # Run all benchmarks
-cargo bench --package fsh-lint-bench
+cargo bench --package maki-bench
 
 # View HTML report
 open target/criterion/report/index.html
 
 # Run specific benchmark
-cargo bench --package fsh-lint-bench -- simple_profile
+cargo bench --package maki-bench -- simple_profile
 ```
 
 ## Conclusion

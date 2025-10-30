@@ -63,14 +63,15 @@ fn check_resource_cardinality_rules(
                 match (min_result, max_result) {
                     (Ok(min), Ok(max_opt)) => {
                         // Check: upper bound cannot be less than lower bound
-                        if let Some(max) = max_opt {
-                            if max < min {
-                                let location = model.source_map.node_to_diagnostic_location(
-                                    rule.syntax(),
-                                    &model.source,
-                                    &model.source_file,
-                                );
-                                diagnostics.push(
+                        if let Some(max) = max_opt
+                            && max < min
+                        {
+                            let location = model.source_map.node_to_diagnostic_location(
+                                rule.syntax(),
+                                &model.source,
+                                &model.source_file,
+                            );
+                            diagnostics.push(
                                     Diagnostic::new(
                                         INVALID_CARDINALITY,
                                         Severity::Error,
@@ -81,7 +82,6 @@ fn check_resource_cardinality_rules(
                                     )
                                     .with_code("invalid-cardinality".to_string()),
                                 );
-                            }
                         }
                     }
                     _ => {

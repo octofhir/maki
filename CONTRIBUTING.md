@@ -332,9 +332,64 @@ cargo insta test
 cargo insta review
 ```
 
+## Continuous Integration (CI)
+
+All pull requests must pass automated CI checks before merging. Our CI pipeline includes:
+
+### Required Checks
+
+1. **Format Check**: Code must be formatted with `cargo fmt`
+   ```bash
+   cargo fmt --all -- --check
+   ```
+
+2. **Clippy Lints**: Code must pass Clippy with no warnings
+   ```bash
+   cargo clippy --workspace --all-targets --all-features -- -D warnings
+   ```
+
+3. **Tests**: All tests must pass on Linux, macOS, and Windows
+   ```bash
+   cargo test --workspace
+   ```
+
+4. **Build**: Project must compile successfully
+   ```bash
+   cargo build --workspace --release
+   ```
+
+5. **Security Audit**: Dependencies must pass security audit
+   - Runs automatically on dependency changes
+   - Uses `cargo-audit` to check for known vulnerabilities
+
+### Optional Checks
+
+- **Nightly Rust**: Tests run on nightly but failures don't block merging
+- **Benchmarks**: Performance benchmarks run but don't block merging
+- **Coverage**: Code coverage is tracked but doesn't block merging (target: ≥80%)
+
+### Running CI Checks Locally
+
+Before submitting a PR, run these commands locally to ensure CI will pass:
+
+```bash
+# Run all checks at once
+cargo fmt --all -- --check && \
+cargo clippy --workspace --all-targets --all-features -- -D warnings && \
+cargo test --workspace && \
+cargo build --workspace --release
+```
+
+### CI Workflow Status
+
+You can see the status of CI checks in your pull request:
+- ✅ All checks passed - ready to merge
+- ❌ Checks failed - review the logs and fix issues
+- 🟡 Checks running - wait for completion
+
 ## Pull Request Process
 
-1. Ensure all tests pass and code is formatted
+1. Ensure all CI checks pass (see above)
 2. Update documentation if needed
 3. Add an entry to CHANGELOG.md under "Unreleased"
 4. Push your changes to your fork
@@ -348,8 +403,9 @@ cargo insta review
 ### Pull Request Review
 
 - PRs require at least one approval from a maintainer
+- All CI checks must pass before merging
 - Address review feedback by pushing new commits
-- Once approved, a maintainer will merge your PR
+- Once approved and CI passes, a maintainer will merge your PR
 
 ## Issue Guidelines
 

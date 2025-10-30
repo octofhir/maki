@@ -152,7 +152,6 @@ impl RuleRegistry {
                 );
             } else {
                 tracing::debug!("Skipping rule '{}' with lower priority", id);
-                return;
             }
         } else {
             self.rules.insert(id, rule);
@@ -407,23 +406,18 @@ impl DefaultRuleEngine {
             let path = entry.path();
 
             // Only process rule files (JSON or TOML)
-            if path.is_file() {
-                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                    if matches!(ext, "json" | "toml" | "yaml" | "yml") {
-                        match self.load_rule_file(path) {
-                            Ok(()) => loaded_count += 1,
-                            Err(e) => {
-                                if self.registry.config.fail_fast {
-                                    return Err(e);
-                                } else {
-                                    tracing::warn!(
-                                        "Failed to load rule from {}: {}",
-                                        path.display(),
-                                        e
-                                    );
-                                    errors.push(e);
-                                }
-                            }
+            if path.is_file()
+                && let Some(ext) = path.extension().and_then(|s| s.to_str())
+                && matches!(ext, "json" | "toml" | "yaml" | "yml")
+            {
+                match self.load_rule_file(path) {
+                    Ok(()) => loaded_count += 1,
+                    Err(e) => {
+                        if self.registry.config.fail_fast {
+                            return Err(e);
+                        } else {
+                            tracing::warn!("Failed to load rule from {}: {}", path.display(), e);
+                            errors.push(e);
                         }
                     }
                 }
@@ -484,13 +478,14 @@ impl DefaultRuleEngine {
             let entry = entry.map_err(|e| MakiError::io_error(dir, std::io::Error::other(e)))?;
             let path = entry.path();
 
-            if path.is_file() && self.should_include_file(path, config) {
-                if let Err(e) = self.load_rule_file(path) {
-                    if self.registry.config.fail_fast {
-                        return Err(e);
-                    } else {
-                        tracing::warn!("Failed to load rule from {}: {}", path.display(), e);
-                    }
+            if path.is_file()
+                && self.should_include_file(path, config)
+                && let Err(e) = self.load_rule_file(path)
+            {
+                if self.registry.config.fail_fast {
+                    return Err(e);
+                } else {
+                    tracing::warn!("Failed to load rule from {}: {}", path.display(), e);
                 }
             }
         }
@@ -511,13 +506,14 @@ impl DefaultRuleEngine {
             let entry = entry.map_err(|e| MakiError::io_error(dir, e))?;
             let path = entry.path();
 
-            if path.is_file() && self.should_include_file(&path, config) {
-                if let Err(e) = self.load_rule_file(&path) {
-                    if self.registry.config.fail_fast {
-                        return Err(e);
-                    } else {
-                        tracing::warn!("Failed to load rule from {}: {}", path.display(), e);
-                    }
+            if path.is_file()
+                && self.should_include_file(&path, config)
+                && let Err(e) = self.load_rule_file(&path)
+            {
+                if self.registry.config.fail_fast {
+                    return Err(e);
+                } else {
+                    tracing::warn!("Failed to load rule from {}: {}", path.display(), e);
                 }
             }
         }
@@ -541,20 +537,19 @@ impl DefaultRuleEngine {
             if path.is_file() {
                 if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
                     // Look for pack manifest files
-                    if file_name == "pack.json"
+                    if (file_name == "pack.json"
                         || file_name == "pack.toml"
-                        || file_name == "rulePack.json"
+                        || file_name == "rulePack.json")
+                        && let Err(e) = self.load_rule_pack_file(&path)
                     {
-                        if let Err(e) = self.load_rule_pack_file(&path) {
-                            if self.registry.config.fail_fast {
-                                return Err(e);
-                            } else {
-                                tracing::warn!(
-                                    "Failed to load rule pack from {}: {}",
-                                    path.display(),
-                                    e
-                                );
-                            }
+                        if self.registry.config.fail_fast {
+                            return Err(e);
+                        } else {
+                            tracing::warn!(
+                                "Failed to load rule pack from {}: {}",
+                                path.display(),
+                                e
+                            );
                         }
                     }
                 }
@@ -774,19 +769,19 @@ impl RuleEngineTrait for DefaultRuleEngine {
         // Execute built-in rules
         for rule in self.registry.get_all() {
             // Apply rule-specific configuration if present
-            if let Some(rule_config) = self.registry.config.rule_configs.get(rule.id()) {
-                if !rule_config.enabled {
-                    tracing::debug!("Skipping disabled rule '{}'", rule.id());
-                    continue;
-                }
+            if let Some(rule_config) = self.registry.config.rule_configs.get(rule.id())
+                && !rule_config.enabled
+            {
+                tracing::debug!("Skipping disabled rule '{}'", rule.id());
+                continue;
             }
 
             // Respect max diagnostics limit
-            if let Some(max_diagnostics) = self.registry.config.max_diagnostics_per_rule {
-                if diagnostics.len() >= max_diagnostics {
-                    tracing::warn!("Reached maximum diagnostics limit for rule '{}'", rule.id());
-                    break;
-                }
+            if let Some(max_diagnostics) = self.registry.config.max_diagnostics_per_rule
+                && diagnostics.len() >= max_diagnostics
+            {
+                tracing::warn!("Reached maximum diagnostics limit for rule '{}'", rule.id());
+                break;
             }
 
             // Execute the rule against each file in the semantic model

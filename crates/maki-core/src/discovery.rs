@@ -213,15 +213,15 @@ impl DefaultFileDiscovery {
         {
             let path = entry.path();
 
-            if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    let ext_str = ext.to_string_lossy().to_lowercase();
-                    if extensions
-                        .iter()
-                        .any(|allowed_ext| allowed_ext.to_lowercase() == ext_str)
-                    {
-                        files.push(path.to_path_buf());
-                    }
+            if path.is_file()
+                && let Some(ext) = path.extension()
+            {
+                let ext_str = ext.to_string_lossy().to_lowercase();
+                if extensions
+                    .iter()
+                    .any(|allowed_ext| allowed_ext.to_lowercase() == ext_str)
+                {
+                    files.push(path.to_path_buf());
                 }
             }
         }
@@ -330,10 +330,10 @@ impl FileDiscovery for DefaultFileDiscovery {
         }
 
         // Check ignore patterns
-        if let Ok(ignore_patterns) = self.load_ignore_patterns(config) {
-            if self.is_ignored(path, &ignore_patterns) {
-                return false;
-            }
+        if let Ok(ignore_patterns) = self.load_ignore_patterns(config)
+            && self.is_ignored(path, &ignore_patterns)
+        {
+            return false;
         }
 
         true
@@ -434,11 +434,11 @@ impl FileWatcher {
                     let now = Instant::now();
 
                     // Check if we should debounce this event
-                    if let Some(last_time) = self.last_events.get(&event.path) {
-                        if now.duration_since(*last_time) < self.debounce_duration {
-                            // Skip this event due to debouncing
-                            continue;
-                        }
+                    if let Some(last_time) = self.last_events.get(&event.path)
+                        && now.duration_since(*last_time) < self.debounce_duration
+                    {
+                        // Skip this event due to debouncing
+                        continue;
                     }
 
                     // Update the last event time for this path

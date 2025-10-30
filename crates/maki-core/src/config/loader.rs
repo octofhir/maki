@@ -42,11 +42,11 @@ impl ConfigLoader {
                     tracing::debug!("Found config: {}", config_path.display());
 
                     // Check if this config has root: true
-                    if let Ok(config) = Self::load_from_file(&config_path) {
-                        if config.root == Some(true) {
-                            tracing::debug!("Config has root: true, stopping search");
-                            return Ok(Some(config_path));
-                        }
+                    if let Ok(config) = Self::load_from_file(&config_path)
+                        && config.root == Some(true)
+                    {
+                        tracing::debug!("Config has root: true, stopping search");
+                        return Ok(Some(config_path));
                     }
 
                     // If no root flag, keep searching up but remember this one
