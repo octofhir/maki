@@ -109,9 +109,16 @@ impl PackageJson {
     pub fn from_sushi_config(config: &SushiConfiguration) -> Self {
         let mut pkg = PackageJson {
             name: config.package_id().unwrap_or("unknown").to_string(),
-            version: config.version.clone().unwrap_or_else(|| "0.1.0".to_string()),
+            version: config
+                .version
+                .clone()
+                .unwrap_or_else(|| "0.1.0".to_string()),
             description: config.description.clone(),
-            author: config.publisher.as_ref().and_then(|p| p.name()).map(|s| s.to_string()),
+            author: config
+                .publisher
+                .as_ref()
+                .and_then(|p| p.name())
+                .map(|s| s.to_string()),
             license: config.license.clone(),
             package_type: "fhir.ig".to_string(),
             canonical: Some(config.canonical.clone()),
@@ -180,16 +187,13 @@ impl PackageJson {
         pkg.keywords = Some(vec!["fhir".to_string(), "fhir-ig".to_string()]);
 
         // Extract jurisdiction if present
-        if let Some(ref jurisdictions) = config.jurisdiction {
-            if let Some(first_jurisdiction) = jurisdictions.first() {
-                if let Some(ref coding) = first_jurisdiction.coding {
-                    if let Some(first_code) = coding.first() {
-                        if let Some(ref code) = first_code.code {
-                            pkg.jurisdiction = Some(code.clone());
-                        }
-                    }
-                }
-            }
+        if let Some(ref jurisdictions) = config.jurisdiction
+            && let Some(first_jurisdiction) = jurisdictions.first()
+            && let Some(ref coding) = first_jurisdiction.coding
+            && let Some(first_code) = coding.first()
+            && let Some(ref code) = first_code.code
+        {
+            pkg.jurisdiction = Some(code.clone());
         }
 
         pkg
@@ -212,7 +216,7 @@ impl PackageJson {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ContactDetail, ContactPoint, DependencyVersion};
+    use crate::config::{ContactDetail, ContactPoint, DependencyVersion, PublisherInfo};
 
     #[test]
     fn test_package_json_from_minimal_config() {
@@ -230,7 +234,10 @@ mod tests {
         assert_eq!(pkg.name, "example.test");
         assert_eq!(pkg.version, "1.0.0");
         assert_eq!(pkg.package_type, "fhir.ig");
-        assert_eq!(pkg.canonical, Some("http://example.org/fhir/test".to_string()));
+        assert_eq!(
+            pkg.canonical,
+            Some("http://example.org/fhir/test".to_string())
+        );
         assert_eq!(pkg.fhir_version_list, Some(vec!["4.0.1".to_string()]));
     }
 
@@ -243,7 +250,7 @@ mod tests {
             name: Some("ExampleTest".to_string()),
             title: Some("Example Test IG".to_string()),
             version: Some("1.0.0".to_string()),
-            publisher: Some("Example Org".to_string()),
+            publisher: Some(PublisherInfo::String("Example Org".to_string())),
             description: Some("An example IG".to_string()),
             license: Some("Apache-2.0".to_string()),
             contact: Some(vec![ContactDetail {

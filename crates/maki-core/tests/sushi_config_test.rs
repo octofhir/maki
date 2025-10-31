@@ -17,8 +17,7 @@ fn fixture_path(name: &str) -> PathBuf {
 #[test]
 fn test_parse_minimal_config() {
     let path = fixture_path("minimal.yaml");
-    let config = SushiConfiguration::from_file(&path)
-        .expect("Failed to parse minimal config");
+    let config = SushiConfiguration::from_file(&path).expect("Failed to parse minimal config");
 
     assert_eq!(config.canonical, "http://example.org/fhir/minimal-ig");
     assert_eq!(config.fhir_version, vec!["4.0.1"]);
@@ -30,15 +29,17 @@ fn test_parse_minimal_config() {
 #[test]
 fn test_parse_complete_config() {
     let path = fixture_path("complete.yaml");
-    let config = SushiConfiguration::from_file(&path)
-        .expect("Failed to parse complete config");
+    let config = SushiConfiguration::from_file(&path).expect("Failed to parse complete config");
 
     // Test core metadata
     assert_eq!(config.canonical, "http://example.org/fhir/example-ig");
     assert_eq!(config.fhir_version, vec!["4.0.1"]);
     assert_eq!(config.id, Some("example.fhir.ig".to_string()));
     assert_eq!(config.name, Some("ExampleIG".to_string()));
-    assert_eq!(config.title, Some("Example Implementation Guide".to_string()));
+    assert_eq!(
+        config.title,
+        Some("Example Implementation Guide".to_string())
+    );
     assert_eq!(config.version, Some("1.0.0".to_string()));
     assert_eq!(config.status, Some("draft".to_string()));
     assert_eq!(config.experimental, Some(true));
@@ -56,7 +57,10 @@ fn test_parse_complete_config() {
     assert_eq!(telecom[0].value, "contact@example.org");
 
     // Test dependencies
-    let deps = config.dependencies.as_ref().expect("Should have dependencies");
+    let deps = config
+        .dependencies
+        .as_ref()
+        .expect("Should have dependencies");
     assert!(deps.contains_key("hl7.fhir.us.core"));
     assert!(deps.contains_key("hl7.fhir.uv.extensions"));
 
@@ -64,7 +68,10 @@ fn test_parse_complete_config() {
     let global = config.global.as_ref().expect("Should have global profiles");
     assert_eq!(global.len(), 1);
     assert_eq!(global[0].resource_type, "Patient");
-    assert_eq!(global[0].profile, "http://example.org/fhir/StructureDefinition/example-patient");
+    assert_eq!(
+        global[0].profile,
+        "http://example.org/fhir/StructureDefinition/example-patient"
+    );
 
     // Test resource groups
     let groups = config.groups.as_ref().expect("Should have groups");
@@ -86,7 +93,10 @@ fn test_parse_complete_config() {
     assert_eq!(menu.len(), 3);
     assert_eq!(menu[0].name, "Home");
     assert_eq!(menu[2].name, "Support");
-    let submenu = menu[2].sub_menu.as_ref().expect("Support should have submenu");
+    let submenu = menu[2]
+        .sub_menu
+        .as_ref()
+        .expect("Support should have submenu");
     assert_eq!(submenu.len(), 2);
 
     // Test SUSHI options
@@ -94,7 +104,10 @@ fn test_parse_complete_config() {
     assert_eq!(config.apply_extension_metadata_to_root, Some(true));
 
     // Test instance options
-    let inst_opts = config.instance_options.as_ref().expect("Should have instance options");
+    let inst_opts = config
+        .instance_options
+        .as_ref()
+        .expect("Should have instance options");
     assert!(inst_opts.set_meta_profile.is_some());
     assert!(inst_opts.set_id.is_some());
     assert_eq!(inst_opts.manual_slice_ordering, Some(false));
@@ -106,14 +119,16 @@ fn test_parse_complete_config() {
 #[test]
 fn test_parse_multiple_fhir_versions() {
     let path = fixture_path("multiple-versions.yaml");
-    let config = SushiConfiguration::from_file(&path)
-        .expect("Failed to parse multi-version config");
+    let config =
+        SushiConfiguration::from_file(&path).expect("Failed to parse multi-version config");
 
     assert_eq!(config.fhir_version, vec!["4.0.1", "4.3.0", "5.0.0"]);
     assert_eq!(config.status, Some("active".to_string()));
 
     // Validation should pass
-    config.validate().expect("Multi-version config should be valid");
+    config
+        .validate()
+        .expect("Multi-version config should be valid");
 }
 
 #[test]
@@ -124,8 +139,7 @@ fhirVersion: 4.0.1
 name: StringTest
 "#;
 
-    let config = SushiConfiguration::from_yaml(yaml)
-        .expect("Failed to parse YAML string");
+    let config = SushiConfiguration::from_yaml(yaml).expect("Failed to parse YAML string");
 
     assert_eq!(config.canonical, "http://example.org/fhir/string-test");
     assert_eq!(config.name, Some("StringTest".to_string()));
@@ -147,12 +161,14 @@ fn test_validation_missing_canonical() {
 #[test]
 fn test_validation_invalid_status() {
     let path = fixture_path("invalid-bad-status.yaml");
-    let config = SushiConfiguration::from_file(&path)
-        .expect("Should parse despite invalid status");
+    let config = SushiConfiguration::from_file(&path).expect("Should parse despite invalid status");
 
     // Validation should fail due to invalid status
     let result = config.validate();
-    assert!(result.is_err(), "Validation should fail with invalid status");
+    assert!(
+        result.is_err(),
+        "Validation should fail with invalid status"
+    );
 
     let errors = result.unwrap_err();
     assert!(
@@ -168,11 +184,13 @@ canonical: not-a-url
 fhirVersion: 4.0.1
 "#;
 
-    let config = SushiConfiguration::from_yaml(yaml)
-        .expect("Should parse YAML");
+    let config = SushiConfiguration::from_yaml(yaml).expect("Should parse YAML");
 
     let result = config.validate();
-    assert!(result.is_err(), "Validation should fail with invalid canonical URL");
+    assert!(
+        result.is_err(),
+        "Validation should fail with invalid canonical URL"
+    );
 
     let errors = result.unwrap_err();
     assert!(
@@ -188,11 +206,13 @@ canonical: http://example.org/fhir/test
 fhirVersion: not-a-version
 "#;
 
-    let config = SushiConfiguration::from_yaml(yaml)
-        .expect("Should parse YAML");
+    let config = SushiConfiguration::from_yaml(yaml).expect("Should parse YAML");
 
     let result = config.validate();
-    assert!(result.is_err(), "Validation should fail with invalid FHIR version");
+    assert!(
+        result.is_err(),
+        "Validation should fail with invalid FHIR version"
+    );
 
     let errors = result.unwrap_err();
     assert!(
@@ -209,8 +229,7 @@ fhirVersion: 4.0.1
 id: test.ig
 "#;
 
-    let config = SushiConfiguration::from_yaml(yaml)
-        .expect("Should parse YAML");
+    let config = SushiConfiguration::from_yaml(yaml).expect("Should parse YAML");
 
     // When packageId is not set, it should fall back to id
     assert_eq!(config.package_id(), Some("test.ig"));
@@ -225,8 +244,7 @@ id: test.ig
 packageId: custom.package.id
 "#;
 
-    let config = SushiConfiguration::from_yaml(yaml)
-        .expect("Should parse YAML");
+    let config = SushiConfiguration::from_yaml(yaml).expect("Should parse YAML");
 
     // When packageId is explicitly set, it should use that
     assert_eq!(config.package_id(), Some("custom.package.id"));
@@ -241,11 +259,15 @@ dependencies:
   hl7.fhir.us.core: 5.0.1
 "#;
 
-    let config = SushiConfiguration::from_yaml(yaml)
-        .expect("Should parse YAML");
+    let config = SushiConfiguration::from_yaml(yaml).expect("Should parse YAML");
 
-    let deps = config.dependencies.as_ref().expect("Should have dependencies");
-    let core_dep = deps.get("hl7.fhir.us.core").expect("Should have us-core dependency");
+    let deps = config
+        .dependencies
+        .as_ref()
+        .expect("Should have dependencies");
+    let core_dep = deps
+        .get("hl7.fhir.us.core")
+        .expect("Should have us-core dependency");
 
     match core_dep {
         maki_core::config::DependencyVersion::Simple(version) => {
@@ -267,8 +289,7 @@ status: {}
             status
         );
 
-        let config = SushiConfiguration::from_yaml(&yaml)
-            .expect("Should parse YAML");
+        let config = SushiConfiguration::from_yaml(&yaml).expect("Should parse YAML");
 
         assert!(
             config.validate().is_ok(),
@@ -292,8 +313,7 @@ copyright: |
   All rights reserved
 "#;
 
-    let config = SushiConfiguration::from_yaml(yaml)
-        .expect("Should parse YAML");
+    let config = SushiConfiguration::from_yaml(yaml).expect("Should parse YAML");
 
     assert!(config.description.is_some());
     assert!(config.copyright.is_some());
@@ -314,10 +334,12 @@ instanceOptions:
   manualSliceOrdering: true
 "#;
 
-    let config = SushiConfiguration::from_yaml(yaml)
-        .expect("Should parse YAML");
+    let config = SushiConfiguration::from_yaml(yaml).expect("Should parse YAML");
 
-    let opts = config.instance_options.as_ref().expect("Should have instance options");
+    let opts = config
+        .instance_options
+        .as_ref()
+        .expect("Should have instance options");
     assert!(matches!(
         opts.set_meta_profile,
         Some(maki_core::config::MetaProfileSetting::InlineOnly)
@@ -332,14 +354,17 @@ instanceOptions:
 #[test]
 fn test_real_world_us_core_example() {
     let path = fixture_path("us-core-example.yaml");
-    let config = SushiConfiguration::from_file(&path)
-        .expect("Failed to parse US Core example config");
+    let config =
+        SushiConfiguration::from_file(&path).expect("Failed to parse US Core example config");
 
     // Verify core metadata
     assert_eq!(config.canonical, "http://hl7.org/fhir/us/core");
     assert_eq!(config.id, Some("hl7.fhir.us.core".to_string()));
     assert_eq!(config.name, Some("USCoreImplementationGuide".to_string()));
-    assert_eq!(config.title, Some("US Core Implementation Guide".to_string()));
+    assert_eq!(
+        config.title,
+        Some("US Core Implementation Guide".to_string())
+    );
     assert_eq!(config.version, Some("5.0.1".to_string()));
     assert_eq!(config.status, Some("active".to_string()));
     assert_eq!(config.license, Some("CC0-1.0".to_string()));
@@ -353,31 +378,42 @@ fn test_real_world_us_core_example() {
     assert_eq!(contact.len(), 1);
 
     // Verify jurisdiction
-    let jurisdiction = config.jurisdiction.as_ref().expect("Should have jurisdiction");
-    assert_eq!(jurisdiction.len(), 1);
-    let coding = jurisdiction[0]
-        .coding
+    let jurisdiction = config
+        .jurisdiction
         .as_ref()
-        .expect("Should have coding");
+        .expect("Should have jurisdiction");
+    assert_eq!(jurisdiction.len(), 1);
+    let coding = jurisdiction[0].coding.as_ref().expect("Should have coding");
     assert_eq!(coding[0].system, Some("urn:iso:std:iso:3166".to_string()));
     assert_eq!(coding[0].code, Some("US".to_string()));
 
     // Verify dependencies
-    let deps = config.dependencies.as_ref().expect("Should have dependencies");
+    let deps = config
+        .dependencies
+        .as_ref()
+        .expect("Should have dependencies");
     assert!(deps.contains_key("hl7.fhir.uv.extensions"));
 
     // Verify global profiles
     let global = config.global.as_ref().expect("Should have global profiles");
     assert_eq!(global.len(), 3);
     assert!(global.iter().any(|g| g.resource_type == "Patient"));
-    assert!(global.iter().any(|g| g.resource_type == "AllergyIntolerance"));
+    assert!(
+        global
+            .iter()
+            .any(|g| g.resource_type == "AllergyIntolerance")
+    );
     assert!(global.iter().any(|g| g.resource_type == "Observation"));
 
     // Verify parameters
     let params = config.parameters.as_ref().expect("Should have parameters");
     assert!(params.iter().any(|p| p.code == "copyrightyear"));
     assert!(params.iter().any(|p| p.code == "releaselabel"));
-    assert!(params.iter().any(|p| p.code == "active-tables" && p.value == "true"));
+    assert!(
+        params
+            .iter()
+            .any(|p| p.code == "active-tables" && p.value == "true")
+    );
 
     // Verify SUSHI options
     assert_eq!(config.fsh_only, Some(false));

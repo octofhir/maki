@@ -109,6 +109,8 @@ pub struct InstanceExporter {
     base_url: String,
     /// Track current array indices for [=] operator
     current_indices: HashMap<String, usize>,
+    /// Registry of exported instances for reference resolution
+    instance_registry: HashMap<String, JsonValue>,
 }
 
 impl InstanceExporter {
@@ -142,7 +144,18 @@ impl InstanceExporter {
             session,
             base_url,
             current_indices: HashMap::new(),
+            instance_registry: HashMap::new(),
         })
+    }
+
+    /// Register an instance for reference resolution
+    pub fn register_instance(&mut self, name: String, json: JsonValue) {
+        self.instance_registry.insert(name, json);
+    }
+
+    /// Get a registered instance by name
+    pub fn get_instance(&self, name: &str) -> Option<&JsonValue> {
+        self.instance_registry.get(name)
     }
 
     /// Export an Instance to a FHIR resource (JSON)
@@ -442,6 +455,11 @@ impl InstanceExporter {
     }
 
     /// Convert a FSH value string to appropriate JSON value
+    ///
+    /// Handles:
+    /// - Simple types: strings, numbers, booleans, codes
+    /// - Complex types: CodeableConcept, Quantity, Reference, Ratio
+    /// - FHIR-specific patterns
     fn convert_value(&self, value_str: &str) -> Result<JsonValue, ExportError> {
         let trimmed = value_str.trim();
 
@@ -460,9 +478,25 @@ impl InstanceExporter {
             return Ok(JsonValue::Bool(false));
         }
 
+        // Code with system (CodeableConcept pattern): system#code "display"
+        // Example: http://loinc.org#LA6576-8 "Excellent"
+        if trimmed.contains('#') && !trimmed.starts_with('#') {
+            return self.parse_codeable_concept(trimmed);
+        }
+
         // Code (starts with #)
         if let Some(code) = trimmed.strip_prefix('#') {
             return Ok(JsonValue::String(code.to_string()));
+        }
+
+        // Quantity pattern: 70 'kg'
+        if trimmed.contains('\'') && trimmed.chars().next().is_some_and(|c| c.is_numeric()) {
+            return self.parse_quantity(trimmed);
+        }
+
+        // Reference pattern: Reference(Patient/example)
+        if trimmed.starts_with("Reference(") && trimmed.ends_with(')') {
+            return self.parse_reference(trimmed);
         }
 
         // Number (integer)
@@ -471,14 +505,137 @@ impl InstanceExporter {
         }
 
         // Number (float)
-        if let Ok(num) = trimmed.parse::<f64>() {
-            if let Some(json_num) = serde_json::Number::from_f64(num) {
-                return Ok(JsonValue::Number(json_num));
-            }
+        if let Ok(num) = trimmed.parse::<f64>()
+            && let Some(json_num) = serde_json::Number::from_f64(num)
+        {
+            return Ok(JsonValue::Number(json_num));
+        }
+
+        // Check if it's an instance reference (identifier without quotes)
+        // Instance references are plain identifiers that match registered instances
+        if self.is_instance_reference(trimmed)
+            && let Some(instance_json) = self.get_instance(trimmed)
+        {
+            debug!("Resolved instance reference: {}", trimmed);
+            return Ok(instance_json.clone());
         }
 
         // Default to string
         Ok(JsonValue::String(trimmed.to_string()))
+    }
+
+    /// Check if a value looks like an instance reference
+    /// Instance references are plain identifiers (alphanumeric + hyphen/underscore)
+    fn is_instance_reference(&self, value: &str) -> bool {
+        // Must not be empty
+        if value.is_empty() {
+            return false;
+        }
+
+        // Must start with a letter
+        if !value.chars().next().unwrap().is_alphabetic() {
+            return false;
+        }
+
+        // Must contain only valid identifier characters
+        value
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    }
+
+    /// Parse CodeableConcept from FSH notation
+    /// Format: system#code "display"
+    fn parse_codeable_concept(&self, value: &str) -> Result<JsonValue, ExportError> {
+        // Split into system#code and display
+        let parts: Vec<&str> = value.splitn(2, '#').collect();
+        if parts.len() != 2 {
+            return Ok(JsonValue::String(value.to_string()));
+        }
+
+        let system = parts[0].trim();
+        let code_and_display = parts[1];
+
+        // Extract code and display
+        let (code, display) = if let Some(space_idx) = code_and_display.find(' ') {
+            let code = code_and_display[..space_idx].trim();
+            let display_part = code_and_display[space_idx..].trim();
+            let display = if display_part.starts_with('"') && display_part.ends_with('"') {
+                &display_part[1..display_part.len() - 1]
+            } else {
+                display_part
+            };
+            (code, Some(display))
+        } else {
+            (code_and_display.trim(), None)
+        };
+
+        // Build CodeableConcept
+        let mut codeable_concept = serde_json::json!({
+            "coding": [{
+                "system": system,
+                "code": code
+            }]
+        });
+
+        if let Some(display_text) = display {
+            codeable_concept["coding"][0]["display"] = JsonValue::String(display_text.to_string());
+        }
+
+        Ok(codeable_concept)
+    }
+
+    /// Parse Quantity from FSH notation
+    /// Format: 70 'kg' or 5.5 'cm'
+    fn parse_quantity(&self, value: &str) -> Result<JsonValue, ExportError> {
+        // Extract value and unit
+        let parts: Vec<&str> = value.splitn(2, '\'').collect();
+        if parts.len() < 2 {
+            return Ok(JsonValue::String(value.to_string()));
+        }
+
+        let value_str = parts[0].trim();
+        let unit_with_quote = parts[1];
+        let unit = unit_with_quote.trim_end_matches('\'').trim();
+
+        // Parse numeric value
+        let numeric_value = if let Ok(num) = value_str.parse::<i64>() {
+            serde_json::json!(num)
+        } else if let Ok(num) = value_str.parse::<f64>() {
+            serde_json::json!(num)
+        } else {
+            return Ok(JsonValue::String(value.to_string()));
+        };
+
+        // Build Quantity
+        let mut quantity = serde_json::json!({
+            "value": numeric_value,
+            "unit": unit
+        });
+
+        // Add system and code for UCUM units
+        if unit == "kg" || unit == "g" || unit == "cm" || unit == "m" || unit == "s" {
+            quantity["system"] = JsonValue::String("http://unitsofmeasure.org".to_string());
+            quantity["code"] = JsonValue::String(unit.to_string());
+        }
+
+        Ok(quantity)
+    }
+
+    /// Parse Reference from FSH notation
+    /// Format: Reference(Patient/example) or Reference(resourceId)
+    fn parse_reference(&self, value: &str) -> Result<JsonValue, ExportError> {
+        // Extract reference from Reference(...)
+        let ref_value = value
+            .strip_prefix("Reference(")
+            .and_then(|s| s.strip_suffix(')'))
+            .unwrap_or(value);
+
+        // Build Reference
+        let reference = serde_json::json!({
+            "reference": ref_value
+        });
+
+        Ok(reference)
     }
 }
 
@@ -495,6 +652,7 @@ mod tests {
             session: Arc::new(crate::canonical::DefinitionSession::for_testing()),
             base_url: "http://example.org/fhir".to_string(),
             current_indices: HashMap::new(),
+            instance_registry: HashMap::new(),
         }
     }
 

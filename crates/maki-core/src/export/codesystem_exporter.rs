@@ -51,7 +51,7 @@
 //! # }
 //! ```
 
-use super::{CodeSystemConcept, CodeSystemResource, ExportError};
+use super::{CodeSystemResource, ExportError};
 use crate::canonical::DefinitionSession;
 use crate::cst::ast::{CodeSystem, FixedValueRule, Rule};
 use std::sync::Arc;
@@ -176,24 +176,24 @@ impl CodeSystemExporter {
         let mut resource = CodeSystemResource::new(url, name.clone(), "draft");
 
         // Set id from Id clause if present
-        if let Some(id_clause) = codesystem.id() {
-            if let Some(id_value) = id_clause.value() {
-                resource.id = Some(id_value);
-            }
+        if let Some(id_clause) = codesystem.id()
+            && let Some(id_value) = id_clause.value()
+        {
+            resource.id = Some(id_value);
         }
 
         // Set title from Title clause if present
-        if let Some(title_clause) = codesystem.title() {
-            if let Some(title_value) = title_clause.value() {
-                resource.title = Some(title_value);
-            }
+        if let Some(title_clause) = codesystem.title()
+            && let Some(title_value) = title_clause.value()
+        {
+            resource.title = Some(title_value);
         }
 
         // Set description from Description clause if present
-        if let Some(desc_clause) = codesystem.description() {
-            if let Some(desc_value) = desc_clause.value() {
-                resource.description = Some(desc_value);
-            }
+        if let Some(desc_clause) = codesystem.description()
+            && let Some(desc_value) = desc_clause.value()
+        {
+            resource.description = Some(desc_value);
         }
 
         // Track concept rules for Phase 2
@@ -364,6 +364,7 @@ impl CodeSystemExporter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::export::CodeSystemConcept;
 
     fn create_test_exporter() -> CodeSystemExporter {
         CodeSystemExporter {

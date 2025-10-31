@@ -142,10 +142,7 @@ impl FileStructureGenerator {
     /// # Arguments
     ///
     /// * `index` - FSH index entries
-    pub fn write_fsh_index_json(
-        &self,
-        index: &[FshIndexEntry],
-    ) -> Result<(), FileStructureError> {
+    pub fn write_fsh_index_json(&self, index: &[FshIndexEntry]) -> Result<(), FileStructureError> {
         let path = self.data_dir().join("fsh-index.json");
         self.write_json(&path, index)
     }
@@ -369,7 +366,8 @@ mod tests {
             name: "Test Resource".to_string(),
         };
 
-        generator.write_resource("StructureDefinition-test.json", &resource)
+        generator
+            .write_resource("StructureDefinition-test.json", &resource)
             .unwrap();
 
         let path = generator
@@ -388,7 +386,8 @@ mod tests {
         let generator = FileStructureGenerator::new(temp.path(), false);
         generator.initialize().unwrap();
 
-        let index = "Output File  Name  Type  FSH File  Lines\ntest.json    Test  Profile  test.fsh  1-10";
+        let index =
+            "Output File  Name  Type  FSH File  Lines\ntest.json    Test  Profile  test.fsh  1-10";
         generator.write_fsh_index_txt(index).unwrap();
 
         let path = generator.fsh_generated_dir().join("fsh-index.txt");
@@ -448,7 +447,10 @@ mod tests {
         let generator = FileStructureGenerator::new(temp.path(), false);
 
         let path = generator.resource_relative_path("StructureDefinition-test.json");
-        assert_eq!(path, "fsh-generated/resources/StructureDefinition-test.json");
+        assert_eq!(
+            path,
+            "fsh-generated/resources/StructureDefinition-test.json"
+        );
     }
 
     #[test]

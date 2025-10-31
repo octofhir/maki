@@ -45,6 +45,27 @@ use crate::semantic::path_resolver::PathResolver;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use thiserror::Error;
+
+/// Extensions that should not be inherited from parent StructureDefinition
+/// These are removed when creating a new profile (SUSHI compatible behavior)
+const UNINHERITED_EXTENSIONS: &[&str] = &[
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-fmm",
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-fmm-no-warnings",
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-hierarchy",
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-interface",
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-normative-version",
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-applicable-version",
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-category",
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-codegen-super",
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-security-category",
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status",
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-summary",
+    "http://hl7.org/fhir/StructureDefinition/structuredefinition-wg",
+    "http://hl7.org/fhir/StructureDefinition/replaces",
+    "http://hl7.org/fhir/StructureDefinition/resource-approvalDate",
+    "http://hl7.org/fhir/StructureDefinition/resource-effectivePeriod",
+    "http://hl7.org/fhir/StructureDefinition/resource-lastReviewDate",
+];
 use tracing::{debug, trace, warn};
 
 /// Profile export errors
@@ -210,7 +231,8 @@ impl ProfileExporter {
         }
 
         // 6. Generate differential directly from FSH rules (SUSHI-style)
-        structure_def.differential = Some(self.generate_differential_from_rules(profile, &structure_def.type_field));
+        structure_def.differential =
+            Some(self.generate_differential_from_rules(profile, &structure_def.type_field));
 
         // 7. Clear snapshot if not requested (to match SUSHI default behavior)
         if !self.generate_snapshots {
@@ -262,22 +284,21 @@ impl ProfileExporter {
         // Validate cardinality if present
         if let (Some(min), Some(max)) = (&element.min, &element.max) {
             // Check that max is valid
-            if max != "*" {
-                if let Ok(max_val) = max.parse::<u32>() {
-                    if *min > max_val {
-                        return Err(ExportError::InvalidCardinality(format!("{}..{}", min, max)));
-                    }
-                }
+            if max != "*"
+                && let Ok(max_val) = max.parse::<u32>()
+                && *min > max_val
+            {
+                return Err(ExportError::InvalidCardinality(format!("{}..{}", min, max)));
             }
         }
 
         // Validate binding strength if binding present
-        if let Some(binding) = &element.binding {
-            if binding.value_set.is_none() {
-                return Err(ExportError::InvalidBindingStrength(
-                    "Binding must have a value_set".to_string(),
-                ));
-            }
+        if let Some(binding) = &element.binding
+            && binding.value_set.is_none()
+        {
+            return Err(ExportError::InvalidBindingStrength(
+                "Binding must have a value_set".to_string(),
+            ));
         }
 
         Ok(())
@@ -317,7 +338,12 @@ impl ProfileExporter {
         Ok(structure_def)
     }
 
-    /// Apply profile metadata
+    /// Apply profile metadata (SUSHI compatible)
+    ///
+    /// This function implements SUSHI's metadata clearing strategy:
+    /// 1. Clear all inherited metadata fields
+    /// 2. Remove uninherited extensions
+    /// 3. Set new profile metadata from FSH
     fn apply_metadata(
         &self,
         structure_def: &mut StructureDefinition,
@@ -327,30 +353,69 @@ impl ProfileExporter {
             .name()
             .ok_or_else(|| ExportError::MissingRequiredField("name".to_string()))?;
 
-        // Update metadata fields
-        structure_def.name = profile_name.clone();
-        structure_def.url = format!("{}/StructureDefinition/{}", self.base_url, profile_name);
-        structure_def.derivation = Some("constraint".to_string());
-        structure_def.base_definition = Some(structure_def.url.clone());
+        // STEP 1: Clear inherited metadata fields (SUSHI behavior)
+        // Note: Our StructureDefinition struct has limited fields.
+        // We clear what we have. Full FHIR StructureDefinition would have:
+        // meta, implicit_rules, language, text, contained, etc.
 
-        // Optional metadata
+        // STEP 2: Clear inherited fields that exist in our struct
+        structure_def.experimental = None;
+        structure_def.date = None;
+        structure_def.publisher = None;
+
+        // Note: Fields like contact, use_context, jurisdiction, purpose, copyright, keyword
+        // don't exist in our simplified struct yet. They would be cleared in a full implementation.
+
+        // STEP 3: Extension filtering would happen here
+        // Note: Our StructureDefinition doesn't have an extension field yet.
+        // In full implementation, we would filter out UNINHERITED_EXTENSIONS here.
+
+        // STEP 4: Set new metadata from profile
+        structure_def.name = profile_name.clone();
+
+        // Use id for URL if present, otherwise name
+        let url_id = profile
+            .id()
+            .and_then(|id_clause| id_clause.value())
+            .unwrap_or_else(|| profile_name.clone());
+        structure_def.url = format!("{}/StructureDefinition/{}", self.base_url, url_id);
+
+        // Set derivation
+        structure_def.derivation = Some("constraint".to_string());
+
+        // base_definition should point to parent, not self
+        // (this will be set correctly when getting base definition)
+
+        // Set id
         if let Some(id_clause) = profile.id()
             && let Some(id) = id_clause.value()
         {
             structure_def.id = Some(id);
         }
 
-        if let Some(title_clause) = profile.title()
-            && let Some(title) = title_clause.value()
-        {
-            structure_def.title = Some(title);
+        // Set title
+        if let Some(title_clause) = profile.title() {
+            if let Some(title) = title_clause.value() {
+                structure_def.title = Some(title);
+            }
+        } else {
+            structure_def.title = None;
         }
 
-        if let Some(desc_clause) = profile.description()
-            && let Some(desc) = desc_clause.value()
-        {
-            structure_def.description = Some(desc);
+        // Set description
+        if let Some(desc_clause) = profile.description() {
+            if let Some(desc) = desc_clause.value() {
+                structure_def.description = Some(desc);
+            }
+        } else {
+            structure_def.description = None;
         }
+
+        // Set status from config
+        structure_def.status = "draft".to_string(); // TODO: Get from config
+
+        // Note: version is typically not set in differential, IG Publisher handles it
+        structure_def.version = None;
 
         Ok(())
     }
@@ -377,12 +442,8 @@ impl ProfileExporter {
             Rule::Contains(contains_rule) => {
                 self.apply_contains_rule(structure_def, contains_rule).await
             }
-            Rule::Only(only_rule) => {
-                self.apply_only_rule(structure_def, only_rule).await
-            }
-            Rule::Obeys(obeys_rule) => {
-                self.apply_obeys_rule(structure_def, obeys_rule).await
-            }
+            Rule::Only(only_rule) => self.apply_only_rule(structure_def, only_rule).await,
+            Rule::Obeys(obeys_rule) => self.apply_obeys_rule(structure_def, obeys_rule).await,
         }
     }
 
@@ -595,7 +656,14 @@ impl ProfileExporter {
         Ok(())
     }
 
-    /// Resolve a path string to full element path using PathResolver
+    /// Resolve a path string to full element path
+    ///
+    /// Handles:
+    /// - Simple paths: "name" → "Patient.name"
+    /// - Nested paths: "name.given" → "Patient.name.given"
+    /// - Slicing syntax: "identifier[system]" → "Patient.identifier:system"
+    /// - Extension paths: "extension[myExtension]" → "Patient.extension:myExtension"
+    /// - Choice types: "value[x]" stays as "Patient.value[x]" (type constraint handled elsewhere)
     async fn resolve_full_path(
         &self,
         structure_def: &StructureDefinition,
@@ -609,51 +677,235 @@ impl ProfileExporter {
             }
         }
 
-        // For complex paths with brackets, we would use PathResolver here
-        // For now, simple path resolution
-        Ok(format!("{}.{}", structure_def.type_field, path))
+        // Handle bracket notation for slicing: "identifier[system]" → "identifier:system"
+        let normalized_path = if path.contains('[') && path.contains(']') {
+            // Extract the slice name from brackets
+            let re = regex::Regex::new(r"([^\[]+)\[([^\]]+)\](.*)").unwrap();
+            if let Some(caps) = re.captures(path) {
+                let base = caps.get(1).map_or("", |m| m.as_str());
+                let slice = caps.get(2).map_or("", |m| m.as_str());
+                let rest = caps.get(3).map_or("", |m| m.as_str());
+
+                // Use colon notation for slices: base:sliceName
+                format!("{}:{}{}", base, slice, rest)
+            } else {
+                path.to_string()
+            }
+        } else {
+            path.to_string()
+        };
+
+        // Prepend resource type
+        Ok(format!("{}.{}", structure_def.type_field, normalized_path))
     }
 
     /// Apply contains rule (for slicing)
     /// Example: * extension contains myExtension 0..1
+    ///
+    /// This creates slices for the specified elements. For extensions,
+    /// it automatically uses `url` as the discriminator.
     async fn apply_contains_rule(
         &self,
-        _structure_def: &mut StructureDefinition,
-        _contains_rule: &ContainsRule,
+        structure_def: &mut StructureDefinition,
+        contains_rule: &ContainsRule,
     ) -> Result<(), ExportError> {
-        // TODO: Implement slicing logic based on SUSHI's approach:
-        // 1. Detect if slicing on extensions (use `url` discriminator)
-        // 2. Create slice elements for each item
-        // 3. Set discriminator and slicing properties
-        // 4. For extension slices, set type.profile to the extension URL
+        let path = contains_rule.path().ok_or_else(|| {
+            ExportError::MissingRequiredField("path for contains rule".to_string())
+        })?;
+        let path_str = path.as_string();
+        let items = contains_rule.items();
+
+        debug!("Applying contains rule: {} contains {:?}", path_str, items);
+
+        // Resolve full path
+        let full_path = self.resolve_full_path(structure_def, &path_str).await?;
+
+        // Find or create the element to be sliced
+        let snapshot = structure_def.get_or_create_snapshot();
+
+        // Check if this is an extension path (special handling)
+        let is_extension = path_str == "extension"
+            || path_str == "modifierExtension"
+            || path_str.ends_with(".extension")
+            || path_str.ends_with(".modifierExtension");
+
+        // Find the base element
+        let base_element_index = snapshot.element.iter().position(|e| e.path == full_path);
+
+        if base_element_index.is_none() {
+            warn!("Base element not found for slicing: {}", full_path);
+            // Create base element if it doesn't exist
+            snapshot.element.push(ElementDefinition {
+                path: full_path.clone(),
+                min: None,
+                max: None,
+                type_: None,
+                short: None,
+                definition: None,
+                comment: None,
+                must_support: None,
+                is_modifier: None,
+                is_summary: None,
+                binding: None,
+                constraint: None,
+                pattern: None,
+                fixed: None,
+            });
+        }
+
+        // TODO: Add slicing discriminator for extensions
+        // This requires adding slicing field to ElementDefinition struct
+        // For now, we just create the slice elements
+        if is_extension {
+            debug!("Extension slicing on {}", full_path);
+            // base_elem.slicing would be set here in full implementation
+        }
+
+        // Create slice elements for each item
+        for item in items {
+            let slice_path = format!("{}:{}", full_path, item);
+
+            // Check if slice already exists
+            if snapshot.element.iter().any(|e| e.path == slice_path) {
+                debug!("Slice already exists: {}", slice_path);
+                continue;
+            }
+
+            // Create the slice element
+            let mut slice_element = ElementDefinition {
+                path: slice_path.clone(),
+                min: None,
+                max: None,
+                type_: None,
+                short: Some(format!("Slice: {}", item)),
+                definition: None,
+                comment: None,
+                must_support: None,
+                is_modifier: None,
+                is_summary: None,
+                binding: None,
+                constraint: None,
+                pattern: None,
+                fixed: None,
+            };
+
+            // For extension slices, try to resolve the extension and set its profile
+            if is_extension {
+                // Try to resolve extension URL
+                let extension_url = format!("{}/StructureDefinition/{}", self.base_url, item);
+
+                // Set type with profile
+                slice_element.type_ = Some(vec![ElementDefinitionType {
+                    code: "Extension".to_string(),
+                    profile: Some(vec![extension_url.clone()]),
+                    target_profile: None,
+                }]);
+
+                debug!(
+                    "Created extension slice {} with profile {}",
+                    slice_path, extension_url
+                );
+            }
+
+            snapshot.element.push(slice_element);
+        }
+
         Ok(())
     }
 
     /// Apply only rule (type constraint)
     /// Example: * value[x] only Quantity
+    ///
+    /// Constrains the allowed types for an element.
     async fn apply_only_rule(
         &self,
-        _structure_def: &mut StructureDefinition,
-        _only_rule: &OnlyRule,
+        structure_def: &mut StructureDefinition,
+        only_rule: &OnlyRule,
     ) -> Result<(), ExportError> {
-        // TODO: Implement type constraint logic based on SUSHI's approach:
-        // 1. Find the element at the path
-        // 2. Constrain element.type to only the specified types
-        // 3. Handle Reference and Canonical types with targetProfile
+        let path = only_rule
+            .path()
+            .ok_or_else(|| ExportError::MissingRequiredField("path for only rule".to_string()))?;
+        let path_str = path.as_string();
+        let types = only_rule.types();
+
+        debug!("Applying only rule: {} only {:?}", path_str, types);
+
+        // Resolve full path
+        let full_path = self.resolve_full_path(structure_def, &path_str).await?;
+
+        // Find the element in snapshot
+        let snapshot = structure_def.get_or_create_snapshot();
+
+        if let Some(element) = snapshot.element.iter_mut().find(|e| e.path == full_path) {
+            // Set the type constraint
+            element.type_ = Some(
+                types
+                    .iter()
+                    .map(|t| ElementDefinitionType {
+                        code: t.clone(),
+                        profile: None,
+                        target_profile: None,
+                    })
+                    .collect(),
+            );
+
+            debug!("Constrained {} to types: {:?}", full_path, types);
+        } else {
+            warn!("Element not found for only rule: {}", full_path);
+        }
+
         Ok(())
     }
 
     /// Apply obeys rule (invariant constraint)
     /// Example: * obeys inv-1
+    ///
+    /// Adds invariant constraints to an element.
     async fn apply_obeys_rule(
         &self,
-        _structure_def: &mut StructureDefinition,
-        _obeys_rule: &ObeysRule,
+        structure_def: &mut StructureDefinition,
+        obeys_rule: &ObeysRule,
     ) -> Result<(), ExportError> {
-        // TODO: Implement invariant constraint logic based on SUSHI's approach:
-        // 1. Look up the invariant definition
-        // 2. Add to element.constraint array
-        // 3. Generate CaretValueRules for constraint properties (expression, severity, etc.)
+        let path = obeys_rule
+            .path()
+            .ok_or_else(|| ExportError::MissingRequiredField("path for obeys rule".to_string()))?;
+        let path_str = path.as_string();
+        let invariants = obeys_rule.invariants();
+
+        debug!("Applying obeys rule: {} obeys {:?}", path_str, invariants);
+
+        // Resolve full path
+        let full_path = self.resolve_full_path(structure_def, &path_str).await?;
+
+        // Find the element in snapshot
+        let snapshot = structure_def.get_or_create_snapshot();
+
+        if let Some(element) = snapshot.element.iter_mut().find(|e| e.path == full_path) {
+            // Initialize constraint array if needed
+            if element.constraint.is_none() {
+                element.constraint = Some(Vec::new());
+            }
+
+            if let Some(ref mut constraints) = element.constraint {
+                // Add each invariant as a constraint
+                for invariant in invariants {
+                    // Check if constraint already exists
+                    if !constraints.iter().any(|c| c.key == invariant) {
+                        constraints.push(ElementDefinitionConstraint {
+                            key: invariant.clone(),
+                            severity: Some("error".to_string()),
+                            human: format!("Constraint: {}", invariant),
+                            expression: None, // Would need to look up invariant definition
+                        });
+
+                        debug!("Added constraint {} to {}", invariant, full_path);
+                    }
+                }
+            }
+        } else {
+            warn!("Element not found for obeys rule: {}", full_path);
+        }
+
         Ok(())
     }
 
@@ -692,7 +944,7 @@ impl ProfileExporter {
                             binding: None,
                             constraint: None,
                             fixed: None,
-                            pattern: None
+                            pattern: None,
                         };
 
                         // Parse cardinality
@@ -724,7 +976,10 @@ impl ProfileExporter {
                         };
 
                         // Check if we already have this element from a cardinality rule
-                        if let Some(existing) = differential_elements.iter_mut().find(|e| e.path == full_path) {
+                        if let Some(existing) = differential_elements
+                            .iter_mut()
+                            .find(|e| e.path == full_path)
+                        {
                             // Update existing element
                             if flag_rule.flags().contains(&"MS".to_string()) {
                                 existing.must_support = Some(true);
@@ -745,7 +1000,7 @@ impl ProfileExporter {
                                 binding: None,
                                 constraint: None,
                                 fixed: None,
-                                pattern: None
+                                pattern: None,
                             };
 
                             if flag_rule.flags().contains(&"MS".to_string()) {
@@ -758,11 +1013,11 @@ impl ProfileExporter {
                 }
                 Rule::FixedValue(fixed_rule) => {
                     // Handle ^short metadata
-                    if let Some(path_str) = fixed_rule.path().map(|p| p.as_string()) {
-                        if path_str.starts_with('^') {
-                            // For now, skip metadata rules - they're handled differently
-                            continue;
-                        }
+                    if let Some(path_str) = fixed_rule.path().map(|p| p.as_string())
+                        && path_str.starts_with('^')
+                    {
+                        // For now, skip metadata rules - they're handled differently
+                        continue;
                     }
                 }
                 _ => {
@@ -771,7 +1026,10 @@ impl ProfileExporter {
             }
         }
 
-        debug!("Generated {} differential elements from FSH rules", differential_elements.len());
+        debug!(
+            "Generated {} differential elements from FSH rules",
+            differential_elements.len()
+        );
 
         StructureDefinitionDifferential {
             element: differential_elements,

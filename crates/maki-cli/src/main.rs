@@ -75,11 +75,7 @@ enum Commands {
         project_path: Option<PathBuf>,
 
         /// Output directory for generated resources
-        #[arg(
-            short,
-            long,
-            help = "Output directory (default: fsh-generated)"
-        )]
+        #[arg(short, long, help = "Output directory (default: fsh-generated)")]
         output: Option<PathBuf>,
 
         /// Generate snapshots in StructureDefinitions
@@ -106,6 +102,17 @@ enum Commands {
             value_parser = parse_config_override
         )]
         config: Vec<(String, String)>,
+    },
+
+    /// Initialize a new FHIR Implementation Guide project
+    Init {
+        /// Project name
+        #[arg(help = "Name of the project (default: MyIG)")]
+        name: Option<String>,
+
+        /// Use default values for all prompts (non-interactive)
+        #[arg(long, help = "Use default values without prompting")]
+        default: bool,
     },
 
     /// Lint FSH files for syntax errors, semantic issues, and best practice violations
@@ -284,6 +291,17 @@ enum ConfigAction {
         with_examples: bool,
     },
 
+    /// Migrate SUSHI config to MAKI unified format
+    Migrate {
+        /// Output file path (default: maki.yaml)
+        #[arg(short, long, help = "Output file path for migrated config")]
+        output: Option<PathBuf>,
+
+        /// Skip confirmation prompts
+        #[arg(short, long, help = "Skip confirmation prompts")]
+        yes: bool,
+    },
+
     /// Validate configuration file
     Validate {
         /// Path to configuration file to validate
@@ -445,6 +463,10 @@ async fn run_command(cli: Cli) -> Result<()> {
             .await
         }
 
+        Some(Commands::Init { name, default }) => {
+            commands::init::init_command(name, default).await
+        }
+
         Some(Commands::Lint {
             paths,
             format,
@@ -535,6 +557,10 @@ async fn run_command(cli: Cli) -> Result<()> {
                 force,
                 with_examples,
             } => commands::config_init_command(format, force, with_examples).await,
+            ConfigAction::Migrate {
+                output,
+                yes,
+            } => commands::config::migrate_command(yes, output).await,
             ConfigAction::Validate { path } => commands::config_validate_command(path).await,
             ConfigAction::Show { resolved } => {
                 commands::config_show_command(resolved, cli.config).await

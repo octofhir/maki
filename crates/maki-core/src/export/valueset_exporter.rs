@@ -49,10 +49,7 @@
 //! # }
 //! ```
 
-use super::{
-    ExportError, ValueSetCompose, ValueSetConcept, ValueSetFilter, ValueSetInclude,
-    ValueSetResource,
-};
+use super::{ExportError, ValueSetCompose, ValueSetResource};
 use crate::canonical::DefinitionSession;
 use crate::cst::ast::{FixedValueRule, Rule, ValueSet};
 use std::sync::Arc;
@@ -175,24 +172,24 @@ impl ValueSetExporter {
         let mut resource = ValueSetResource::new(url, name.clone(), "draft");
 
         // Set id from Id clause if present
-        if let Some(id_clause) = valueset.id() {
-            if let Some(id_value) = id_clause.value() {
-                resource.id = Some(id_value);
-            }
+        if let Some(id_clause) = valueset.id()
+            && let Some(id_value) = id_clause.value()
+        {
+            resource.id = Some(id_value);
         }
 
         // Set title from Title clause if present
-        if let Some(title_clause) = valueset.title() {
-            if let Some(title_value) = title_clause.value() {
-                resource.title = Some(title_value);
-            }
+        if let Some(title_clause) = valueset.title()
+            && let Some(title_value) = title_clause.value()
+        {
+            resource.title = Some(title_value);
         }
 
         // Set description from Description clause if present
-        if let Some(desc_clause) = valueset.description() {
-            if let Some(desc_value) = desc_clause.value() {
-                resource.description = Some(desc_value);
-            }
+        if let Some(desc_clause) = valueset.description()
+            && let Some(desc_value) = desc_clause.value()
+        {
+            resource.description = Some(desc_value);
         }
 
         // Initialize compose for component rules
@@ -347,6 +344,7 @@ impl ValueSetExporter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::export::{ValueSetConcept, ValueSetFilter, ValueSetInclude};
 
     fn create_test_exporter() -> ValueSetExporter {
         ValueSetExporter {

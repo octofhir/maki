@@ -1215,7 +1215,9 @@ impl ContainsRule {
         let text = self.syntax.text().to_string();
 
         // Remove "contains" keyword
-        let after_contains = text.trim_start().strip_prefix("contains")
+        let after_contains = text
+            .trim_start()
+            .strip_prefix("contains")
             .unwrap_or(&text)
             .trim();
 
@@ -1274,7 +1276,9 @@ impl OnlyRule {
         let text = self.syntax.text().to_string();
 
         // Remove "only" keyword
-        let after_only = text.trim_start().strip_prefix("only")
+        let after_only = text
+            .trim_start()
+            .strip_prefix("only")
             .unwrap_or(&text)
             .trim();
 
@@ -1326,7 +1330,9 @@ impl ObeysRule {
         let text = self.syntax.text().to_string();
 
         // Remove "obeys" keyword
-        let after_obeys = text.trim_start().strip_prefix("obeys")
+        let after_obeys = text
+            .trim_start()
+            .strip_prefix("obeys")
             .unwrap_or(&text)
             .trim();
 

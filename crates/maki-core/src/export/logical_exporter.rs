@@ -281,11 +281,11 @@ impl LogicalExporter {
         }
 
         // Update root element's base.path
-        if let Some(snapshot) = &mut structure_def.snapshot {
-            if let Some(root_element) = snapshot.element.first_mut() {
-                // Root element path should match the new type
-                root_element.path = new_type.to_string();
-            }
+        if let Some(snapshot) = &mut structure_def.snapshot
+            && let Some(root_element) = snapshot.element.first_mut()
+        {
+            // Root element path should match the new type
+            root_element.path = new_type.to_string();
         }
 
         Ok(())
@@ -622,14 +622,12 @@ impl LogicalExporter {
             ));
         }
 
-        if let (Some(min), Some(max)) = (&element.min, &element.max) {
-            if max != "*" {
-                if let Ok(max_val) = max.parse::<u32>() {
-                    if *min > max_val {
-                        return Err(ExportError::InvalidCardinality(format!("{}..{}", min, max)));
-                    }
-                }
-            }
+        if let (Some(min), Some(max)) = (&element.min, &element.max)
+            && max != "*"
+            && let Ok(max_val) = max.parse::<u32>()
+            && *min > max_val
+        {
+            return Err(ExportError::InvalidCardinality(format!("{}..{}", min, max)));
         }
 
         Ok(())

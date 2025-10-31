@@ -4,7 +4,7 @@
 
 use colored::Colorize;
 use maki_core::config::SushiConfiguration;
-use maki_core::export::{BuildError, BuildOptions, BuildOrchestrator, BuildStats};
+use maki_core::export::{BuildOptions, BuildOrchestrator, BuildStats};
 use maki_core::{MakiError, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -83,9 +83,12 @@ pub async fn build_command(
 
     // Create orchestrator and run build
     let orchestrator = BuildOrchestrator::new(config.clone(), options);
-    let result = orchestrator.build().await.map_err(|e| MakiError::ConfigError {
-        message: format!("Build failed: {}", e),
-    })?;
+    let result = orchestrator
+        .build()
+        .await
+        .map_err(|e| MakiError::ConfigError {
+            message: format!("Build failed: {}", e),
+        })?;
 
     let elapsed = start_time.elapsed();
 
@@ -154,18 +157,15 @@ fn print_build_header(config: &SushiConfiguration, options: &BuildOptions) {
     println!();
     println!(
         "{}",
-        "╔════════════════════════════════════════════════════════════════╗"
-            .bright_cyan()
+        "╔════════════════════════════════════════════════════════════════╗".bright_cyan()
     );
     println!(
         "{}",
-        "║                    MAKI Build Pipeline                         ║"
-            .bright_cyan()
+        "║                    MAKI Build Pipeline                         ║".bright_cyan()
     );
     println!(
         "{}",
-        "╚════════════════════════════════════════════════════════════════╝"
-            .bright_cyan()
+        "╚════════════════════════════════════════════════════════════════╝".bright_cyan()
     );
     println!();
     println!(
@@ -222,18 +222,15 @@ fn print_build_results(stats: &BuildStats, elapsed: std::time::Duration) {
 
     println!(
         "{}",
-        "╔════════════════════════════════════════════════════════════════╗"
-            .color(color)
+        "╔════════════════════════════════════════════════════════════════╗".color(color)
     );
     println!(
         "{}",
-        "║                        BUILD RESULTS                           ║"
-            .color(color)
+        "║                        BUILD RESULTS                           ║".color(color)
     );
     println!(
         "{}",
-        "╠════════════════════════════════════════════════════════════════╣"
-            .color(color)
+        "╠════════════════════════════════════════════════════════════════╣".color(color)
     );
 
     // Resource counts
@@ -255,8 +252,7 @@ fn print_build_results(stats: &BuildStats, elapsed: std::time::Duration) {
     );
     println!(
         "{}",
-        "╠════════════════════════════════════════════════════════════════╣"
-            .color(color)
+        "╠════════════════════════════════════════════════════════════════╣".color(color)
     );
 
     println!(
@@ -277,8 +273,7 @@ fn print_build_results(stats: &BuildStats, elapsed: std::time::Duration) {
     );
     println!(
         "{}",
-        "╠════════════════════════════════════════════════════════════════╣"
-            .color(color)
+        "╠════════════════════════════════════════════════════════════════╣".color(color)
     );
 
     // Summary
@@ -311,12 +306,7 @@ fn print_build_results(stats: &BuildStats, elapsed: std::time::Duration) {
         "0 warnings".green().to_string()
     };
 
-    println!(
-        "{} {:^62} {}",
-        "║".color(color),
-        summary,
-        "║".color(color)
-    );
+    println!("{} {:^62} {}", "║".color(color), summary, "║".color(color));
     println!(
         "{} {:^62} {}",
         "║".color(color),
@@ -325,8 +315,7 @@ fn print_build_results(stats: &BuildStats, elapsed: std::time::Duration) {
     );
     println!(
         "{}",
-        "╚════════════════════════════════════════════════════════════════╝"
-            .color(color)
+        "╚════════════════════════════════════════════════════════════════╝".color(color)
     );
 
     if stats.has_errors() {
@@ -341,8 +330,7 @@ fn print_build_results(stats: &BuildStats, elapsed: std::time::Duration) {
         println!();
         println!(
             "{}",
-            "Ready for IG Publisher. Run ./_genonce.sh to publish."
-                .bright_blue()
+            "Ready for IG Publisher. Run ./_genonce.sh to publish.".bright_blue()
         );
     }
 
@@ -357,13 +345,45 @@ mod tests {
     #[test]
     fn test_apply_config_overrides() {
         let mut config = SushiConfiguration {
-            id: Some("test.ig".to_string()),
             canonical: "http://example.org/fhir/test".to_string(),
+            fhir_version: vec!["4.0.1".to_string()],
+            id: Some("test.ig".to_string()),
             name: Some("TestIG".to_string()),
             status: Some("draft".to_string()),
             version: Some("1.0.0".to_string()),
-            fhir_version: vec!["4.0.1".to_string()],
-            ..Default::default()
+            title: None,
+            experimental: None,
+            date: None,
+            publisher: None,
+            contact: None,
+            description: None,
+            use_context: None,
+            jurisdiction: None,
+            copyright: None,
+            license: None,
+            package_id: None,
+            url: None,
+            dependencies: None,
+            global: None,
+            groups: None,
+            resources: None,
+            pages: None,
+            parameters: None,
+            copyrights_year: None,
+            release_label: None,
+            extension_domains: None,
+            author: None,
+            maintainer: None,
+            reviewer: None,
+            endorser: None,
+            template: None,
+            menu: None,
+            history: None,
+            index_page_content: None,
+            fsh_only: None,
+            apply_extension_metadata_to_root: None,
+            instance_options: None,
+            logging_level: None,
         };
 
         let mut overrides = HashMap::new();

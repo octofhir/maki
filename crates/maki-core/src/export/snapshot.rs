@@ -397,34 +397,34 @@ impl SnapshotGenerator {
         // Override scalar properties if present in child
         if child.min.is_some() {
             // Validate cardinality constraint
-            if let (Some(parent_min), Some(child_min)) = (parent.min, child.min) {
-                if child_min < parent_min {
-                    return Err(SnapshotError::CardinalityConflict {
-                        parent_card: format!(
-                            "{}..{}",
-                            parent_min,
-                            parent.max.as_ref().unwrap_or(&"*".to_string())
-                        ),
-                        child_card: format!(
-                            "{}..{}",
-                            child_min,
-                            child.max.as_ref().unwrap_or(&"*".to_string())
-                        ),
-                    });
-                }
+            if let (Some(parent_min), Some(child_min)) = (parent.min, child.min)
+                && child_min < parent_min
+            {
+                return Err(SnapshotError::CardinalityConflict {
+                    parent_card: format!(
+                        "{}..{}",
+                        parent_min,
+                        parent.max.as_ref().unwrap_or(&"*".to_string())
+                    ),
+                    child_card: format!(
+                        "{}..{}",
+                        child_min,
+                        child.max.as_ref().unwrap_or(&"*".to_string())
+                    ),
+                });
             }
             merged.min = child.min;
         }
 
         if child.max.is_some() {
             // Validate max cardinality
-            if let (Some(parent_max), Some(child_max)) = (&parent.max, &child.max) {
-                if !self.is_cardinality_compatible(parent_max, child_max) {
-                    return Err(SnapshotError::CardinalityConflict {
-                        parent_card: format!("{}..{}", parent.min.unwrap_or(0), parent_max),
-                        child_card: format!("{}..{}", child.min.unwrap_or(0), child_max),
-                    });
-                }
+            if let (Some(parent_max), Some(child_max)) = (&parent.max, &child.max)
+                && !self.is_cardinality_compatible(parent_max, child_max)
+            {
+                return Err(SnapshotError::CardinalityConflict {
+                    parent_card: format!("{}..{}", parent.min.unwrap_or(0), parent_max),
+                    child_card: format!("{}..{}", child.min.unwrap_or(0), child_max),
+                });
             }
             merged.max = child.max.clone();
         }

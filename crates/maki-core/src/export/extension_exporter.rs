@@ -61,6 +61,7 @@ pub struct ExtensionExporter {
     /// Session for resolving FHIR definitions
     session: Arc<DefinitionSession>,
     /// Path resolver for finding elements
+    #[allow(dead_code)]
     path_resolver: Arc<PathResolver>,
     /// Base URL for generated extensions
     base_url: String,
@@ -639,12 +640,11 @@ impl ExtensionExporter {
         // Validate cardinality if present
         if let (Some(min), Some(max)) = (&element.min, &element.max) {
             // Check that max is valid
-            if max != "*" {
-                if let Ok(max_val) = max.parse::<u32>() {
-                    if *min > max_val {
-                        return Err(ExportError::InvalidCardinality(format!("{}..{}", min, max)));
-                    }
-                }
+            if max != "*"
+                && let Ok(max_val) = max.parse::<u32>()
+                && *min > max_val
+            {
+                return Err(ExportError::InvalidCardinality(format!("{}..{}", min, max)));
             }
         }
 

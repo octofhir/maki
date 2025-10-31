@@ -35,7 +35,7 @@ pub struct MakiConfiguration {
 }
 
 /// Linter configuration
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct LinterConfiguration {
     /// Enable/disable linter
@@ -52,7 +52,7 @@ pub struct LinterConfiguration {
 }
 
 /// Rules configuration
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RulesConfiguration {
     /// Enable all recommended rules
@@ -99,7 +99,7 @@ pub enum RuleSeverity {
 }
 
 /// Formatter configuration
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FormatterConfiguration {
     /// Enable/disable formatter
@@ -120,7 +120,7 @@ pub struct FormatterConfiguration {
 }
 
 /// Files configuration
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FilesConfiguration {
     /// Glob patterns to include

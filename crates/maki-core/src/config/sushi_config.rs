@@ -89,7 +89,7 @@ pub struct SushiConfiguration {
 
     /// Jurisdiction (countries/regions) - can be string or array
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "deserialize_jurisdiction")]
+    #[serde(default, deserialize_with = "deserialize_jurisdiction")]
     pub jurisdiction: Option<Vec<CodeableConcept>>,
 
     /// Copyright statement
@@ -265,7 +265,10 @@ fn parse_code_string(s: &str) -> Result<CodeableConcept, String> {
 
     let (system_and_code, display) = if let Some(caps) = display_regex.captures(s) {
         let system_and_code = caps.get(1).unwrap().as_str();
-        let display = caps.get(3).map(|m| m.as_str().replace("\\\"", "\"")).unwrap_or_default();
+        let display = caps
+            .get(3)
+            .map(|m| m.as_str().replace("\\\"", "\""))
+            .unwrap_or_default();
         (system_and_code, Some(display))
     } else {
         (s, None)
@@ -289,7 +292,7 @@ fn parse_code_string(s: &str) -> Result<CodeableConcept, String> {
 
     Ok(CodeableConcept {
         coding: Some(vec![coding.clone()]),
-        text: display.or_else(|| coding.code),
+        text: display.or(coding.code),
     })
 }
 
@@ -333,11 +336,11 @@ impl PublisherInfo {
 /// Contact point (phone, email, etc.)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContactPoint {
-    pub system: String,  // phone | fax | email | pager | url | sms | other
+    pub system: String, // phone | fax | email | pager | url | sms | other
     pub value: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub use_field: Option<String>,  // home | work | temp | old | mobile
+    pub use_field: Option<String>, // home | work | temp | old | mobile
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rank: Option<u32>,
@@ -590,10 +593,13 @@ impl SushiConfiguration {
         }
 
         // Validate status if present
-        if let Some(ref status) = self.status {
-            if !matches!(status.as_str(), "draft" | "active" | "retired" | "unknown") {
-                errors.push(format!("invalid status: {} (must be draft, active, retired, or unknown)", status));
-            }
+        if let Some(ref status) = self.status
+            && !matches!(status.as_str(), "draft" | "active" | "retired" | "unknown")
+        {
+            errors.push(format!(
+                "invalid status: {} (must be draft, active, retired, or unknown)",
+                status
+            ));
         }
 
         if errors.is_empty() {
@@ -614,8 +620,53 @@ fn is_valid_fhir_version(version: &str) -> bool {
     // Accept major.minor or major.minor.patch
     // Common versions: 4.0.1, 4.3.0, 5.0.0, etc.
     let parts: Vec<&str> = version.split('.').collect();
-    matches!(parts.len(), 2 | 3)
-        && parts.iter().all(|p| p.parse::<u32>().is_ok())
+    matches!(parts.len(), 2 | 3) && parts.iter().all(|p| p.parse::<u32>().is_ok())
+}
+
+/// Parse dependency specification, including NPM aliases
+///
+/// NPM aliases allow package renaming: "alias@npm:actual-package"
+/// This is used when an IG needs multiple versions of the same package.
+///
+/// # Examples
+///
+/// ```
+/// use maki_core::config::{parse_dependency, DependencyVersion};
+///
+/// // Simple version
+/// let (pkg, ver) = parse_dependency("hl7.fhir.us.core", &DependencyVersion::Simple("6.1.0".to_string())).unwrap();
+/// assert_eq!(pkg, "hl7.fhir.us.core");
+/// assert_eq!(ver, "6.1.0");
+///
+/// // NPM alias
+/// let (pkg, ver) = parse_dependency(
+///     "us-core-3@npm:hl7.fhir.us.core",
+///     &DependencyVersion::Simple("3.1.0".to_string())
+/// ).unwrap();
+/// assert_eq!(pkg, "hl7.fhir.us.core");
+/// assert_eq!(ver, "3.1.0");
+/// ```
+pub fn parse_dependency(
+    package_id: &str,
+    spec: &DependencyVersion,
+) -> Result<(String, String), ConfigError> {
+    // Handle NPM alias: "alias@npm:actual-package"
+    if let Some(npm_pos) = package_id.find("@npm:") {
+        let actual_package = &package_id[npm_pos + 5..];
+        let version = match spec {
+            DependencyVersion::Simple(v) => v,
+            DependencyVersion::Complex { version, .. } => version,
+        };
+        return Ok((actual_package.to_string(), version.clone()));
+    }
+
+    // Normal case - use package_id as-is
+    let version = match spec {
+        DependencyVersion::Simple(v) => v.clone(),
+        DependencyVersion::Complex { version, .. } => version.clone(),
+    };
+
+    Ok((package_id.to_string(), version))
 }
 
 /// Configuration error types

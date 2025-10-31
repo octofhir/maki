@@ -44,22 +44,20 @@ pub use codesystem_exporter::CodeSystemExporter;
 pub use extension_exporter::ExtensionExporter;
 pub use fhir_types::*;
 pub use file_structure::{
-    FileStructureError, FileStructureGenerator, FshIndexEntry, format_fsh_index_table,
-    FSH_GENERATED_DIR, RESOURCES_DIR, INCLUDES_DIR, DATA_DIR,
+    DATA_DIR, FSH_GENERATED_DIR, FileStructureError, FileStructureGenerator, FshIndexEntry,
+    INCLUDES_DIR, RESOURCES_DIR, format_fsh_index_table,
 };
 pub use ig_generator::{
-    ImplementationGuide, ImplementationGuideGenerator, DependsOn, Definition,
-    Grouping, ResourceEntry, Reference, Page,
+    Definition, DependsOn, Grouping, ImplementationGuide, ImplementationGuideGenerator, Page,
+    Reference, ResourceEntry,
 };
 pub use instance_exporter::InstanceExporter;
 pub use logical_exporter::LogicalExporter;
-pub use package_json::{PackageJson, Maintainer, Repository};
+pub use package_json::{Maintainer, PackageJson, Repository};
 pub use predefined_resources::{
-    PredefinedResource, PredefinedResourcesLoader, GeneratedResourceInfo,
-    ConflictInfo, PredefinedResourceError, PREDEFINED_PACKAGE_NAME, PREDEFINED_PACKAGE_VERSION,
+    ConflictInfo, GeneratedResourceInfo, PREDEFINED_PACKAGE_NAME, PREDEFINED_PACKAGE_VERSION,
+    PredefinedResource, PredefinedResourceError, PredefinedResourcesLoader,
 };
 pub use profile_exporter::{ExportError, ProfileExporter};
 pub use snapshot::{SnapshotError, SnapshotGenerator};
 pub use valueset_exporter::ValueSetExporter;
-
-use crate::Result;

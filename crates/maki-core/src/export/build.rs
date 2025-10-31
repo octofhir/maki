@@ -4,24 +4,44 @@
 //! Implements SUSHI-compatible build pipeline with progress reporting.
 
 use crate::config::SushiConfiguration;
-use crate::cst::ast::{CodeSystem, Extension, Instance, Profile, ValueSet};
 use crate::cst::FshSyntaxNode;
+use crate::cst::ast::{CodeSystem, Extension, Instance, Profile, ValueSet};
 use crate::export::*;
-use std::sync::Arc;
-use crate::semantic::SemanticModel;
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use thiserror::Error;
 use tracing::{debug, info, warn};
+
+/// Resource with source location tracking
+#[derive(Debug, Clone)]
+struct SourceTrackedResource<T> {
+    resource: T,
+    source_file: PathBuf,
+    start_line: usize,
+    end_line: usize,
+}
+
+impl<T> SourceTrackedResource<T> {
+    fn new(resource: T, source_file: PathBuf, start_line: usize, end_line: usize) -> Self {
+        Self {
+            resource,
+            source_file,
+            start_line,
+            end_line,
+        }
+    }
+}
 
 /// Parsed FSH resources ready for export
 #[derive(Debug, Default)]
 struct ParsedResources {
-    profiles: Vec<Profile>,
-    extensions: Vec<Extension>,
-    valuesets: Vec<ValueSet>,
-    codesystems: Vec<CodeSystem>,
-    instances: Vec<Instance>,
+    profiles: Vec<SourceTrackedResource<Profile>>,
+    extensions: Vec<SourceTrackedResource<Extension>>,
+    valuesets: Vec<SourceTrackedResource<ValueSet>>,
+    codesystems: Vec<SourceTrackedResource<CodeSystem>>,
+    instances: Vec<SourceTrackedResource<Instance>>,
 }
 
 /// Build errors
@@ -196,20 +216,20 @@ impl BuildOrchestrator {
             quick_init: true,
             ..Default::default()
         };
-        let facade = CanonicalFacade::new(options).await
-            .map_err(|e| BuildError::ExportError(format!("Failed to create CanonicalFacade: {}", e)))?;
-        let session = Arc::new(facade.session([FhirRelease::R4]).await
-            .map_err(|e| BuildError::ExportError(format!("Failed to create DefinitionSession: {}", e)))?);
+        let facade = CanonicalFacade::new(options).await.map_err(|e| {
+            BuildError::ExportError(format!("Failed to create CanonicalFacade: {}", e))
+        })?;
+        let session = Arc::new(facade.session([FhirRelease::R4]).await.map_err(|e| {
+            BuildError::ExportError(format!("Failed to create DefinitionSession: {}", e))
+        })?);
         info!("Created FHIR package resolution session");
 
         info!("Input directory: {:?}", self.options.input_dir);
         info!("Output directory: {:?}", self.options.output_dir);
 
         // Initialize file structure
-        let file_structure = FileStructureGenerator::new(
-            &self.options.output_dir,
-            self.options.clean_output,
-        );
+        let file_structure =
+            FileStructureGenerator::new(&self.options.output_dir, self.options.clean_output);
         file_structure.initialize()?;
 
         // Initialize stats
@@ -232,9 +252,14 @@ impl BuildOrchestrator {
         // Step 3: Extract resources from parsed files
         info!("Extracting FSH resources...");
         let resources = self.extract_resources(&parsed_files)?;
-        debug!("Extracted {} resources total",
-            resources.profiles.len() + resources.extensions.len() +
-            resources.valuesets.len() + resources.codesystems.len() + resources.instances.len());
+        debug!(
+            "Extracted {} resources total",
+            resources.profiles.len()
+                + resources.extensions.len()
+                + resources.valuesets.len()
+                + resources.codesystems.len()
+                + resources.instances.len()
+        );
 
         // Step 4: Export profiles and extensions
         info!("Exporting profiles and extensions...");
@@ -244,11 +269,19 @@ impl BuildOrchestrator {
             &file_structure,
             &mut stats,
             &mut fsh_index,
-        ).await?;
+        )
+        .await?;
 
         // Step 5: Export instances
         info!("Exporting instances...");
-        self.export_instances(session.clone(), &resources, &file_structure, &mut stats, &mut fsh_index).await?;
+        self.export_instances(
+            session.clone(),
+            &resources,
+            &file_structure,
+            &mut stats,
+            &mut fsh_index,
+        )
+        .await?;
 
         // Step 6: Export value sets and code systems
         info!("Exporting value sets and code systems...");
@@ -258,7 +291,8 @@ impl BuildOrchestrator {
             &file_structure,
             &mut stats,
             &mut fsh_index,
-        ).await?;
+        )
+        .await?;
 
         // Step 7: Generate ImplementationGuide resource
         info!("Generating ImplementationGuide resource...");
@@ -287,7 +321,10 @@ impl BuildOrchestrator {
             stats.instances
         );
         if stats.errors > 0 || stats.warnings > 0 {
-            warn!("Build had {} errors and {} warnings", stats.errors, stats.warnings);
+            warn!(
+                "Build had {} errors and {} warnings",
+                stats.errors, stats.warnings
+            );
         }
 
         Ok(BuildResult {
@@ -398,8 +435,14 @@ impl BuildOrchestrator {
             }
         }
 
-        debug!("Extracted {} profiles, {} extensions, {} valuesets, {} codesystems, {} instances",
-            profiles.len(), extensions.len(), valuesets.len(), codesystems.len(), instances.len());
+        debug!(
+            "Extracted {} profiles, {} extensions, {} valuesets, {} codesystems, {} instances",
+            profiles.len(),
+            extensions.len(),
+            valuesets.len(),
+            codesystems.len(),
+            instances.len()
+        );
 
         Ok(ParsedResources {
             profiles,
@@ -422,16 +465,22 @@ impl BuildOrchestrator {
         use crate::export::{ExtensionExporter, ProfileExporter};
 
         // Create exporters
-        let mut profile_exporter = ProfileExporter::new(session.clone(), self.config.canonical.clone())
-            .await
-            .map_err(|e| BuildError::ExportError(format!("Failed to create ProfileExporter: {}", e)))?;
+        let mut profile_exporter =
+            ProfileExporter::new(session.clone(), self.config.canonical.clone())
+                .await
+                .map_err(|e| {
+                    BuildError::ExportError(format!("Failed to create ProfileExporter: {}", e))
+                })?;
 
         // Configure snapshot generation
         profile_exporter.set_generate_snapshots(self.options.generate_snapshots);
 
-        let extension_exporter = ExtensionExporter::new(session.clone(), self.config.canonical.clone())
-            .await
-            .map_err(|e| BuildError::ExportError(format!("Failed to create ExtensionExporter: {}", e)))?;
+        let extension_exporter =
+            ExtensionExporter::new(session.clone(), self.config.canonical.clone())
+                .await
+                .map_err(|e| {
+                    BuildError::ExportError(format!("Failed to create ExtensionExporter: {}", e))
+                })?;
 
         // Track failed exports for reporting
         let mut failed_profiles: Vec<(String, String)> = Vec::new();
@@ -444,7 +493,8 @@ impl BuildOrchestrator {
             match profile_exporter.export(profile).await {
                 Ok(structure_def) => {
                     // Use Id field for filename if present, otherwise fall back to name
-                    let profile_id = profile.id()
+                    let profile_id = profile
+                        .id()
                         .and_then(|id_clause| id_clause.value())
                         .unwrap_or_else(|| profile_name.clone());
 
@@ -452,7 +502,12 @@ impl BuildOrchestrator {
                     let filename = format!("StructureDefinition-{}.json", profile_id);
                     file_structure
                         .write_resource(&filename, &structure_def)
-                        .map_err(|e| BuildError::ExportError(format!("Failed to write profile {}: {}", profile_name, e)))?;
+                        .map_err(|e| {
+                            BuildError::ExportError(format!(
+                                "Failed to write profile {}: {}",
+                                profile_name, e
+                            ))
+                        })?;
 
                     stats.profiles += 1;
                     fsh_index.push(FshIndexEntry {
@@ -480,10 +535,14 @@ impl BuildOrchestrator {
         for extension in &resources.extensions {
             let extension_name = extension.name().unwrap_or_else(|| "Unknown".to_string());
             // Use Id field for filename if present, otherwise fall back to name
-            let extension_id = extension.id()
+            let extension_id = extension
+                .id()
                 .and_then(|id_clause| id_clause.value())
                 .unwrap_or_else(|| extension_name.clone());
-            debug!("Exporting extension: {} (id: {})", extension_name, extension_id);
+            debug!(
+                "Exporting extension: {} (id: {})",
+                extension_name, extension_id
+            );
 
             match extension_exporter.export(extension).await {
                 Ok(structure_def) => {
@@ -491,14 +550,22 @@ impl BuildOrchestrator {
                     let filename = format!("StructureDefinition-{}.json", extension_id);
                     file_structure
                         .write_resource(&filename, &structure_def)
-                        .map_err(|e| BuildError::ExportError(format!("Failed to write extension {}: {}", extension_name, e)))?;
+                        .map_err(|e| {
+                            BuildError::ExportError(format!(
+                                "Failed to write extension {}: {}",
+                                extension_name, e
+                            ))
+                        })?;
 
                     stats.extensions += 1;
                     fsh_index.push(FshIndexEntry {
                         fsh_name: extension_name.clone(),
                         fsh_type: "StructureDefinition".to_string(),
                         output_file: filename,
-                    fsh_file: "".to_string(), start_line: 0, end_line: 0, });
+                        fsh_file: "".to_string(),
+                        start_line: 0,
+                        end_line: 0,
+                    });
 
                     debug!("Successfully exported extension: {}", extension_name);
                 }
@@ -511,13 +578,20 @@ impl BuildOrchestrator {
 
         // Log summary of failed profiles
         if !failed_profiles.is_empty() {
-            warn!("Profile export summary: {} failed out of {} total", failed_profiles.len(), resources.profiles.len());
+            warn!(
+                "Profile export summary: {} failed out of {} total",
+                failed_profiles.len(),
+                resources.profiles.len()
+            );
             warn!("Failed profiles:");
             for (name, error) in &failed_profiles {
                 warn!("  - {}: {}", name, error);
             }
         } else {
-            info!("All {} profiles exported successfully", resources.profiles.len());
+            info!(
+                "All {} profiles exported successfully",
+                resources.profiles.len()
+            );
         }
 
         Ok(())
@@ -537,41 +611,78 @@ impl BuildOrchestrator {
         // Create instance exporter
         let mut instance_exporter = InstanceExporter::new(session, self.config.canonical.clone())
             .await
-            .map_err(|e| BuildError::ExportError(format!("Failed to create InstanceExporter: {}", e)))?;
+            .map_err(|e| {
+                BuildError::ExportError(format!("Failed to create InstanceExporter: {}", e))
+            })?;
 
-        // Export instances
+        // PASS 1: Export all instances and register them
+        // This allows instances to reference each other
+        let mut exported_instances: Vec<(String, String, String, JsonValue)> = Vec::new();
+
         for instance in &resources.instances {
             let instance_name = instance.name().unwrap_or_else(|| "Unknown".to_string());
-            let instance_type = instance.instance_of().map(|iof| iof.value().unwrap_or_else(|| "Resource".to_string())).unwrap_or_else(|| "Resource".to_string());
-            debug!("Exporting instance: {} ({})", instance_name, instance_type);
+            let instance_type = instance
+                .instance_of()
+                .map(|iof| iof.value().unwrap_or_else(|| "Resource".to_string()))
+                .unwrap_or_else(|| "Resource".to_string());
+            debug!(
+                "Pass 1 - Exporting instance: {} ({})",
+                instance_name, instance_type
+            );
 
             match instance_exporter.export(instance).await {
                 Ok(resource_json) => {
-                    // Use Id field for filename if present, otherwise fall back to name (SUSHI compatible)
-                    let instance_id = instance.id()
+                    let instance_id = instance
+                        .id()
                         .and_then(|id_clause| id_clause.value())
                         .unwrap_or_else(|| instance_name.clone());
 
-                    // Write to file
-                    let filename = format!("{}-{}.json", instance_type, instance_id);
-                    file_structure
-                        .write_resource(&filename, &resource_json)
-                        .map_err(|e| BuildError::ExportError(format!("Failed to write instance {}: {}", instance_name, e)))?;
+                    // Register the instance for reference resolution
+                    instance_exporter
+                        .register_instance(instance_name.clone(), resource_json.clone());
 
-                    stats.instances += 1;
-                    fsh_index.push(FshIndexEntry {
-                        fsh_name: instance_name.clone(),
-                        fsh_type: instance_type,
-                        output_file: filename,
-                    fsh_file: "".to_string(), start_line: 0, end_line: 0, });
-
-                    debug!("Successfully exported instance: {}", instance_name);
+                    exported_instances.push((
+                        instance_name,
+                        instance_type,
+                        instance_id,
+                        resource_json,
+                    ));
                 }
                 Err(e) => {
-                    warn!("Failed to export instance {}: {}", instance_name, e);
+                    warn!(
+                        "Failed to export instance {} (pass 1): {}",
+                        instance_name, e
+                    );
                     stats.errors += 1;
                 }
             }
+        }
+
+        // PASS 2: Write all exported instances to files
+        // (References are already resolved from PASS 1 registry)
+        for (instance_name, instance_type, instance_id, resource_json) in exported_instances {
+            let filename = format!("{}-{}.json", instance_type, instance_id);
+
+            file_structure
+                .write_resource(&filename, &resource_json)
+                .map_err(|e| {
+                    BuildError::ExportError(format!(
+                        "Failed to write instance {}: {}",
+                        instance_name, e
+                    ))
+                })?;
+
+            stats.instances += 1;
+            fsh_index.push(FshIndexEntry {
+                fsh_name: instance_name.clone(),
+                fsh_type: instance_type,
+                output_file: filename,
+                fsh_file: "".to_string(),
+                start_line: 0,
+                end_line: 0,
+            });
+
+            debug!("Successfully exported instance: {}", instance_name);
         }
 
         Ok(())
@@ -589,13 +700,18 @@ impl BuildOrchestrator {
         use crate::export::{CodeSystemExporter, ValueSetExporter};
 
         // Create exporters
-        let valueset_exporter = ValueSetExporter::new(session.clone(), self.config.canonical.clone())
-            .await
-            .map_err(|e| BuildError::ExportError(format!("Failed to create ValueSetExporter: {}", e)))?;
+        let valueset_exporter =
+            ValueSetExporter::new(session.clone(), self.config.canonical.clone())
+                .await
+                .map_err(|e| {
+                    BuildError::ExportError(format!("Failed to create ValueSetExporter: {}", e))
+                })?;
 
         let codesystem_exporter = CodeSystemExporter::new(session, self.config.canonical.clone())
             .await
-            .map_err(|e| BuildError::ExportError(format!("Failed to create CodeSystemExporter: {}", e)))?;
+            .map_err(|e| {
+                BuildError::ExportError(format!("Failed to create CodeSystemExporter: {}", e))
+            })?;
 
         // Export valuesets
         for valueset in &resources.valuesets {
@@ -605,21 +721,30 @@ impl BuildOrchestrator {
             match valueset_exporter.export(valueset).await {
                 Ok(resource_json) => {
                     // Use Id field for filename if present, otherwise fall back to name
-                    let vs_id = valueset.id()
+                    let vs_id = valueset
+                        .id()
                         .and_then(|id_clause| id_clause.value())
                         .unwrap_or_else(|| name.clone());
 
                     let filename = format!("ValueSet-{}.json", vs_id);
                     file_structure
                         .write_resource(&filename, &resource_json)
-                        .map_err(|e| BuildError::ExportError(format!("Failed to write ValueSet {}: {}", name, e)))?;
+                        .map_err(|e| {
+                            BuildError::ExportError(format!(
+                                "Failed to write ValueSet {}: {}",
+                                name, e
+                            ))
+                        })?;
 
                     stats.value_sets += 1;
                     fsh_index.push(FshIndexEntry {
                         fsh_name: name.clone(),
                         fsh_type: "ValueSet".to_string(),
                         output_file: filename,
-                    fsh_file: "".to_string(), start_line: 0, end_line: 0, });
+                        fsh_file: "".to_string(),
+                        start_line: 0,
+                        end_line: 0,
+                    });
 
                     debug!("Successfully exported ValueSet: {}", name);
                 }
@@ -638,21 +763,30 @@ impl BuildOrchestrator {
             match codesystem_exporter.export(codesystem).await {
                 Ok(resource_json) => {
                     // Use Id field for filename if present, otherwise fall back to name
-                    let cs_id = codesystem.id()
+                    let cs_id = codesystem
+                        .id()
                         .and_then(|id_clause| id_clause.value())
                         .unwrap_or_else(|| name.clone());
 
                     let filename = format!("CodeSystem-{}.json", cs_id);
                     file_structure
                         .write_resource(&filename, &resource_json)
-                        .map_err(|e| BuildError::ExportError(format!("Failed to write CodeSystem {}: {}", name, e)))?;
+                        .map_err(|e| {
+                            BuildError::ExportError(format!(
+                                "Failed to write CodeSystem {}: {}",
+                                name, e
+                            ))
+                        })?;
 
                     stats.code_systems += 1;
                     fsh_index.push(FshIndexEntry {
                         fsh_name: name.clone(),
                         fsh_type: "CodeSystem".to_string(),
                         output_file: filename,
-                    fsh_file: "".to_string(), start_line: 0, end_line: 0, });
+                        fsh_file: "".to_string(),
+                        start_line: 0,
+                        end_line: 0,
+                    });
 
                     debug!("Successfully exported CodeSystem: {}", name);
                 }
@@ -748,7 +882,9 @@ impl BuildOrchestrator {
         // Write JSON index
         file_structure
             .write_fsh_index_json(fsh_index)
-            .map_err(|e| BuildError::ExportError(format!("Failed to write FSH index JSON: {}", e)))?;
+            .map_err(|e| {
+                BuildError::ExportError(format!("Failed to write FSH index JSON: {}", e))
+            })?;
 
         debug!("Generated FSH index ({} entries)", fsh_index.len());
         Ok(())
@@ -762,12 +898,12 @@ mod tests {
 
     fn create_test_config() -> SushiConfiguration {
         SushiConfiguration {
-            id: "test.ig".to_string(),
+            id: Some("test.ig".to_string()),
             canonical: "http://example.org/fhir/test".to_string(),
-            fsh_name: "TestIG".to_string(),
+            name: Some("TestIG".to_string()),
             title: Some("Test Implementation Guide".to_string()),
-            status: "draft".to_string(),
-            version: "1.0.0".to_string(),
+            status: Some("draft".to_string()),
+            version: Some("1.0.0".to_string()),
             fhir_version: vec!["4.0.1".to_string()],
             ..Default::default()
         }
@@ -804,7 +940,7 @@ mod tests {
         let options = BuildOptions::default();
         let orchestrator = BuildOrchestrator::new(config.clone(), options);
 
-        assert_eq!(orchestrator.config.id, "test.ig");
+        assert_eq!(orchestrator.config.id, Some("test.ig".to_string()));
     }
 
     #[tokio::test]
@@ -840,9 +976,11 @@ mod tests {
         let files = orchestrator.discover_fsh_files().unwrap();
 
         assert_eq!(files.len(), 2);
-        assert!(files
-            .iter()
-            .all(|f| f.extension().and_then(|s| s.to_str()) == Some("fsh")));
+        assert!(
+            files
+                .iter()
+                .all(|f| f.extension().and_then(|s| s.to_str()) == Some("fsh"))
+        );
     }
 
     #[tokio::test]
@@ -887,10 +1025,10 @@ mod tests {
             .unwrap();
 
         // Check that ImplementationGuide was written
-        let ig_path = temp_dir
-            .path()
-            .join("resources")
-            .join(format!("ImplementationGuide-{}.json", config.id));
+        let ig_path = temp_dir.path().join("resources").join(format!(
+            "ImplementationGuide-{}.json",
+            config.id.as_ref().unwrap()
+        ));
         assert!(ig_path.exists());
     }
 

@@ -2,12 +2,16 @@
 //!
 //! This module contains the implementation of all CLI commands.
 //!
-//! Current commands are implemented directly in this file.
-//! Future SUSHI-compatible commands (build, init, etc.) are organized
-//! in the commands/ subdirectory as stubs for future implementation.
+//! Commands are organized hierarchically:
+//! - Top-level commands (lint, format, rules) are implemented in this file
+//! - Subcommands with multiple actions are in subdirectories:
+//!   - commands/config/ - Configuration management (init, migrate, validate, show)
+//!   - commands/build/ - Build command (future: SUSHI-compatible build)
+//!   - commands/init/ - Init command (future: project initialization)
 
-// Future command modules (stubs)
+// Command modules organized hierarchically
 pub mod build;
+pub mod config;
 pub mod init;
 
 use maki_core::{

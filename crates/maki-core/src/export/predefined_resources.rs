@@ -96,10 +96,7 @@ impl PredefinedResource {
 
         let id = json.get("id").and_then(|v| v.as_str()).map(String::from);
 
-        let url = json
-            .get("url")
-            .and_then(|v| v.as_str())
-            .map(String::from);
+        let url = json.get("url").and_then(|v| v.as_str()).map(String::from);
 
         let filename = path
             .file_name()
@@ -200,12 +197,12 @@ impl PredefinedResourcesLoader {
     fn add_recursive_subdirs(&self, base_path: &Path, paths: &mut Vec<PathBuf>) {
         if let Ok(entries) = fs::read_dir(base_path) {
             for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_dir() {
-                        let dir_path = entry.path();
-                        paths.push(dir_path.clone());
-                        self.add_recursive_subdirs(&dir_path, paths);
-                    }
+                if let Ok(metadata) = entry.metadata()
+                    && metadata.is_dir()
+                {
+                    let dir_path = entry.path();
+                    paths.push(dir_path.clone());
+                    self.add_recursive_subdirs(&dir_path, paths);
                 }
             }
         }
@@ -237,7 +234,11 @@ impl PredefinedResourcesLoader {
                         }
                         Err(e) => {
                             // Log warning but continue processing
-                            eprintln!("Warning: Failed to load predefined resource from {}: {}", path.display(), e);
+                            eprintln!(
+                                "Warning: Failed to load predefined resource from {}: {}",
+                                path.display(),
+                                e
+                            );
                         }
                     }
                 }
@@ -369,7 +370,11 @@ mod tests {
             "status": "active"
         });
 
-        fs::write(dir.join(filename), serde_json::to_string_pretty(&resource).unwrap()).unwrap();
+        fs::write(
+            dir.join(filename),
+            serde_json::to_string_pretty(&resource).unwrap(),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -400,11 +405,8 @@ mod tests {
         fs::create_dir_all(&input_dir).unwrap();
         fs::create_dir_all(&custom_dir).unwrap();
 
-        let loader = PredefinedResourcesLoader::new(
-            &input_dir,
-            temp.path(),
-            vec!["custom".to_string()],
-        );
+        let loader =
+            PredefinedResourcesLoader::new(&input_dir, temp.path(), vec!["custom".to_string()]);
         let paths = loader.get_resource_paths();
 
         assert_eq!(paths.len(), 1);
@@ -423,11 +425,8 @@ mod tests {
         fs::create_dir_all(&subdir1).unwrap();
         fs::create_dir_all(&subdir2).unwrap();
 
-        let loader = PredefinedResourcesLoader::new(
-            &input_dir,
-            temp.path(),
-            vec!["custom/*".to_string()],
-        );
+        let loader =
+            PredefinedResourcesLoader::new(&input_dir, temp.path(), vec!["custom/*".to_string()]);
         let paths = loader.get_resource_paths();
 
         assert_eq!(paths.len(), 3); // custom + sub1 + sub2

@@ -58,7 +58,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     if !cli.fixtures.exists() {
-        eprintln!("❌ SUSHI fixtures directory not found: {}", cli.fixtures.display());
+        eprintln!(
+            "❌ SUSHI fixtures directory not found: {}",
+            cli.fixtures.display()
+        );
         eprintln!("   Clone SUSHI repository and update the path");
         std::process::exit(1);
     }

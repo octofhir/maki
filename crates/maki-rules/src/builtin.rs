@@ -108,8 +108,7 @@ impl BuiltinRules {
                 tags: vec!["correctness".to_string(), "keywords".to_string()],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki/rules/correctness/invalid-keyword"
-                        .to_string(),
+                    "https://octofhir.github.io/maki/rules/correctness/invalid-keyword".to_string(),
                 ),
             },
             is_ast_rule: false,
@@ -147,8 +146,7 @@ impl BuiltinRules {
                 tags: vec!["correctness".to_string(), "alias".to_string()],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki/rules/correctness/malformed-alias"
-                        .to_string(),
+                    "https://octofhir.github.io/maki/rules/correctness/malformed-alias".to_string(),
                 ),
             },
             is_ast_rule: false,
@@ -363,8 +361,7 @@ impl BuiltinRules {
                 tags: vec!["correctness".to_string(), "slicing".to_string()],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki/rules/correctness/invalid-slicing"
-                        .to_string(),
+                    "https://octofhir.github.io/maki/rules/correctness/invalid-slicing".to_string(),
                 ),
             },
             is_ast_rule: false,
@@ -666,8 +663,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki/rules/documentation/missing-title"
-                        .to_string(),
+                    "https://octofhir.github.io/maki/rules/documentation/missing-title".to_string(),
                 ),
             },
             is_ast_rule: false,
@@ -788,8 +784,7 @@ impl BuiltinRules {
                 ],
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
-                    "https://octofhir.github.io/maki/rules/correctness/invalid-status"
-                        .to_string(),
+                    "https://octofhir.github.io/maki/rules/correctness/invalid-status".to_string(),
                 ),
             },
             is_ast_rule: false,

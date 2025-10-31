@@ -13,7 +13,6 @@
 use crate::config::SushiConfiguration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
 
 /// ImplementationGuide resource generator
 ///
@@ -48,10 +47,19 @@ impl ImplementationGuideGenerator {
             version: self.config.version.clone(),
             name: self.sanitize_name(),
             title: self.config.title.clone(),
-            status: self.config.status.clone().unwrap_or_else(|| "draft".to_string()),
+            status: self
+                .config
+                .status
+                .clone()
+                .unwrap_or_else(|| "draft".to_string()),
             experimental: self.config.experimental,
             date: self.config.date.clone(),
-            publisher: self.config.publisher.as_ref().and_then(|p| p.name()).map(|s| s.to_string()),
+            publisher: self
+                .config
+                .publisher
+                .as_ref()
+                .and_then(|p| p.name())
+                .map(|s| s.to_string()),
             contact: self.config.contact.clone(),
             description: self.config.description.clone(),
             use_context: self.config.use_context.clone(),
@@ -69,11 +77,11 @@ impl ImplementationGuideGenerator {
         };
 
         // Clean up empty arrays
-        if ig.depends_on.as_ref().map_or(true, |d| d.is_empty()) {
+        if ig.depends_on.as_ref().is_none_or(|d| d.is_empty()) {
             ig.depends_on = None;
         }
 
-        if ig.global.as_ref().map_or(true, |g| g.is_empty()) {
+        if ig.global.as_ref().is_none_or(|g| g.is_empty()) {
             ig.global = None;
         }
 
@@ -134,16 +142,20 @@ impl ImplementationGuideGenerator {
     /// Build the definition section
     fn build_definition(&self) -> Definition {
         let mut definition = Definition {
-            extension: self.config.definition.as_ref().and_then(|d| d.extension.clone()),
+            extension: self
+                .config
+                .definition
+                .as_ref()
+                .and_then(|d| d.extension.clone()),
             grouping: self.build_grouping(),
-            resource: vec![],  // Will be populated by addResources
+            resource: vec![], // Will be populated by addResources
             page: self.build_pages(),
             parameter: self.build_parameters(),
             template: self.config.templates.clone(),
         };
 
         // Clean up empty grouping
-        if definition.grouping.as_ref().map_or(true, |g| g.is_empty()) {
+        if definition.grouping.as_ref().is_none_or(|g| g.is_empty()) {
             definition.grouping = None;
         }
 
@@ -166,7 +178,7 @@ impl ImplementationGuideGenerator {
 
     /// Build pages structure
     fn build_pages(&self) -> Page {
-        if let Some(ref pages) = self.config.pages {
+        if let Some(ref _pages) = self.config.pages {
             // Custom pages configuration (simplified - just use default for now)
             // TODO: Parse pages tree structure properly
             Page {
@@ -183,7 +195,7 @@ impl ImplementationGuideGenerator {
                 name_reference: None,
                 title: "Table of Contents".to_string(),
                 generation: "html".to_string(),
-                page: Some(vec![]),  // Will be populated with index page
+                page: Some(vec![]), // Will be populated with index page
             }
         }
     }
@@ -206,15 +218,14 @@ impl ImplementationGuideGenerator {
             .unwrap_or_default();
 
         // Add path-history for HL7 IGs if not present
-        if self.config.canonical.starts_with("http://hl7.org/")
-            || self.config.canonical.starts_with("https://hl7.org/")
+        if (self.config.canonical.starts_with("http://hl7.org/")
+            || self.config.canonical.starts_with("https://hl7.org/"))
+            && !parameters.iter().any(|p| p.code == "path-history")
         {
-            if !parameters.iter().any(|p| p.code == "path-history") {
-                parameters.push(crate::config::Parameter {
-                    code: "path-history".to_string(),
-                    value: format!("{}/history.html", self.config.canonical),
-                });
-            }
+            parameters.push(crate::config::Parameter {
+                code: "path-history".to_string(),
+                value: format!("{}/history.html", self.config.canonical),
+            });
         }
 
         if parameters.is_empty() {
@@ -486,7 +497,7 @@ mod tests {
             crate::config::DependencyVersion::Simple("5.0.1".to_string()),
         );
         deps.insert(
-            "hl7.fhir.extensions.r4".to_string(),  // Should be filtered out
+            "hl7.fhir.extensions.r4".to_string(), // Should be filtered out
             crate::config::DependencyVersion::Simple("1.0.0".to_string()),
         );
         config.dependencies = Some(deps);
@@ -496,7 +507,10 @@ mod tests {
 
         let depends_on = ig.depends_on.unwrap();
         assert_eq!(depends_on.len(), 1);
-        assert_eq!(depends_on[0].package_id, Some("hl7.fhir.us.core".to_string()));
+        assert_eq!(
+            depends_on[0].package_id,
+            Some("hl7.fhir.us.core".to_string())
+        );
         assert_eq!(depends_on[0].version, Some("5.0.1".to_string()));
     }
 
@@ -521,7 +535,7 @@ mod tests {
 
     #[test]
     fn test_no_path_history_non_hl7() {
-        let config = minimal_config();  // Uses http://example.org
+        let config = minimal_config(); // Uses http://example.org
 
         let generator = ImplementationGuideGenerator::new(config);
         let ig = generator.generate();

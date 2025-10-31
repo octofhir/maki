@@ -421,7 +421,10 @@ fn format_rule(ctx: &mut FormatContext, rule: &Rule, caret_column: usize) {
         }
 
         Rule::Contains(contains_rule) => {
-            let path = contains_rule.path().map(|p| p.as_string()).unwrap_or_default();
+            let path = contains_rule
+                .path()
+                .map(|p| p.as_string())
+                .unwrap_or_default();
             let items = contains_rule.items();
             ctx.writeln(&format!("* {} contains {}", path, items.join(" and ")));
         }

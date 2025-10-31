@@ -100,17 +100,35 @@ impl ParityReport {
         // Categorize differences
         for diff in &result.differences {
             if diff.contains("profile") {
-                *self.difference_categories.entry("profiles".to_string()).or_insert(0) += 1;
+                *self
+                    .difference_categories
+                    .entry("profiles".to_string())
+                    .or_insert(0) += 1;
             } else if diff.contains("extension") {
-                *self.difference_categories.entry("extensions".to_string()).or_insert(0) += 1;
+                *self
+                    .difference_categories
+                    .entry("extensions".to_string())
+                    .or_insert(0) += 1;
             } else if diff.contains("valueset") || diff.contains("value set") {
-                *self.difference_categories.entry("valuesets".to_string()).or_insert(0) += 1;
+                *self
+                    .difference_categories
+                    .entry("valuesets".to_string())
+                    .or_insert(0) += 1;
             } else if diff.contains("codesystem") || diff.contains("code system") {
-                *self.difference_categories.entry("codesystems".to_string()).or_insert(0) += 1;
+                *self
+                    .difference_categories
+                    .entry("codesystems".to_string())
+                    .or_insert(0) += 1;
             } else if diff.contains("instance") {
-                *self.difference_categories.entry("instances".to_string()).or_insert(0) += 1;
+                *self
+                    .difference_categories
+                    .entry("instances".to_string())
+                    .or_insert(0) += 1;
             } else {
-                *self.difference_categories.entry("other".to_string()).or_insert(0) += 1;
+                *self
+                    .difference_categories
+                    .entry("other".to_string())
+                    .or_insert(0) += 1;
             }
         }
 
@@ -121,7 +139,8 @@ impl ParityReport {
     /// Update compatibility percentage
     fn update_compatibility(&mut self) {
         if self.total_tests > 0 {
-            self.compatibility_percent = (self.passed_tests as f64 / self.total_tests as f64) * 100.0;
+            self.compatibility_percent =
+                (self.passed_tests as f64 / self.total_tests as f64) * 100.0;
         }
     }
 
@@ -138,7 +157,10 @@ impl ParityReport {
         md.push_str(&format!("- **Total Tests**: {}\n", self.total_tests));
         md.push_str(&format!("- **Passed**: {} ✅\n", self.passed_tests));
         md.push_str(&format!("- **Failed**: {} ❌\n", self.failed_tests));
-        md.push_str(&format!("- **Compatibility**: {:.2}%\n\n", self.compatibility_percent));
+        md.push_str(&format!(
+            "- **Compatibility**: {:.2}%\n\n",
+            self.compatibility_percent
+        ));
 
         if !self.difference_categories.is_empty() {
             md.push_str("## Differences by Category\n\n");
@@ -147,19 +169,28 @@ impl ParityReport {
             for (category, count) in categories {
                 md.push_str(&format!("- **{}**: {} differences\n", category, count));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         md.push_str("## Test Results\n\n");
-        md.push_str("| Test | Status | Profiles | Extensions | ValueSets | CodeSystems | Instances |\n");
-        md.push_str("|------|--------|----------|------------|-----------|-------------|----------|\n");
+        md.push_str(
+            "| Test | Status | Profiles | Extensions | ValueSets | CodeSystems | Instances |\n",
+        );
+        md.push_str(
+            "|------|--------|----------|------------|-----------|-------------|----------|\n",
+        );
 
         for result in &self.test_results {
-            let status = if result.passed { "✅ PASS" } else { "❌ FAIL" };
+            let status = if result.passed {
+                "✅ PASS"
+            } else {
+                "❌ FAIL"
+            };
             let profiles_match = result.sushi_output.profiles == result.maki_output.profiles;
             let extensions_match = result.sushi_output.extensions == result.maki_output.extensions;
             let valuesets_match = result.sushi_output.value_sets == result.maki_output.value_sets;
-            let codesystems_match = result.sushi_output.code_systems == result.maki_output.code_systems;
+            let codesystems_match =
+                result.sushi_output.code_systems == result.maki_output.code_systems;
             let instances_match = result.sushi_output.instances == result.maki_output.instances;
 
             md.push_str(&format!(
@@ -187,7 +218,7 @@ impl ParityReport {
                 for diff in &result.differences {
                     md.push_str(&format!("- {}\n", diff));
                 }
-                md.push_str("\n");
+                md.push('\n');
             }
         }
 
@@ -247,7 +278,12 @@ impl ParityTestRunner {
         println!("Found {} test fixtures", fixtures.len());
 
         for (i, fixture) in fixtures.iter().enumerate() {
-            println!("Running test {}/{}: {}...", i + 1, fixtures.len(), fixture.display());
+            println!(
+                "Running test {}/{}: {}...",
+                i + 1,
+                fixtures.len(),
+                fixture.display()
+            );
             match self.run_test(fixture) {
                 Ok(result) => {
                     let status = if result.passed { "✅" } else { "❌" };
@@ -300,7 +336,11 @@ impl ParityTestRunner {
             && sushi_output.instances == maki_output.instances;
 
         Ok(ParityTestResult {
-            test_name: fixture_path.file_name().unwrap().to_string_lossy().to_string(),
+            test_name: fixture_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
             passed,
             sushi_output,
             maki_output,
@@ -333,7 +373,12 @@ impl ParityTestRunner {
     }
 
     /// Parse SUSHI output to extract statistics
-    fn parse_sushi_output(&self, stdout: &[u8], stderr: &[u8], success: bool) -> anyhow::Result<OutputSummary> {
+    fn parse_sushi_output(
+        &self,
+        stdout: &[u8],
+        _stderr: &[u8],
+        success: bool,
+    ) -> anyhow::Result<OutputSummary> {
         let output_str = String::from_utf8_lossy(stdout);
         let mut summary = OutputSummary {
             success,
@@ -343,40 +388,40 @@ impl ParityTestRunner {
         // Parse SUSHI's output format
         // Example: "5 Profiles, 3 Extensions, 2 ValueSets, 1 CodeSystem, 10 Instances"
         for line in output_str.lines() {
-            if line.contains("Profile") {
-                if let Some(count) = Self::extract_number_before_word(line, "Profile") {
-                    summary.profiles = count;
-                }
+            if line.contains("Profile")
+                && let Some(count) = Self::extract_number_before_word(line, "Profile")
+            {
+                summary.profiles = count;
             }
-            if line.contains("Extension") {
-                if let Some(count) = Self::extract_number_before_word(line, "Extension") {
-                    summary.extensions = count;
-                }
+            if line.contains("Extension")
+                && let Some(count) = Self::extract_number_before_word(line, "Extension")
+            {
+                summary.extensions = count;
             }
-            if line.contains("ValueSet") {
-                if let Some(count) = Self::extract_number_before_word(line, "ValueSet") {
-                    summary.value_sets = count;
-                }
+            if line.contains("ValueSet")
+                && let Some(count) = Self::extract_number_before_word(line, "ValueSet")
+            {
+                summary.value_sets = count;
             }
-            if line.contains("CodeSystem") {
-                if let Some(count) = Self::extract_number_before_word(line, "CodeSystem") {
-                    summary.code_systems = count;
-                }
+            if line.contains("CodeSystem")
+                && let Some(count) = Self::extract_number_before_word(line, "CodeSystem")
+            {
+                summary.code_systems = count;
             }
-            if line.contains("Instance") {
-                if let Some(count) = Self::extract_number_before_word(line, "Instance") {
-                    summary.instances = count;
-                }
+            if line.contains("Instance")
+                && let Some(count) = Self::extract_number_before_word(line, "Instance")
+            {
+                summary.instances = count;
             }
-            if line.contains("Error") {
-                if let Some(count) = Self::extract_number_before_word(line, "Error") {
-                    summary.errors = count;
-                }
+            if line.contains("Error")
+                && let Some(count) = Self::extract_number_before_word(line, "Error")
+            {
+                summary.errors = count;
             }
-            if line.contains("Warning") {
-                if let Some(count) = Self::extract_number_before_word(line, "Warning") {
-                    summary.warnings = count;
-                }
+            if line.contains("Warning")
+                && let Some(count) = Self::extract_number_before_word(line, "Warning")
+            {
+                summary.warnings = count;
             }
         }
 
@@ -384,7 +429,12 @@ impl ParityTestRunner {
     }
 
     /// Parse Maki output to extract statistics
-    fn parse_maki_output(&self, stdout: &[u8], stderr: &[u8], success: bool) -> anyhow::Result<OutputSummary> {
+    fn parse_maki_output(
+        &self,
+        stdout: &[u8],
+        _stderr: &[u8],
+        success: bool,
+    ) -> anyhow::Result<OutputSummary> {
         let output_str = String::from_utf8_lossy(stdout);
         let mut summary = OutputSummary {
             success,
@@ -393,7 +443,8 @@ impl ParityTestRunner {
 
         // Parse Maki's output format (from build command)
         for line in output_str.lines() {
-            if line.contains("Profiles") || line.contains("Extensions") || line.contains("Logicals") {
+            if line.contains("Profiles") || line.contains("Extensions") || line.contains("Logicals")
+            {
                 // Parse table row
                 let parts: Vec<&str> = line.split('│').collect();
                 if parts.len() >= 4 {
@@ -408,7 +459,10 @@ impl ParityTestRunner {
                     }
                 }
             }
-            if line.contains("ValueSets") || line.contains("CodeSystems") || line.contains("Instances") {
+            if line.contains("ValueSets")
+                || line.contains("CodeSystems")
+                || line.contains("Instances")
+            {
                 let parts: Vec<&str> = line.split('│').collect();
                 if parts.len() >= 4 {
                     if let Ok(valuesets) = parts[1].trim().parse::<usize>() {
@@ -422,15 +476,15 @@ impl ParityTestRunner {
                     }
                 }
             }
-            if line.contains("error") {
-                if let Some(count) = Self::extract_number_before_word(line, "error") {
-                    summary.errors = count;
-                }
+            if line.contains("error")
+                && let Some(count) = Self::extract_number_before_word(line, "error")
+            {
+                summary.errors = count;
             }
-            if line.contains("warning") {
-                if let Some(count) = Self::extract_number_before_word(line, "warning") {
-                    summary.warnings = count;
-                }
+            if line.contains("warning")
+                && let Some(count) = Self::extract_number_before_word(line, "warning")
+            {
+                summary.warnings = count;
             }
         }
 
@@ -476,11 +530,14 @@ impl ParityTestRunner {
     fn collect_generated_files(&self, dir: &Path) -> anyhow::Result<Vec<String>> {
         let mut files = Vec::new();
         if dir.exists() {
-            for entry in walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
-                if entry.file_type().is_file() {
-                    if let Ok(relative) = entry.path().strip_prefix(dir) {
-                        files.push(relative.display().to_string());
-                    }
+            for entry in walkdir::WalkDir::new(dir)
+                .into_iter()
+                .filter_map(|e| e.ok())
+            {
+                if entry.file_type().is_file()
+                    && let Ok(relative) = entry.path().strip_prefix(dir)
+                {
+                    files.push(relative.display().to_string());
                 }
             }
         }
@@ -535,7 +592,8 @@ mod tests {
 
     #[test]
     fn test_parity_report_compatibility() {
-        let mut report = ParityReport::new("3.0.0".to_string(), "0.0.2".to_string());
+        let mut report =
+            ParityReport::new("3.0.0".to_string(), env!("CARGO_PKG_VERSION").to_string());
 
         report.add_result(ParityTestResult {
             test_name: "test1".to_string(),

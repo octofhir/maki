@@ -66,10 +66,13 @@
 //! }
 //! ```
 
+pub mod auto_dependencies;
+
 mod loader;
 mod maki_config;
 mod merge;
 mod sushi_config;
+mod unified_config;
 
 // Re-export main types
 pub use loader::ConfigLoader;
@@ -78,11 +81,12 @@ pub use maki_config::{
     RuleSeverity, RulesConfiguration,
 };
 pub use sushi_config::{
-    SushiConfiguration, ContactDetail, ContactPoint, UsageContext, CodeableConcept, Coding,
-    DependencyVersion, GlobalProfile, ResourceGroup, ResourceEntry, PageDefinition,
-    Parameter, Template, MenuItem, InstanceOptions, MetaProfileSetting, IdSetting,
-    DefinitionExtension, ConfigError,
+    parse_dependency, CodeableConcept, Coding, ConfigError, ContactDetail, ContactPoint,
+    DefinitionExtension, DependencyVersion, GlobalProfile, IdSetting, InstanceOptions, MenuItem,
+    MetaProfileSetting, PageDefinition, Parameter, PublisherInfo, ResourceEntry, ResourceGroup,
+    SushiConfiguration, Template, UsageContext,
 };
+pub use unified_config::UnifiedConfig;
 
 // Re-export Result type
 pub use loader::Result;
