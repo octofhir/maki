@@ -888,6 +888,9 @@ pub enum Rule {
     ValueSet(ValueSetRule),
     FixedValue(FixedValueRule),
     Path(PathRule),
+    Contains(ContainsRule),
+    Only(OnlyRule),
+    Obeys(ObeysRule),
 }
 
 impl Rule {
@@ -898,6 +901,9 @@ impl Rule {
             FshSyntaxKind::ValuesetRule => ValueSetRule::cast(node).map(Rule::ValueSet),
             FshSyntaxKind::FixedValueRule => FixedValueRule::cast(node).map(Rule::FixedValue),
             FshSyntaxKind::PathRule => PathRule::cast(node).map(Rule::Path),
+            FshSyntaxKind::ContainsRule => ContainsRule::cast(node).map(Rule::Contains),
+            FshSyntaxKind::OnlyRule => OnlyRule::cast(node).map(Rule::Only),
+            FshSyntaxKind::ObeysRule => ObeysRule::cast(node).map(Rule::Obeys),
             _ => None,
         }
     }
@@ -909,6 +915,9 @@ impl Rule {
             Rule::ValueSet(r) => r.syntax(),
             Rule::FixedValue(r) => r.syntax(),
             Rule::Path(r) => r.syntax(),
+            Rule::Contains(r) => r.syntax(),
+            Rule::Only(r) => r.syntax(),
+            Rule::Obeys(r) => r.syntax(),
         }
     }
 }
@@ -1114,9 +1123,13 @@ impl FixedValueRule {
     }
 
     pub fn value(&self) -> Option<String> {
-        // Value can be string, number, identifier, or boolean
-        get_string_text(&self.syntax)
+        // Value can be code (with optional display), string, number, identifier, or boolean
+        // Priority: Code > Identifier > String > Number > Boolean
+        // This ensures `#collection "Collection"` returns `#collection` not `"Collection"`
+        token_of_kind(&self.syntax, FshSyntaxKind::Code)
+            .map(|t| t.text().to_string())
             .or_else(|| get_ident_text(&self.syntax))
+            .or_else(|| get_string_text(&self.syntax))
             .or_else(|| {
                 token_of_kind(&self.syntax, FshSyntaxKind::Integer).map(|t| t.text().to_string())
             })
@@ -1160,6 +1173,169 @@ impl PathRule {
             .prev_sibling()
             .filter(|n| n.kind() == FshSyntaxKind::Path)
             .and_then(Path::cast)
+    }
+}
+
+/// Contains rule: * path contains Item1 and Item2
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContainsRule {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for ContainsRule {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::ContainsRule
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl ContainsRule {
+    pub fn path(&self) -> Option<Path> {
+        // The path is the previous sibling of the rule node, not a child
+        self.syntax
+            .prev_sibling()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .and_then(Path::cast)
+    }
+
+    /// Get the contains items (slice names)
+    /// Example: "Item1 and Item2" or "Item1 named slice1"
+    pub fn items(&self) -> Vec<String> {
+        let text = self.syntax.text().to_string();
+
+        // Remove "contains" keyword
+        let after_contains = text.trim_start().strip_prefix("contains")
+            .unwrap_or(&text)
+            .trim();
+
+        // Split by "and" keyword and extract item names
+        after_contains
+            .split("and")
+            .map(|item| {
+                // Handle "Item1 named slice1" format - extract the item name before "named"
+                if let Some(named_pos) = item.find("named") {
+                    item[..named_pos].trim().to_string()
+                } else {
+                    item.trim().to_string()
+                }
+            })
+            .filter(|s| !s.is_empty())
+            .collect()
+    }
+}
+
+/// Only rule: * path only Type1 or Type2
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OnlyRule {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for OnlyRule {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::OnlyRule
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl OnlyRule {
+    pub fn path(&self) -> Option<Path> {
+        // The path is the previous sibling of the rule node, not a child
+        self.syntax
+            .prev_sibling()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .and_then(Path::cast)
+    }
+
+    /// Get the allowed types
+    /// Example: "String" or "String or Integer"
+    pub fn types(&self) -> Vec<String> {
+        let text = self.syntax.text().to_string();
+
+        // Remove "only" keyword
+        let after_only = text.trim_start().strip_prefix("only")
+            .unwrap_or(&text)
+            .trim();
+
+        // Split by "or" keyword
+        after_only
+            .split("or")
+            .map(|t| t.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    }
+}
+
+/// Obeys rule: * path obeys Invariant1 and Invariant2
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObeysRule {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for ObeysRule {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::ObeysRule
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl ObeysRule {
+    pub fn path(&self) -> Option<Path> {
+        // The path is the previous sibling of the rule node, not a child
+        self.syntax
+            .prev_sibling()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .and_then(Path::cast)
+    }
+
+    /// Get the invariant names
+    /// Example: "inv-1" or "inv-1 and inv-2"
+    pub fn invariants(&self) -> Vec<String> {
+        let text = self.syntax.text().to_string();
+
+        // Remove "obeys" keyword
+        let after_obeys = text.trim_start().strip_prefix("obeys")
+            .unwrap_or(&text)
+            .trim();
+
+        // Split by "and" keyword
+        after_obeys
+            .split("and")
+            .map(|inv| inv.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
     }
 }
 

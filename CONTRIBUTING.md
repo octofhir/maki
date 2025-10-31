@@ -1,6 +1,8 @@
-# Contributing to FSH Lint
+# Contributing to maki
 
-Thank you for your interest in contributing to FSH Lint! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to maki! This document provides guidelines and instructions for contributing.
+
+maki is a high-performance toolchain for FHIR Shorthand (FSH) that provides linting, formatting, building, and language server capabilities.
 
 ## Code of Conduct
 
@@ -45,11 +47,13 @@ This is a Rust workspace with the following crates:
 ```
 maki/
 ├── crates/
-│   ├── maki-core/        # Core linting engine
+│   ├── maki-core/        # Core library with parser, semantic analyzer, and exporters
 │   │   ├── src/
-│   │   │   ├── cst/           # Concrete Syntax Tree implementation
+│   │   │   ├── cst/           # Concrete Syntax Tree implementation (Rowan-based)
 │   │   │   ├── config/        # Configuration system
 │   │   │   ├── diagnostics/   # Diagnostic system
+│   │   │   ├── export/        # FHIR resource exporters (profiles, extensions, etc.)
+│   │   │   ├── canonical/     # Canonical package management
 │   │   │   ├── parser.rs      # Main parser
 │   │   │   ├── semantic.rs    # Semantic analysis
 │   │   │   ├── autofix.rs     # Auto-fix engine
@@ -58,16 +62,20 @@ maki/
 │   │
 │   ├── maki-rules/        # Rule engine and built-in rules
 │   │   ├── src/
-│   │   │   ├── builtin/       # Built-in rules
-│   │   │   ├── gritql/        # GritQL integration
+│   │   │   ├── builtin/       # Built-in rules (naming, metadata, cardinality, etc.)
+│   │   │   ├── gritql/        # GritQL integration for pattern matching
 │   │   │   └── engine.rs      # Rule execution engine
 │   │   └── tests/             # Rule tests
 │   │
-│   ├── maki-cli/          # Command-line interface
+│   ├── maki-cli/          # Command-line interface (binary: maki)
 │   │   ├── src/
-│   │   │   ├── commands.rs    # CLI commands
+│   │   │   ├── commands.rs    # CLI commands (lint, build, format, etc.)
 │   │   │   └── output.rs      # Output formatting
 │   │   └── tests/             # CLI tests
+│   │
+│   ├── maki-lsp/          # Language Server Protocol implementation (stub)
+│   ├── maki-formatter/    # Formatter API wrapper (stub)
+│   ├── maki-test/         # Testing framework for FSH resources (stub)
 │   │
 │   └── maki-devtools/     # Developer tools
 │       └── src/
@@ -413,7 +421,7 @@ You can see the status of CI checks in your pull request:
 
 When reporting bugs, please include:
 
-- FSH Lint version (`maki --version`)
+- maki version (`maki --version`)
 - Operating system
 - Minimal reproducible example
 - Expected vs actual behavior
@@ -473,7 +481,7 @@ Visit http://localhost:4321 to view the docs.
 
 ## License
 
-By contributing to FSH Lint, you agree that your contributions will be licensed under either:
+By contributing to maki, you agree that your contributions will be licensed under either:
 
 - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE))
 - MIT License ([LICENSE-MIT](LICENSE))
@@ -482,4 +490,4 @@ at the option of the user.
 
 ---
 
-Thank you for contributing to FSH Lint! 🎉
+Thank you for contributing to maki! 🎉

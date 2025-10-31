@@ -318,6 +318,9 @@ fn calculate_caret_alignment(rules: &[Rule]) -> usize {
                 Rule::ValueSet(r) => r.path().map(|p| p.as_string()),
                 Rule::FixedValue(r) => r.path().map(|p| p.as_string()),
                 Rule::Path(r) => r.path().map(|p| p.as_string()),
+                Rule::Contains(r) => r.path().map(|p| p.as_string()),
+                Rule::Only(r) => r.path().map(|p| p.as_string()),
+                Rule::Obeys(r) => r.path().map(|p| p.as_string()),
             };
             path.map(|p| p.len())
         })
@@ -415,6 +418,24 @@ fn format_rule(ctx: &mut FormatContext, rule: &Rule, caret_column: usize) {
         Rule::Path(path_rule) => {
             let path = path_rule.path().map(|p| p.as_string()).unwrap_or_default();
             ctx.writeln(&format!("* {path}"));
+        }
+
+        Rule::Contains(contains_rule) => {
+            let path = contains_rule.path().map(|p| p.as_string()).unwrap_or_default();
+            let items = contains_rule.items();
+            ctx.writeln(&format!("* {} contains {}", path, items.join(" and ")));
+        }
+
+        Rule::Only(only_rule) => {
+            let path = only_rule.path().map(|p| p.as_string()).unwrap_or_default();
+            let types = only_rule.types();
+            ctx.writeln(&format!("* {} only {}", path, types.join(" or ")));
+        }
+
+        Rule::Obeys(obeys_rule) => {
+            let path = obeys_rule.path().map(|p| p.as_string()).unwrap_or_default();
+            let invariants = obeys_rule.invariants();
+            ctx.writeln(&format!("* {} obeys {}", path, invariants.join(" and ")));
         }
     }
 }

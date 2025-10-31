@@ -111,7 +111,7 @@ impl PackageJson {
             name: config.package_id().unwrap_or("unknown").to_string(),
             version: config.version.clone().unwrap_or_else(|| "0.1.0".to_string()),
             description: config.description.clone(),
-            author: config.publisher.clone(),
+            author: config.publisher.as_ref().and_then(|p| p.name()).map(|s| s.to_string()),
             license: config.license.clone(),
             package_type: "fhir.ig".to_string(),
             canonical: Some(config.canonical.clone()),

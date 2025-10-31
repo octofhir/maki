@@ -331,6 +331,10 @@ impl ExtensionExporter {
                 // PathRule is for type constraints
                 Ok(())
             }
+            Rule::Contains(_) | Rule::Only(_) | Rule::Obeys(_) => {
+                // TODO: Implement these rule types for extensions
+                Ok(())
+            }
         }
     }
 

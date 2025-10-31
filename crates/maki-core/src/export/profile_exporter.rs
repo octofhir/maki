@@ -37,7 +37,10 @@
 
 use super::fhir_types::*;
 use crate::canonical::DefinitionSession;
-use crate::cst::ast::{CardRule, FixedValueRule, FlagRule, Profile, Rule, ValueSetRule};
+use crate::cst::ast::{
+    CardRule, ContainsRule, FixedValueRule, FlagRule, ObeysRule, OnlyRule, Profile, Rule,
+    ValueSetRule,
+};
 use crate::semantic::path_resolver::PathResolver;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
@@ -101,6 +104,8 @@ pub struct ProfileExporter {
     path_resolver: Arc<PathResolver>,
     /// Base URL for generated profiles
     base_url: String,
+    /// Whether to generate snapshots (default: false to match SUSHI)
+    generate_snapshots: bool,
 }
 
 impl ProfileExporter {
@@ -137,7 +142,13 @@ impl ProfileExporter {
             session,
             path_resolver,
             base_url,
+            generate_snapshots: false, // Default OFF to match SUSHI
         })
+    }
+
+    /// Set whether to generate snapshots
+    pub fn set_generate_snapshots(&mut self, generate: bool) {
+        self.generate_snapshots = generate;
     }
 
     /// Export a Profile to StructureDefinition
@@ -198,13 +209,15 @@ impl ProfileExporter {
             debug!("Modified snapshot has {} elements", snap.element.len());
         }
 
-        // 6. Generate differential from changes
-        if let Some(base_snap) = base_snapshot {
-            structure_def.differential =
-                Some(self.generate_differential(&base_snap, &structure_def));
+        // 6. Generate differential directly from FSH rules (SUSHI-style)
+        structure_def.differential = Some(self.generate_differential_from_rules(profile, &structure_def.type_field));
+
+        // 7. Clear snapshot if not requested (to match SUSHI default behavior)
+        if !self.generate_snapshots {
+            structure_def.snapshot = None;
         }
 
-        // 7. Validate exported structure
+        // 8. Validate exported structure
         self.validate_structure_definition(&structure_def)?;
 
         debug!("Successfully exported profile: {}", profile_name);
@@ -360,6 +373,15 @@ impl ProfileExporter {
             Rule::Path(_) => {
                 // PathRule is for type constraints - not implemented yet
                 Ok(())
+            }
+            Rule::Contains(contains_rule) => {
+                self.apply_contains_rule(structure_def, contains_rule).await
+            }
+            Rule::Only(only_rule) => {
+                self.apply_only_rule(structure_def, only_rule).await
+            }
+            Rule::Obeys(obeys_rule) => {
+                self.apply_obeys_rule(structure_def, obeys_rule).await
             }
         }
     }
@@ -590,6 +612,170 @@ impl ProfileExporter {
         // For complex paths with brackets, we would use PathResolver here
         // For now, simple path resolution
         Ok(format!("{}.{}", structure_def.type_field, path))
+    }
+
+    /// Apply contains rule (for slicing)
+    /// Example: * extension contains myExtension 0..1
+    async fn apply_contains_rule(
+        &self,
+        _structure_def: &mut StructureDefinition,
+        _contains_rule: &ContainsRule,
+    ) -> Result<(), ExportError> {
+        // TODO: Implement slicing logic based on SUSHI's approach:
+        // 1. Detect if slicing on extensions (use `url` discriminator)
+        // 2. Create slice elements for each item
+        // 3. Set discriminator and slicing properties
+        // 4. For extension slices, set type.profile to the extension URL
+        Ok(())
+    }
+
+    /// Apply only rule (type constraint)
+    /// Example: * value[x] only Quantity
+    async fn apply_only_rule(
+        &self,
+        _structure_def: &mut StructureDefinition,
+        _only_rule: &OnlyRule,
+    ) -> Result<(), ExportError> {
+        // TODO: Implement type constraint logic based on SUSHI's approach:
+        // 1. Find the element at the path
+        // 2. Constrain element.type to only the specified types
+        // 3. Handle Reference and Canonical types with targetProfile
+        Ok(())
+    }
+
+    /// Apply obeys rule (invariant constraint)
+    /// Example: * obeys inv-1
+    async fn apply_obeys_rule(
+        &self,
+        _structure_def: &mut StructureDefinition,
+        _obeys_rule: &ObeysRule,
+    ) -> Result<(), ExportError> {
+        // TODO: Implement invariant constraint logic based on SUSHI's approach:
+        // 1. Look up the invariant definition
+        // 2. Add to element.constraint array
+        // 3. Generate CaretValueRules for constraint properties (expression, severity, etc.)
+        Ok(())
+    }
+
+    /// Generate differential directly from FSH rules (SUSHI-style approach)
+    /// Creates one differential element per FSH rule
+    fn generate_differential_from_rules(
+        &self,
+        profile: &Profile,
+        resource_type: &str,
+    ) -> StructureDefinitionDifferential {
+        let mut differential_elements = Vec::new();
+
+        // Process each rule and create differential elements
+        for rule in profile.rules() {
+            match rule {
+                Rule::Card(card_rule) => {
+                    // Create element for cardinality constraint
+                    if let Some(path_str) = card_rule.path().map(|p| p.as_string()) {
+                        let full_path = if path_str.contains('.') {
+                            path_str
+                        } else {
+                            format!("{}.{}", resource_type, path_str)
+                        };
+
+                        let mut element = ElementDefinition {
+                            path: full_path.clone(),
+                            min: None,
+                            max: None,
+                            type_: None,
+                            short: None,
+                            definition: None,
+                            comment: None,
+                            must_support: None,
+                            is_summary: None,
+                            is_modifier: None,
+                            binding: None,
+                            constraint: None,
+                            fixed: None,
+                            pattern: None
+                        };
+
+                        // Parse cardinality
+                        if let Some(card_str) = card_rule.cardinality() {
+                            let parts: Vec<&str> = card_str.split("..").collect();
+                            if parts.len() == 2 {
+                                if let Ok(min) = parts[0].parse::<u32>() {
+                                    element.min = Some(min);
+                                }
+                                element.max = Some(parts[1].to_string());
+                            }
+                        }
+
+                        // Check for MS flag
+                        if card_rule.flags().contains(&"MS".to_string()) {
+                            element.must_support = Some(true);
+                        }
+
+                        differential_elements.push(element);
+                    }
+                }
+                Rule::Flag(flag_rule) => {
+                    // Create element for flag rule (like MS)
+                    if let Some(path_str) = flag_rule.path().map(|p| p.as_string()) {
+                        let full_path = if path_str.contains('.') {
+                            path_str
+                        } else {
+                            format!("{}.{}", resource_type, path_str)
+                        };
+
+                        // Check if we already have this element from a cardinality rule
+                        if let Some(existing) = differential_elements.iter_mut().find(|e| e.path == full_path) {
+                            // Update existing element
+                            if flag_rule.flags().contains(&"MS".to_string()) {
+                                existing.must_support = Some(true);
+                            }
+                        } else {
+                            // Create new element
+                            let mut element = ElementDefinition {
+                                path: full_path.clone(),
+                                min: None,
+                                max: None,
+                                type_: None,
+                                short: None,
+                                definition: None,
+                                comment: None,
+                                must_support: None,
+                                is_summary: None,
+                                is_modifier: None,
+                                binding: None,
+                                constraint: None,
+                                fixed: None,
+                                pattern: None
+                            };
+
+                            if flag_rule.flags().contains(&"MS".to_string()) {
+                                element.must_support = Some(true);
+                            }
+
+                            differential_elements.push(element);
+                        }
+                    }
+                }
+                Rule::FixedValue(fixed_rule) => {
+                    // Handle ^short metadata
+                    if let Some(path_str) = fixed_rule.path().map(|p| p.as_string()) {
+                        if path_str.starts_with('^') {
+                            // For now, skip metadata rules - they're handled differently
+                            continue;
+                        }
+                    }
+                }
+                _ => {
+                    // Other rule types handled separately
+                }
+            }
+        }
+
+        debug!("Generated {} differential elements from FSH rules", differential_elements.len());
+
+        StructureDefinitionDifferential {
+            element: differential_elements,
+        }
     }
 
     /// Generate differential by comparing snapshot with base (static version for testing)

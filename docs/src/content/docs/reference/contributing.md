@@ -1,9 +1,11 @@
 ---
 title: Contributing
-description: How to contribute to FSH Lint
+description: How to contribute to maki
 ---
 
-Thank you for your interest in contributing to FSH Lint!
+Thank you for your interest in contributing to maki!
+
+maki is a high-performance toolchain for FHIR Shorthand (FSH) that provides linting, formatting, building, and language server capabilities.
 
 ## Ways to Contribute
 
@@ -58,9 +60,12 @@ git checkout -b fix/issue-123
 ### 2. Make Changes
 
 Follow the project structure:
-- `crates/maki-core` - Core linting engine
+- `crates/maki-core` - Core library with parser, semantic analyzer, and exporters
 - `crates/maki-rules` - Rule engine and built-in rules
-- `crates/maki-cli` - Command-line interface
+- `crates/maki-cli` - Command-line interface (binary: maki)
+- `crates/maki-lsp` - Language Server Protocol implementation (stub)
+- `crates/maki-formatter` - Formatter API wrapper (stub)
+- `crates/maki-test` - Testing framework for FSH resources (stub)
 - `crates/maki-devtools` - Developer tools
 
 ### 3. Write Tests

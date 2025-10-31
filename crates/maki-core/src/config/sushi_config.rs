@@ -71,9 +71,9 @@ pub struct SushiConfiguration {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date: Option<String>,
 
-    /// Publisher name
+    /// Publisher name or object
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub publisher: Option<String>,
+    pub publisher: Option<PublisherInfo>,
 
     /// Contact details
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -87,8 +87,9 @@ pub struct SushiConfiguration {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub use_context: Option<Vec<UsageContext>>,
 
-    /// Jurisdiction (countries/regions)
+    /// Jurisdiction (countries/regions) - can be string or array
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "deserialize_jurisdiction")]
     pub jurisdiction: Option<Vec<CodeableConcept>>,
 
     /// Copyright statement
@@ -135,18 +136,18 @@ pub struct SushiConfiguration {
     pub resources: Option<Vec<ResourceEntry>>,
 
     // === Pages ===
-    /// IG page structure
+    /// IG page structure (can be array or tree/map)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pages: Option<Vec<PageDefinition>>,
+    pub pages: Option<serde_json::Value>,
 
     /// Content for generated index page
     #[serde(skip_serializing_if = "Option::is_none")]
     pub index_page_content: Option<String>,
 
     // === IG Parameters ===
-    /// IG build parameters
+    /// IG build parameters (map of key-value pairs)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parameters: Option<Vec<Parameter>>,
+    pub parameters: Option<HashMap<String, serde_json::Value>>,
 
     // === Templates ===
     /// IG definition templates
@@ -154,9 +155,9 @@ pub struct SushiConfiguration {
     pub templates: Option<Vec<Template>>,
 
     // === Menu ===
-    /// Navigation menu structure
+    /// Navigation menu structure (can be array or map)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub menu: Option<Vec<MenuItem>>,
+    pub menu: Option<serde_json::Value>,
 
     // === SUSHI-specific Options ===
     /// FSH-only mode (no IG content generation)
@@ -227,6 +228,71 @@ where
     }
 }
 
+/// Custom deserializer for jurisdiction - can be string or array
+fn deserialize_jurisdiction<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<CodeableConcept>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum JurisdictionValue {
+        Single(String),
+        Array(Vec<CodeableConcept>),
+    }
+
+    let value = Option::<JurisdictionValue>::deserialize(deserializer)?;
+    match value {
+        None => Ok(None),
+        Some(JurisdictionValue::Array(arr)) => Ok(Some(arr)),
+        Some(JurisdictionValue::Single(s)) => {
+            // Parse string format: system#code "display"
+            // e.g., "urn:iso:std:iso:3166#US \"United States of America\""
+            let concept = parse_code_string(&s).map_err(D::Error::custom)?;
+            Ok(Some(vec![concept]))
+        }
+    }
+}
+
+/// Parse code string in format: system#code "display"
+fn parse_code_string(s: &str) -> Result<CodeableConcept, String> {
+    // Match pattern: system#code "display"
+    let display_regex = regex::Regex::new(r#"^(.*\S)(\s+"(([^"]|\\")*)"\s*)$"#)
+        .map_err(|e| format!("Regex error: {}", e))?;
+
+    let (system_and_code, display) = if let Some(caps) = display_regex.captures(s) {
+        let system_and_code = caps.get(1).unwrap().as_str();
+        let display = caps.get(3).map(|m| m.as_str().replace("\\\"", "\"")).unwrap_or_default();
+        (system_and_code, Some(display))
+    } else {
+        (s, None)
+    };
+
+    // Parse system#code
+    let parts: Vec<&str> = system_and_code.rsplitn(2, '#').collect();
+    let (system, code) = if parts.len() == 2 {
+        (Some(parts[1].to_string()), parts[0].to_string())
+    } else {
+        (None, parts[0].to_string())
+    };
+
+    let coding = Coding {
+        system,
+        version: None,
+        code: Some(code),
+        display: display.clone(),
+        user_selected: None,
+    };
+
+    Ok(CodeableConcept {
+        coding: Some(vec![coding.clone()]),
+        text: display.or_else(|| coding.code),
+    })
+}
+
 /// Contact information
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContactDetail {
@@ -235,6 +301,33 @@ pub struct ContactDetail {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub telecom: Option<Vec<ContactPoint>>,
+}
+
+/// Publisher information (can be string or object)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum PublisherInfo {
+    /// Simple string publisher name
+    String(String),
+    /// Detailed publisher information
+    Object {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        email: Option<String>,
+    },
+}
+
+impl PublisherInfo {
+    /// Get the publisher name
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            PublisherInfo::String(s) => Some(s.as_str()),
+            PublisherInfo::Object { name, .. } => name.as_deref(),
+        }
+    }
 }
 
 /// Contact point (phone, email, etc.)

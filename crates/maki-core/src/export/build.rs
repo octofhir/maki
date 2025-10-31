@@ -88,7 +88,7 @@ impl Default for BuildOptions {
         Self {
             input_dir: PathBuf::from("input/fsh"),
             output_dir: PathBuf::from("fsh-generated"),
-            generate_snapshots: false,
+            generate_snapshots: false, // Default OFF to match SUSHI
             write_preprocessed: false,
             clean_output: false,
             show_progress: false,
@@ -278,11 +278,17 @@ impl BuildOrchestrator {
 
         info!("Build completed successfully!");
         info!(
-            "Generated {} resources ({} errors, {} warnings)",
+            "Generated {} resources: {} profiles, {} extensions, {} valuesets, {} codesystems, {} instances",
             stats.total_resources(),
-            stats.errors,
-            stats.warnings
+            stats.profiles,
+            stats.extensions,
+            stats.value_sets,
+            stats.code_systems,
+            stats.instances
         );
+        if stats.errors > 0 || stats.warnings > 0 {
+            warn!("Build had {} errors and {} warnings", stats.errors, stats.warnings);
+        }
 
         Ok(BuildResult {
             stats,
@@ -392,6 +398,9 @@ impl BuildOrchestrator {
             }
         }
 
+        debug!("Extracted {} profiles, {} extensions, {} valuesets, {} codesystems, {} instances",
+            profiles.len(), extensions.len(), valuesets.len(), codesystems.len(), instances.len());
+
         Ok(ParsedResources {
             profiles,
             extensions,
@@ -413,13 +422,19 @@ impl BuildOrchestrator {
         use crate::export::{ExtensionExporter, ProfileExporter};
 
         // Create exporters
-        let profile_exporter = ProfileExporter::new(session.clone(), self.config.canonical.clone())
+        let mut profile_exporter = ProfileExporter::new(session.clone(), self.config.canonical.clone())
             .await
             .map_err(|e| BuildError::ExportError(format!("Failed to create ProfileExporter: {}", e)))?;
+
+        // Configure snapshot generation
+        profile_exporter.set_generate_snapshots(self.options.generate_snapshots);
 
         let extension_exporter = ExtensionExporter::new(session.clone(), self.config.canonical.clone())
             .await
             .map_err(|e| BuildError::ExportError(format!("Failed to create ExtensionExporter: {}", e)))?;
+
+        // Track failed exports for reporting
+        let mut failed_profiles: Vec<(String, String)> = Vec::new();
 
         // Export profiles
         for profile in &resources.profiles {
@@ -428,8 +443,13 @@ impl BuildOrchestrator {
 
             match profile_exporter.export(profile).await {
                 Ok(structure_def) => {
+                    // Use Id field for filename if present, otherwise fall back to name
+                    let profile_id = profile.id()
+                        .and_then(|id_clause| id_clause.value())
+                        .unwrap_or_else(|| profile_name.clone());
+
                     // Write to file
-                    let filename = format!("StructureDefinition-{}.json", profile_name);
+                    let filename = format!("StructureDefinition-{}.json", profile_id);
                     file_structure
                         .write_resource(&filename, &structure_def)
                         .map_err(|e| BuildError::ExportError(format!("Failed to write profile {}: {}", profile_name, e)))?;
@@ -447,7 +467,10 @@ impl BuildOrchestrator {
                     debug!("Successfully exported profile: {}", profile_name);
                 }
                 Err(e) => {
-                    warn!("Failed to export profile {}: {}", profile_name, e);
+                    // Log detailed error with full error chain
+                    let error_msg = format!("{}", e); // Display error
+                    warn!("Failed to export profile '{}': {}", profile_name, error_msg);
+                    failed_profiles.push((profile_name.clone(), error_msg));
                     stats.errors += 1;
                 }
             }
@@ -456,12 +479,16 @@ impl BuildOrchestrator {
         // Export extensions
         for extension in &resources.extensions {
             let extension_name = extension.name().unwrap_or_else(|| "Unknown".to_string());
-            debug!("Exporting extension: {}", extension_name);
+            // Use Id field for filename if present, otherwise fall back to name
+            let extension_id = extension.id()
+                .and_then(|id_clause| id_clause.value())
+                .unwrap_or_else(|| extension_name.clone());
+            debug!("Exporting extension: {} (id: {})", extension_name, extension_id);
 
             match extension_exporter.export(extension).await {
                 Ok(structure_def) => {
-                    // Write to file
-                    let filename = format!("StructureDefinition-{}.json", extension_name);
+                    // Write to file using Id field
+                    let filename = format!("StructureDefinition-{}.json", extension_id);
                     file_structure
                         .write_resource(&filename, &structure_def)
                         .map_err(|e| BuildError::ExportError(format!("Failed to write extension {}: {}", extension_name, e)))?;
@@ -480,6 +507,17 @@ impl BuildOrchestrator {
                     stats.errors += 1;
                 }
             }
+        }
+
+        // Log summary of failed profiles
+        if !failed_profiles.is_empty() {
+            warn!("Profile export summary: {} failed out of {} total", failed_profiles.len(), resources.profiles.len());
+            warn!("Failed profiles:");
+            for (name, error) in &failed_profiles {
+                warn!("  - {}: {}", name, error);
+            }
+        } else {
+            info!("All {} profiles exported successfully", resources.profiles.len());
         }
 
         Ok(())
@@ -509,8 +547,13 @@ impl BuildOrchestrator {
 
             match instance_exporter.export(instance).await {
                 Ok(resource_json) => {
+                    // Use Id field for filename if present, otherwise fall back to name (SUSHI compatible)
+                    let instance_id = instance.id()
+                        .and_then(|id_clause| id_clause.value())
+                        .unwrap_or_else(|| instance_name.clone());
+
                     // Write to file
-                    let filename = format!("{}-{}.json", instance_type, instance_name);
+                    let filename = format!("{}-{}.json", instance_type, instance_id);
                     file_structure
                         .write_resource(&filename, &resource_json)
                         .map_err(|e| BuildError::ExportError(format!("Failed to write instance {}: {}", instance_name, e)))?;
@@ -561,7 +604,12 @@ impl BuildOrchestrator {
 
             match valueset_exporter.export(valueset).await {
                 Ok(resource_json) => {
-                    let filename = format!("ValueSet-{}.json", name);
+                    // Use Id field for filename if present, otherwise fall back to name
+                    let vs_id = valueset.id()
+                        .and_then(|id_clause| id_clause.value())
+                        .unwrap_or_else(|| name.clone());
+
+                    let filename = format!("ValueSet-{}.json", vs_id);
                     file_structure
                         .write_resource(&filename, &resource_json)
                         .map_err(|e| BuildError::ExportError(format!("Failed to write ValueSet {}: {}", name, e)))?;
@@ -589,7 +637,12 @@ impl BuildOrchestrator {
 
             match codesystem_exporter.export(codesystem).await {
                 Ok(resource_json) => {
-                    let filename = format!("CodeSystem-{}.json", name);
+                    // Use Id field for filename if present, otherwise fall back to name
+                    let cs_id = codesystem.id()
+                        .and_then(|id_clause| id_clause.value())
+                        .unwrap_or_else(|| name.clone());
+
+                    let filename = format!("CodeSystem-{}.json", cs_id);
                     file_structure
                         .write_resource(&filename, &resource_json)
                         .map_err(|e| BuildError::ExportError(format!("Failed to write CodeSystem {}: {}", name, e)))?;

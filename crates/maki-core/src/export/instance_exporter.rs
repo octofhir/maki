@@ -225,6 +225,10 @@ impl InstanceExporter {
                 // Path rules don't apply to instances
                 trace!("Skipping path rule in instance");
             }
+            Rule::Contains(_) | Rule::Only(_) | Rule::Obeys(_) => {
+                // These rules don't apply to instances
+                trace!("Skipping contains/only/obeys rule in instance");
+            }
         }
         Ok(())
     }

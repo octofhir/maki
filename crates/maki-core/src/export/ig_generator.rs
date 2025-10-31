@@ -51,7 +51,7 @@ impl ImplementationGuideGenerator {
             status: self.config.status.clone().unwrap_or_else(|| "draft".to_string()),
             experimental: self.config.experimental,
             date: self.config.date.clone(),
-            publisher: self.config.publisher.clone(),
+            publisher: self.config.publisher.as_ref().and_then(|p| p.name()).map(|s| s.to_string()),
             contact: self.config.contact.clone(),
             description: self.config.description.clone(),
             use_context: self.config.use_context.clone(),
@@ -167,13 +167,14 @@ impl ImplementationGuideGenerator {
     /// Build pages structure
     fn build_pages(&self) -> Page {
         if let Some(ref pages) = self.config.pages {
-            // Custom pages configuration
+            // Custom pages configuration (simplified - just use default for now)
+            // TODO: Parse pages tree structure properly
             Page {
                 name_url: Some("toc.html".to_string()),
                 name_reference: None,
                 title: "Table of Contents".to_string(),
                 generation: "html".to_string(),
-                page: Some(pages.clone()),
+                page: Some(vec![]),
             }
         } else {
             // Default page structure
@@ -189,7 +190,20 @@ impl ImplementationGuideGenerator {
 
     /// Build parameters array
     fn build_parameters(&self) -> Option<Vec<crate::config::Parameter>> {
-        let mut parameters = self.config.parameters.clone().unwrap_or_default();
+        // Convert HashMap to Vec<Parameter>
+        let mut parameters: Vec<crate::config::Parameter> = self
+            .config
+            .parameters
+            .as_ref()
+            .map(|map| {
+                map.iter()
+                    .map(|(key, value)| crate::config::Parameter {
+                        code: key.clone(),
+                        value: value.to_string().trim_matches('"').to_string(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
         // Add path-history for HL7 IGs if not present
         if self.config.canonical.starts_with("http://hl7.org/")

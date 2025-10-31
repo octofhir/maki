@@ -223,6 +223,10 @@ impl ValueSetExporter {
                     trace!("Component rule detected (Phase 2 feature)");
                     has_components = true;
                 }
+                Rule::Contains(_) | Rule::Only(_) | Rule::Obeys(_) => {
+                    // These rules don't apply to valuesets
+                    trace!("Skipping contains/only/obeys rule in valueset");
+                }
             }
         }
 
