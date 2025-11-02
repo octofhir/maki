@@ -42,8 +42,8 @@ pub use canonical::fishable::{FhirMetadata, FhirType, Fishable};
 pub use canonical::version::{FhirVersionExt, VersionError, VersionResolver, VersionSpecifier};
 // Configuration system
 pub use config::{
-    ConfigLoader, FilesConfiguration, FormatterConfiguration, LinterConfiguration,
-    MakiConfiguration, RuleSeverity, RulesConfiguration,
+    ConfigLoader, FilesConfiguration, FormatterConfiguration, LinterConfiguration, RuleSeverity,
+    RulesConfiguration, UnifiedConfig,
 };
 // Console utilities for rich terminal output
 pub use console::{Color, Console};
@@ -75,8 +75,9 @@ pub use rules::{
     RuleEngine, RuleEngineConfig, RuleMetadata,
 };
 pub use semantic::{
-    Cardinality, CombinedSymbolTable, Constraint, ConstraintType, DefaultSemanticAnalyzer, Element,
-    ElementFlag, EnhancedSymbolTable, FhirResource, Reference, ReferenceType, ResourceMetadata,
+    Cardinality, CombinedSymbolTable, Constraint, ConstraintType, DefaultSemanticAnalyzer,
+    DeferralReason, DeferredRule, DeferredRuleQueue, Element, ElementFlag, EnhancedSymbolTable,
+    FhirResource, FishingContext, FshTank, Package, Reference, ReferenceType, ResourceMetadata,
     ResourceType, SemanticAnalyzer, SemanticAnalyzerConfig, SemanticModel, Symbol, SymbolError,
     SymbolTable, SymbolType, TypeInfo, UnresolvedRef,
 };

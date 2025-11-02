@@ -79,6 +79,16 @@ impl FhirRelease {
             FhirRelease::R6 => "R6",
         }
     }
+
+    /// Convert FHIR release to version string for canonical manager.
+    pub fn to_version_string(self) -> &'static str {
+        match self {
+            FhirRelease::R4 => "4.0.1",
+            FhirRelease::R4B => "4.3.0",
+            FhirRelease::R5 => "5.0.0",
+            FhirRelease::R6 => "6.0.0",
+        }
+    }
 }
 
 /// Default versions for FHIR core packages per release.
@@ -204,7 +214,7 @@ impl CanonicalFacade {
         if options.quick_init {
             config.optimization.parallel_workers = 1;
             config.optimization.enable_metrics = false;
-            config.optimization.use_mmap = false;
+            // config.optimization.use_mmap = false; // Field removed from OptimizationConfig
         }
 
         // Ensure storage directories exist.
@@ -322,33 +332,59 @@ impl DefinitionSession {
     where
         I: IntoIterator<Item = PackageCoordinate>,
     {
+        let mut to_install = Vec::new();
+        let mut failed_keys = Vec::new();
+
         for pkg in packages.into_iter() {
             let key = format!("{}@{}", pkg.name, pkg.version);
             // only install once per session
             if self.installed.insert(key.clone()) {
-                debug!("Installing FHIR package {key}");
-                if let Err(source) = self
-                    .facade
-                    .manager
-                    .install_package(&pkg.name, &pkg.version)
-                    .await
-                {
-                    self.installed.remove(&key);
-                    return Err(CanonicalLoaderError::PackageInstall {
-                        name: pkg.name,
-                        version: pkg.version,
-                        source,
-                    });
-                }
+                debug!("Queuing FHIR package {key} for batch installation");
+                to_install.push((pkg, key));
             } else {
                 debug!("Package {key} already installed in session");
             }
         }
+
+        if to_install.is_empty() {
+            return Ok(());
+        }
+
+        debug!("Installing {} packages in batch", to_install.len());
+        let specs: Vec<octofhir_canonical_manager::config::PackageSpec> = to_install
+            .iter()
+            .map(|(pkg, _)| octofhir_canonical_manager::config::PackageSpec {
+                name: pkg.name.clone(),
+                version: pkg.version.clone(),
+                priority: pkg.priority,
+            })
+            .collect();
+
+        if let Err(source) = self.facade.manager.install_packages_batch(specs).await {
+            for (pkg, key) in to_install {
+                self.installed.remove(&key);
+                failed_keys.push((pkg, key));
+            }
+
+            if let Some((pkg, _)) = failed_keys.first() {
+                return Err(CanonicalLoaderError::PackageInstall {
+                    name: pkg.name.clone(),
+                    version: pkg.version.clone(),
+                    source,
+                });
+            }
+        }
+
         Ok(())
     }
 
     /// Resolve a canonical URL into a cached definition.
+    ///
+    /// This method attempts FHIR version-aware resolution using the primary FHIR version
+    /// configured for this session. If version-specific resolution fails, it falls back
+    /// to version-agnostic resolution for backward compatibility.
     pub async fn resolve(&self, canonical_url: &str) -> CanonicalResult<Arc<DefinitionResource>> {
+        // Check local and global caches first
         if let Some(existing) = self.local_cache.get(canonical_url) {
             return Ok(existing.clone());
         }
@@ -359,15 +395,53 @@ impl DefinitionSession {
             return Ok(arc);
         }
 
-        let resolved = self
-            .facade
-            .manager
-            .resolve(canonical_url)
-            .await
-            .map_err(|source| CanonicalLoaderError::Resolution {
-                url: canonical_url.to_string(),
-                source,
-            })?;
+        // Try FHIR version-specific resolution using the primary (first) release
+        let resolved = if let Some(release) = self.releases.first() {
+            let fhir_version = release.to_version_string();
+            debug!(
+                "Resolving {} with FHIR version {}",
+                canonical_url, fhir_version
+            );
+
+            // Try version-specific resolution first
+            match self
+                .facade
+                .manager
+                .resolve_with_fhir_version(canonical_url, fhir_version)
+                .await
+            {
+                Ok(resolved) => {
+                    debug!("Successfully resolved {} with FHIR version {}", canonical_url, fhir_version);
+                    resolved
+                }
+                Err(version_err) => {
+                    // Fall back to version-agnostic resolution
+                    debug!(
+                        "Version-specific resolution failed for {}, falling back to version-agnostic: {}",
+                        canonical_url, version_err
+                    );
+                    self.facade
+                        .manager
+                        .resolve(canonical_url)
+                        .await
+                        .map_err(|source| CanonicalLoaderError::Resolution {
+                            url: canonical_url.to_string(),
+                            source,
+                        })?
+                }
+            }
+        } else {
+            // No FHIR version specified, use version-agnostic resolution
+            debug!("No FHIR version configured for session, using version-agnostic resolution for {}", canonical_url);
+            self.facade
+                .manager
+                .resolve(canonical_url)
+                .await
+                .map_err(|source| CanonicalLoaderError::Resolution {
+                    url: canonical_url.to_string(),
+                    source,
+                })?
+        };
 
         let resource = Arc::new(DefinitionResource::from_resolved(resolved));
         self.facade
@@ -385,6 +459,9 @@ impl DefinitionSession {
     }
 
     /// Resolve by resource type and id using the canonical manager search engine.
+    ///
+    /// This method filters search results by the FHIR version configured for this session
+    /// to ensure the returned resource matches the expected FHIR version.
     pub async fn resource_by_type_and_id(
         &self,
         resource_type: &str,
@@ -398,7 +475,22 @@ impl DefinitionSession {
             .resource_type(resource_type);
         query = query.text(id).limit(50);
         let results = query.execute().await?;
+
+        // Get the primary FHIR version for filtering
+        let fhir_version_filter = self.releases.first().map(|r| r.to_version_string());
+
         for match_result in results.resources {
+            // Filter by FHIR version if configured
+            if let Some(expected_version) = fhir_version_filter {
+                if match_result.index.fhir_version != expected_version {
+                    debug!(
+                        "Skipping resource {} from FHIR version {}, expecting {}",
+                        id, match_result.index.fhir_version, expected_version
+                    );
+                    continue;
+                }
+            }
+
             if match_result.resource.id == id {
                 let canonical_url = match_result
                     .resource
@@ -513,7 +605,6 @@ async fn ensure_storage_dirs(config: &FcmConfig) -> CanonicalResult<()> {
     }
 
     ensure(&config.storage.cache_dir).await?;
-    ensure(&config.storage.index_dir).await?;
     ensure(&config.storage.packages_dir).await?;
     Ok(())
 }

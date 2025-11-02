@@ -225,7 +225,11 @@ impl CodeSystemExporter {
                     has_concepts = true;
                     concept_count += 1;
                 }
-                Rule::Contains(_) | Rule::Only(_) | Rule::Obeys(_) => {
+                Rule::AddElement(_)
+                | Rule::Contains(_)
+                | Rule::Only(_)
+                | Rule::Obeys(_)
+                | Rule::Mapping(_) => {
                     // These rules don't apply to codesystems
                     trace!("Skipping contains/only/obeys rule in codesystem");
                 }

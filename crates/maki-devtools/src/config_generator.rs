@@ -3,7 +3,7 @@
 //! Generates default maki configuration files in various formats.
 
 use anyhow::Result;
-use maki_core::config::MakiConfiguration;
+use maki_core::config::UnifiedConfig;
 use std::fs;
 use std::path::Path;
 
@@ -17,7 +17,7 @@ impl ConfigGenerator {
     pub fn generate_default(output_path: &Path) -> Result<()> {
         tracing::info!("Generating default configuration file...");
 
-        let config = MakiConfiguration::default();
+        let config = UnifiedConfig::default();
 
         // Determine format from file extension
         let content = if output_path.extension().and_then(|s| s.to_str()) == Some("toml") {

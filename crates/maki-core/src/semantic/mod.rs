@@ -5,8 +5,10 @@
 
 pub mod alias;
 pub mod dependency_graph;
+pub mod fishing;
 pub mod invariant;
 pub mod path_resolver;
+pub mod rules;
 pub mod ruleset;
 pub mod slicing;
 pub mod symbol_table;
@@ -15,6 +17,7 @@ pub use alias::{Alias, AliasError, AliasTable};
 pub use dependency_graph::{
     DependencyAnalyzer, DependencyEdge, DependencyError, DependencyGraph, DependencyType,
 };
+pub use fishing::{FishableMetadata, FishingContext, FshTank, Package};
 pub use invariant::{ConstraintSeverity, Invariant, InvariantError, InvariantRegistry};
 pub use path_resolver::{
     Bracket, ElementDefinition, ElementType, PathError, PathResolver, PathSegment, SoftIndexOp,
@@ -48,6 +51,8 @@ pub struct SemanticModel {
     pub aliases: AliasTable,
     /// References between resources and elements
     pub references: Vec<Reference>,
+    /// Deferred rules queue for circular dependencies
+    pub deferred_rules: DeferredRuleQueue,
     /// Source file path
     pub source_file: PathBuf,
     /// Source map for efficient offset-to-line/column conversion
@@ -67,6 +72,7 @@ impl Default for SemanticModel {
             symbols: SymbolTable::default(),
             aliases: AliasTable::new(),
             references: Vec::new(),
+            deferred_rules: DeferredRuleQueue::new(),
             source_file: PathBuf::new(),
             source_map,
             source,
@@ -86,6 +92,7 @@ impl SemanticModel {
             symbols: SymbolTable::default(),
             aliases: AliasTable::new(),
             references: Vec::new(),
+            deferred_rules: DeferredRuleQueue::new(),
             source_file,
             source_map,
             source,
@@ -101,10 +108,26 @@ impl SemanticModel {
             symbols: SymbolTable::default(),
             aliases: AliasTable::new(),
             references: Vec::new(),
+            deferred_rules: DeferredRuleQueue::new(),
             source_file,
             source_map,
             source,
         }
+    }
+
+    /// Add a deferred rule to the queue
+    pub fn defer_rule(&mut self, rule: DeferredRule) {
+        self.deferred_rules.push(rule);
+    }
+
+    /// Get all deferred rules
+    pub fn get_deferred_rules(&self) -> &DeferredRuleQueue {
+        &self.deferred_rules
+    }
+
+    /// Drain deferred rules (consume and return)
+    pub fn drain_deferred_rules(&mut self) -> Vec<DeferredRule> {
+        self.deferred_rules.drain()
     }
 
     /// Add a resource to the model
@@ -385,6 +408,64 @@ pub enum ReferenceType {
     Invariant,
 }
 
+/// Deferred rule queue for handling circular dependencies
+#[derive(Debug, Clone, Default)]
+pub struct DeferredRuleQueue {
+    rules: Vec<DeferredRule>,
+}
+
+impl DeferredRuleQueue {
+    pub fn new() -> Self {
+        Self { rules: Vec::new() }
+    }
+
+    pub fn push(&mut self, rule: DeferredRule) {
+        self.rules.push(rule);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rules.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.rules.len()
+    }
+
+    pub fn drain(&mut self) -> Vec<DeferredRule> {
+        std::mem::take(&mut self.rules)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &DeferredRule> {
+        self.rules.iter()
+    }
+}
+
+/// A deferred rule that couldn't be applied due to unresolved dependencies
+#[derive(Debug, Clone)]
+pub struct DeferredRule {
+    /// The entity ID this rule applies to
+    pub entity_id: String,
+    /// The rule content/path that needs to be applied
+    pub rule_content: String,
+    /// Why this rule was deferred
+    pub reason: DeferralReason,
+    /// Location of the rule in source
+    pub location: Location,
+}
+
+/// Reason why a rule was deferred
+#[derive(Debug, Clone)]
+pub enum DeferralReason {
+    /// Reference to another resource that doesn't exist yet
+    UnresolvedReference(String),
+    /// Circular dependency detected
+    CircularDependency(String),
+    /// Resource doesn't exist yet
+    MissingResource(String),
+    /// Parent profile not yet exported
+    MissingParent(String),
+}
+
 /// Semantic analyzer trait for extracting semantic information from CST
 pub trait SemanticAnalyzer {
     fn analyze(
@@ -442,7 +523,7 @@ impl DefaultSemanticAnalyzer {
         self.analyze(cst, source, file_path)
     }
 
-    fn build_profile_resource(
+    pub fn build_profile_resource(
         &self,
         profile: &Profile,
         source: &str,
@@ -472,7 +553,7 @@ impl DefaultSemanticAnalyzer {
         }
     }
 
-    fn build_extension_resource(
+    pub fn build_extension_resource(
         &self,
         extension: &Extension,
         source: &str,
@@ -502,7 +583,7 @@ impl DefaultSemanticAnalyzer {
         }
     }
 
-    fn build_value_set_resource(
+    pub fn build_value_set_resource(
         &self,
         value_set: &ValueSet,
         source: &str,
@@ -531,7 +612,7 @@ impl DefaultSemanticAnalyzer {
         }
     }
 
-    fn build_code_system_resource(
+    pub fn build_code_system_resource(
         &self,
         code_system: &CodeSystem,
         source: &str,

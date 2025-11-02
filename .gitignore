@@ -24,3 +24,6 @@ Thumbs.db
 
 # Local configuration
 .makirc.local.*
+
+# FHIR Canonical Manager cache
+.maki/

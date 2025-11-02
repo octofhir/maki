@@ -5,11 +5,11 @@
 
 use colored::Colorize;
 use inquire::{Select, Text};
+use maki_core::Result;
 use maki_core::config::{
     FilesConfiguration, FormatterConfiguration, LinterConfiguration, SushiConfiguration,
     UnifiedConfig,
 };
-use maki_core::Result;
 use std::fs;
 use std::path::Path;
 use tracing::{info, warn};
@@ -43,16 +43,16 @@ impl ProjectMetadata {
 }
 
 /// Initialize a new FSH project
-pub async fn init_command(
-    name: Option<String>,
-    default_all: bool,
-) -> Result<()> {
+pub async fn init_command(name: Option<String>, default_all: bool) -> Result<()> {
     print_header();
 
     // 1. Collect project metadata
     let metadata = if default_all {
         let proj_name = name.unwrap_or_else(|| "MyIG".to_string());
-        println!("📋 Using default values for project '{}'...\n", proj_name.bright_cyan());
+        println!(
+            "📋 Using default values for project '{}'...\n",
+            proj_name.bright_cyan()
+        );
         ProjectMetadata::default_with_name(proj_name)
     } else {
         collect_metadata_interactive(name)?
@@ -60,10 +60,14 @@ pub async fn init_command(
 
     // 2. Check if directory exists
     if Path::new(&metadata.name).exists() {
-        eprintln!("\n❌ Error: Directory '{}' already exists", metadata.name.red());
-        return Err(maki_core::MakiError::config_error(
-            format!("Directory '{}' already exists", metadata.name)
-        ));
+        eprintln!(
+            "\n❌ Error: Directory '{}' already exists",
+            metadata.name.red()
+        );
+        return Err(maki_core::MakiError::config_error(format!(
+            "Directory '{}' already exists",
+            metadata.name
+        )));
     }
 
     // 3. Create directory structure
@@ -107,7 +111,12 @@ pub async fn init_command(
 
 fn print_header() {
     println!("\n╭───────────────────────────────────────────────────────────╮");
-    println!("│{}│", "          MAKI Project Initialization              ".bright_cyan().bold());
+    println!(
+        "│{}│",
+        "          MAKI Project Initialization              "
+            .bright_cyan()
+            .bold()
+    );
     println!("╰───────────────────────────────────────────────────────────╯\n");
 }
 
@@ -128,7 +137,10 @@ fn collect_metadata_interactive(name: Option<String>) -> Result<ProjectMetadata>
         .unwrap_or(default_id);
 
     // Canonical URL
-    let default_canonical = format!("http://example.org/fhir/{}", name.to_lowercase().replace(' ', "-"));
+    let default_canonical = format!(
+        "http://example.org/fhir/{}",
+        name.to_lowercase().replace(' ', "-")
+    );
     let canonical = Text::new("Canonical URL:")
         .with_default(&default_canonical)
         .prompt()
@@ -187,6 +199,8 @@ fn create_project_structure(meta: &ProjectMetadata) -> Result<()> {
 fn generate_maki_config(meta: &ProjectMetadata) -> Result<()> {
     // Start with no dependencies - users can add them as needed
     let config = UnifiedConfig {
+        schema: Some("https://octofhir.github.io/maki/schema/v1.json".to_string()),
+        root: Some(true),
         dependencies: None,
         build: Some(SushiConfiguration {
             canonical: meta.canonical.clone(),
@@ -196,7 +210,9 @@ fn generate_maki_config(meta: &ProjectMetadata) -> Result<()> {
             title: Some(meta.name.clone()),
             version: Some(meta.version.clone()),
             status: Some(meta.status.clone()),
-            publisher: Some(maki_core::config::PublisherInfo::String(meta.publisher_name.clone())),
+            publisher: Some(maki_core::config::PublisherInfo::String(
+                meta.publisher_name.clone(),
+            )),
             experimental: None,
             date: None,
             contact: None,
@@ -255,10 +271,9 @@ fn generate_maki_config(meta: &ProjectMetadata) -> Result<()> {
         }),
     };
 
-    let yaml = serde_yaml::to_string(&config)
-        .map_err(|e| maki_core::MakiError::config_error(
-            format!("Failed to serialize config: {}", e)
-        ))?;
+    let yaml = serde_yaml::to_string(&config).map_err(|e| {
+        maki_core::MakiError::config_error(format!("Failed to serialize config: {}", e))
+    })?;
 
     let path = Path::new(&meta.name).join("maki.yaml");
     fs::write(path, yaml)?;
@@ -381,27 +396,42 @@ This IG provides...
 
 async fn download_publisher_scripts(project_name: &str) -> Result<()> {
     const SCRIPTS: &[(&str, &str)] = &[
-        ("_genonce.sh", "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_genonce.sh"),
-        ("_genonce.bat", "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_genonce.bat"),
-        ("_updatePublisher.sh", "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_updatePublisher.sh"),
-        ("_updatePublisher.bat", "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_updatePublisher.bat"),
+        (
+            "_genonce.sh",
+            "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_genonce.sh",
+        ),
+        (
+            "_genonce.bat",
+            "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_genonce.bat",
+        ),
+        (
+            "_updatePublisher.sh",
+            "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_updatePublisher.sh",
+        ),
+        (
+            "_updatePublisher.bat",
+            "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_updatePublisher.bat",
+        ),
     ];
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|e| maki_core::MakiError::config_error(format!("Failed to build HTTP client: {}", e)))?;
+        .map_err(|e| {
+            maki_core::MakiError::config_error(format!("Failed to build HTTP client: {}", e))
+        })?;
 
     for (filename, url) in SCRIPTS {
         info!("Downloading {}...", filename);
-        let response = client.get(*url)
+        let response = client
+            .get(*url)
             .send()
             .await
             .map_err(|e| maki_core::MakiError::config_error(format!("HTTP error: {}", e)))?;
 
-        let content = response.text()
-            .await
-            .map_err(|e| maki_core::MakiError::config_error(format!("Failed to read response: {}", e)))?;
+        let content = response.text().await.map_err(|e| {
+            maki_core::MakiError::config_error(format!("Failed to read response: {}", e))
+        })?;
 
         let path = Path::new(project_name).join(filename);
         fs::write(&path, content)?;
@@ -421,13 +451,30 @@ async fn download_publisher_scripts(project_name: &str) -> Result<()> {
 
 fn print_success_message(project_name: &str) {
     println!("\n╭───────────────────────────────────────────────────────────╮");
-    println!("│ {}  │", format!("✅ Project initialized at: ./{}", project_name).green().bold());
+    println!(
+        "│ {}  │",
+        format!("✅ Project initialized at: ./{}", project_name)
+            .green()
+            .bold()
+    );
     println!("├───────────────────────────────────────────────────────────┤");
-    println!("│ {}                                             │", "Now try this:".bold());
+    println!(
+        "│ {}                                             │",
+        "Now try this:".bold()
+    );
     println!("│                                                           │");
-    println!("│ > {}                                            │", format!("cd {}", project_name).bright_blue());
-    println!("│ > {}                                           │", "maki build".bright_blue());
+    println!(
+        "│ > {}                                            │",
+        format!("cd {}", project_name).bright_blue()
+    );
+    println!(
+        "│ > {}                                           │",
+        "maki build".bright_blue()
+    );
     println!("│                                                           │");
-    println!("│ For guidance see: {} │", "https://octofhir.github.io/maki/".bright_blue().underline());
+    println!(
+        "│ For guidance see: {} │",
+        "https://octofhir.github.io/maki/".bright_blue().underline()
+    );
     println!("╰───────────────────────────────────────────────────────────╯\n");
 }

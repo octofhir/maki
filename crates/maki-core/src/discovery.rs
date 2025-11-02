@@ -3,14 +3,15 @@
 //! This module provides functionality for discovering FSH files based on
 //! glob patterns, respecting ignore files, and watching for file changes.
 
-use crate::{MakiConfiguration, MakiError, Result};
+use crate::config::UnifiedConfig;
+use crate::{MakiError, Result};
 use glob::{Pattern, glob};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Helper to extract file patterns from configuration
-fn get_include_patterns(config: &MakiConfiguration) -> Vec<String> {
+fn get_include_patterns(config: &UnifiedConfig) -> Vec<String> {
     config
         .files
         .as_ref()
@@ -19,7 +20,7 @@ fn get_include_patterns(config: &MakiConfiguration) -> Vec<String> {
         .unwrap_or_else(|| vec!["**/*.fsh".to_string()])
 }
 
-fn get_exclude_patterns(config: &MakiConfiguration) -> Vec<String> {
+fn get_exclude_patterns(config: &UnifiedConfig) -> Vec<String> {
     config
         .files
         .as_ref()
@@ -28,7 +29,7 @@ fn get_exclude_patterns(config: &MakiConfiguration) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn get_ignore_files(config: &MakiConfiguration) -> Vec<String> {
+fn get_ignore_files(config: &UnifiedConfig) -> Vec<String> {
     config
         .files
         .as_ref()
@@ -45,10 +46,10 @@ use walkdir::WalkDir;
 /// Trait for file discovery functionality
 pub trait FileDiscovery {
     /// Discover FSH files based on configuration patterns
-    fn discover_files(&self, config: &MakiConfiguration) -> Result<Vec<PathBuf>>;
+    fn discover_files(&self, config: &UnifiedConfig) -> Result<Vec<PathBuf>>;
 
     /// Check if a file should be included based on configuration
-    fn should_include(&self, path: &Path, config: &MakiConfiguration) -> bool;
+    fn should_include(&self, path: &Path, config: &UnifiedConfig) -> bool;
 
     /// Create a file watcher for LSP integration
     fn watch_for_changes(&self) -> Result<FileWatcher>;
@@ -70,7 +71,7 @@ impl DefaultFileDiscovery {
     }
 
     /// Load ignore patterns from .gitignore and custom ignore files
-    fn load_ignore_patterns(&self, config: &MakiConfiguration) -> Result<Vec<Pattern>> {
+    fn load_ignore_patterns(&self, config: &UnifiedConfig) -> Result<Vec<Pattern>> {
         let mut patterns = Vec::new();
 
         // Load .gitignore if it exists
@@ -231,7 +232,7 @@ impl DefaultFileDiscovery {
 }
 
 impl FileDiscovery for DefaultFileDiscovery {
-    fn discover_files(&self, config: &MakiConfiguration) -> Result<Vec<PathBuf>> {
+    fn discover_files(&self, config: &UnifiedConfig) -> Result<Vec<PathBuf>> {
         info!("Discovering FSH files in {}", self.root_dir.display());
 
         let ignore_patterns = self.load_ignore_patterns(config)?;
@@ -299,7 +300,7 @@ impl FileDiscovery for DefaultFileDiscovery {
         Ok(absolute_files)
     }
 
-    fn should_include(&self, path: &Path, config: &MakiConfiguration) -> bool {
+    fn should_include(&self, path: &Path, config: &UnifiedConfig) -> bool {
         // Check if file matches include patterns
         let matches_include = if get_include_patterns(config).is_empty() {
             // Default: include .fsh files (case-insensitive)

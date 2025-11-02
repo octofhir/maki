@@ -3,8 +3,8 @@
 //! Migrates SUSHI's sushi-config.yaml to MAKI's unified maki.yaml format
 
 use colored::Colorize;
-use maki_core::config::{SushiConfiguration, UnifiedConfig};
 use maki_core::Result;
+use maki_core::config::{SushiConfiguration, UnifiedConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
@@ -13,10 +13,7 @@ use tracing::{info, warn};
 ///
 /// Dependencies are always lifted to the top-level since they're shared
 /// between build and linter sections.
-pub async fn migrate_command(
-    auto_yes: bool,
-    output: Option<PathBuf>,
-) -> Result<()> {
+pub async fn migrate_command(auto_yes: bool, output: Option<PathBuf>) -> Result<()> {
     print_header();
 
     // 1. Detect existing configs
@@ -28,8 +25,14 @@ pub async fn migrate_command(
         println!("   ✓ {} (SUSHI format)", path.display().to_string().green());
     } else {
         println!("   ✗ {}", "No sushi-config.yaml found".red());
-        println!("\n{}", "Migration cancelled: No SUSHI configuration file found.".yellow());
-        println!("Run {} to create a new MAKI configuration.", "maki config init".bright_blue());
+        println!(
+            "\n{}",
+            "Migration cancelled: No SUSHI configuration file found.".yellow()
+        );
+        println!(
+            "Run {} to create a new MAKI configuration.",
+            "maki config init".bright_blue()
+        );
         return Ok(());
     }
 
@@ -40,9 +43,15 @@ pub async fn migrate_command(
     println!("   • Add default linter and formatter sections");
     println!("   • Generate unified maki.yaml");
 
-    println!("\n⚠️  {}", "The new config uses a different structure:".yellow());
+    println!(
+        "\n⚠️  {}",
+        "The new config uses a different structure:".yellow()
+    );
     println!("   {}: Top-level SUSHI fields", "Old (SUSHI)".dimmed());
-    println!("   {}: Structured sections (build, linter, formatter)", "New (MAKI)".green());
+    println!(
+        "   {}: Structured sections (build, linter, formatter)",
+        "New (MAKI)".green()
+    );
 
     // 3. Confirm
     if !auto_yes {
@@ -74,10 +83,9 @@ pub async fn migrate_command(
 
     // Write unified config
     info!("Writing unified config to {}", target.display());
-    let yaml = serde_yaml::to_string(&unified)
-        .map_err(|e| maki_core::MakiError::config_error(
-            format!("Failed to serialize config: {}", e)
-        ))?;
+    let yaml = serde_yaml::to_string(&unified).map_err(|e| {
+        maki_core::MakiError::config_error(format!("Failed to serialize config: {}", e))
+    })?;
     fs::write(&target, yaml)?;
 
     // 6. Success message
@@ -89,25 +97,44 @@ pub async fn migrate_command(
 /// Print the header
 fn print_header() {
     println!("\n╭───────────────────────────────────────────────────────────╮");
-    println!("│{}│", "          MAKI Config Migration                    ".bright_cyan().bold());
+    println!(
+        "│{}│",
+        "          MAKI Config Migration                    "
+            .bright_cyan()
+            .bold()
+    );
     println!("╰───────────────────────────────────────────────────────────╯\n");
 }
 
 /// Print success message
 fn print_success(target: &Path, sushi_path: &Path) {
-    println!("\n✅ {}\n", "Configuration migrated successfully!".green().bold());
+    println!(
+        "\n✅ {}\n",
+        "Configuration migrated successfully!".green().bold()
+    );
 
     println!("📁 {}:", "Files".bold());
     println!("   {}: {}", "Created".green(), target.display());
     println!("   {}: {}.backup", "Backup".dimmed(), sushi_path.display());
 
     println!("\n💡 {}:", "Next steps".bold());
-    println!("   1. Review {} to verify settings", target.display().to_string().bright_blue());
+    println!(
+        "   1. Review {} to verify settings",
+        target.display().to_string().bright_blue()
+    );
     println!("   2. Update any CI/CD scripts to use new config");
     println!("   3. Test your build: {}", "maki build".bright_blue());
-    println!("   4. Delete backup when ready: {}", format!("rm {}.backup", sushi_path.display()).dimmed());
+    println!(
+        "   4. Delete backup when ready: {}",
+        format!("rm {}.backup", sushi_path.display()).dimmed()
+    );
 
-    println!("\n📖 Documentation: {}", "https://octofhir.github.io/maki/config".bright_blue().underline());
+    println!(
+        "\n📖 Documentation: {}",
+        "https://octofhir.github.io/maki/config"
+            .bright_blue()
+            .underline()
+    );
 }
 
 /// Build unified config from SUSHI config
@@ -119,10 +146,9 @@ fn build_unified_config(sushi_path: &Path) -> Result<UnifiedConfig> {
 
     // Load SUSHI config
     let content = fs::read_to_string(sushi_path)?;
-    let mut sushi_config: SushiConfiguration = serde_yaml::from_str(&content)
-        .map_err(|e| maki_core::MakiError::config_error(
-            format!("Failed to parse sushi-config.yaml: {}", e)
-        ))?;
+    let mut sushi_config: SushiConfiguration = serde_yaml::from_str(&content).map_err(|e| {
+        maki_core::MakiError::config_error(format!("Failed to parse sushi-config.yaml: {}", e))
+    })?;
 
     // Validate SUSHI config
     if let Err(errors) = sushi_config.validate() {
@@ -141,6 +167,8 @@ fn build_unified_config(sushi_path: &Path) -> Result<UnifiedConfig> {
 
     // Create unified config with dependencies at top-level
     let unified = UnifiedConfig {
+        schema: Some("https://octofhir.github.io/maki/schema/v1.json".to_string()),
+        root: Some(true),
         dependencies: top_level_deps,
         build: Some(sushi_config),
         linter: Some(maki_core::config::LinterConfiguration::default()),
@@ -204,7 +232,10 @@ version: 1.0.0
         let unified = build_unified_config(&test_config).unwrap();
 
         assert!(unified.build.is_some());
-        assert_eq!(unified.build.as_ref().unwrap().canonical, "http://example.org/fhir/test-ig");
+        assert_eq!(
+            unified.build.as_ref().unwrap().canonical,
+            "http://example.org/fhir/test-ig"
+        );
         assert!(unified.linter.is_some());
         assert!(unified.formatter.is_some());
 

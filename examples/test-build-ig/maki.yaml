@@ -1,0 +1,36 @@
+$schema: https://octofhir.github.io/maki/schema/v1.json
+root: true
+build:
+  canonical: http://example.org/fhir/examples/test-build-ig
+  fhirVersion:
+  - 4.0.1
+  id: my.example.examples/test-build-ig
+  name: examples/test-build-ig
+  title: examples/test-build-ig
+  version: 0.1.0
+  status: draft
+  publisher: Example Publisher
+linter:
+  enabled: true
+  rules:
+    recommended: true
+    all: null
+    blocking: null
+    correctness: null
+    suspicious: null
+    style: null
+    documentation: null
+  ruleDirectories: null
+formatter:
+  enabled: true
+  indentSize: 2
+  lineWidth: 100
+  alignCarets: true
+files:
+  include:
+  - input/fsh/**/*.fsh
+  exclude:
+  - '**/node_modules/**'
+  - '**/fsh-generated/**'
+  ignoreFiles:
+  - .fshlintignore

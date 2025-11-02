@@ -54,59 +54,46 @@ impl AutoDependency {
 /// ```
 pub fn get_auto_dependencies(fhir_version: &str) -> Vec<AutoDependency> {
     // Determine FHIR release family
-    let (release_id, tools_version, terminology_version, extensions_version) = if fhir_version
-        .starts_with("4.0")
-    {
-        // R4
-        (
-            "r4",
-            "0.2.0",      // tools
-            "6.1.0",      // terminology (latest stable)
-            "5.1.0",      // extensions
-        )
-    } else if fhir_version.starts_with("4.3") {
-        // R4B
-        (
-            "r4b",
-            "0.1.0",      // tools
-            "6.1.0",      // terminology
-            "5.1.0",      // extensions
-        )
-    } else if fhir_version.starts_with("5.0") {
-        // R5
-        (
-            "r5",
-            "0.3.0",      // tools
-            "6.1.0",      // terminology
-            "5.1.0",      // extensions
-        )
-    } else if fhir_version.starts_with("6.") {
-        // R6 (ballot)
-        (
-            "r6",
-            "0.1.0",      // tools (may not exist yet)
-            "6.1.0",      // terminology
-            "5.1.0",      // extensions (may not exist yet)
-        )
-    } else {
-        // Default to R4 for unknown versions
-        tracing::warn!(
-            "Unknown FHIR version '{}', defaulting to R4 auto-dependencies",
-            fhir_version
-        );
-        (
-            "r4",
-            "0.2.0",
-            "6.1.0",
-            "5.1.0",
-        )
-    };
+    let (release_id, tools_version, terminology_version, extensions_version) =
+        if fhir_version.starts_with("4.0") {
+            // R4
+            (
+                "r4", "0.2.0", // tools
+                "6.1.0", // terminology (latest stable)
+                "5.1.0", // extensions
+            )
+        } else if fhir_version.starts_with("4.3") {
+            // R4B
+            (
+                "r4b", "0.1.0", // tools
+                "6.1.0", // terminology
+                "5.1.0", // extensions
+            )
+        } else if fhir_version.starts_with("5.0") {
+            // R5
+            (
+                "r5", "0.3.0", // tools
+                "6.1.0", // terminology
+                "5.1.0", // extensions
+            )
+        } else if fhir_version.starts_with("6.") {
+            // R6 (ballot)
+            (
+                "r6", "0.1.0", // tools (may not exist yet)
+                "6.1.0", // terminology
+                "5.1.0", // extensions (may not exist yet)
+            )
+        } else {
+            // Default to R4 for unknown versions
+            tracing::warn!(
+                "Unknown FHIR version '{}', defaulting to R4 auto-dependencies",
+                fhir_version
+            );
+            ("r4", "0.2.0", "6.1.0", "5.1.0")
+        };
 
     vec![
-        AutoDependency::new(
-            format!("hl7.fhir.uv.tools.{}", release_id),
-            tools_version,
-        ),
+        AutoDependency::new(format!("hl7.fhir.uv.tools.{}", release_id), tools_version),
         AutoDependency::new(
             format!("hl7.terminology.{}", release_id),
             terminology_version,
@@ -179,46 +166,37 @@ mod tests {
         assert_eq!(deps.len(), 3);
 
         // Check tools package
-        assert!(deps
-            .iter()
-            .any(|d| d.package_id == "hl7.fhir.uv.tools.r4"));
+        assert!(deps.iter().any(|d| d.package_id == "hl7.fhir.uv.tools.r4"));
 
         // Check terminology package
-        assert!(deps
-            .iter()
-            .any(|d| d.package_id == "hl7.terminology.r4"));
+        assert!(deps.iter().any(|d| d.package_id == "hl7.terminology.r4"));
 
         // Check extensions package
-        assert!(deps
-            .iter()
-            .any(|d| d.package_id == "hl7.fhir.uv.extensions.r4"));
+        assert!(
+            deps.iter()
+                .any(|d| d.package_id == "hl7.fhir.uv.extensions.r4")
+        );
     }
 
     #[test]
     fn test_auto_dependencies_r4b() {
         let deps = get_auto_dependencies("4.3.0");
         assert_eq!(deps.len(), 3);
-        assert!(deps
-            .iter()
-            .any(|d| d.package_id == "hl7.fhir.uv.tools.r4b"));
+        assert!(deps.iter().any(|d| d.package_id == "hl7.fhir.uv.tools.r4b"));
     }
 
     #[test]
     fn test_auto_dependencies_r5() {
         let deps = get_auto_dependencies("5.0.0");
         assert_eq!(deps.len(), 3);
-        assert!(deps
-            .iter()
-            .any(|d| d.package_id == "hl7.fhir.uv.tools.r5"));
+        assert!(deps.iter().any(|d| d.package_id == "hl7.fhir.uv.tools.r5"));
     }
 
     #[test]
     fn test_auto_dependencies_r6() {
         let deps = get_auto_dependencies("6.0.0-ballot");
         assert_eq!(deps.len(), 3);
-        assert!(deps
-            .iter()
-            .any(|d| d.package_id == "hl7.fhir.uv.tools.r6"));
+        assert!(deps.iter().any(|d| d.package_id == "hl7.fhir.uv.tools.r6"));
     }
 
     #[test]

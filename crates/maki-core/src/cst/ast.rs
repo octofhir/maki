@@ -115,6 +115,14 @@ impl Document {
     pub fn instances(&self) -> impl Iterator<Item = Instance> {
         self.syntax.children().filter_map(Instance::cast)
     }
+
+    pub fn mappings(&self) -> impl Iterator<Item = Mapping> {
+        self.syntax.children().filter_map(Mapping::cast)
+    }
+
+    pub fn invariants(&self) -> impl Iterator<Item = Invariant> {
+        self.syntax.children().filter_map(Invariant::cast)
+    }
 }
 
 // ============================================================================
@@ -608,6 +616,89 @@ impl Alias {
 }
 
 // ============================================================================
+// Mapping
+// ============================================================================
+
+/// Mapping definition: Mapping: name
+///
+/// Mappings define ConceptMaps for translating between code systems.
+///
+/// # Example
+///
+/// ```fsh
+/// Mapping: MyMapping
+/// Id: my-mapping
+/// Source: SourceValueSet
+/// Target: "http://target-system.org"
+/// * code1 -> code2 "Comment about mapping"
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mapping {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for Mapping {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::Mapping
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl Mapping {
+    /// Get the mapping name
+    pub fn name(&self) -> Option<String> {
+        get_ident_text(&self.syntax)
+    }
+
+    /// Get the syntax node for the mapping name (for precise location)
+    pub fn name_token(&self) -> Option<FshSyntaxToken> {
+        token_of_kind(&self.syntax, FshSyntaxKind::Ident)
+    }
+
+    /// Get the id clause
+    pub fn id(&self) -> Option<IdClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::IdClause).and_then(IdClause::cast)
+    }
+
+    /// Get the source clause
+    pub fn source(&self) -> Option<SourceClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::SourceClause).and_then(SourceClause::cast)
+    }
+
+    /// Get the target clause
+    pub fn target(&self) -> Option<TargetClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::TargetClause).and_then(TargetClause::cast)
+    }
+
+    /// Get the title clause
+    pub fn title(&self) -> Option<TitleClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::TitleClause).and_then(TitleClause::cast)
+    }
+
+    /// Get the description clause
+    pub fn description(&self) -> Option<DescriptionClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::DescriptionClause)
+            .and_then(DescriptionClause::cast)
+    }
+
+    /// Get all rules (mapping rules)
+    pub fn rules(&self) -> impl Iterator<Item = Rule> {
+        self.syntax.children().filter_map(Rule::cast)
+    }
+}
+
+// ============================================================================
 // Instance
 // ============================================================================
 
@@ -675,6 +766,79 @@ impl Instance {
     /// Get all rules
     pub fn rules(&self) -> impl Iterator<Item = Rule> {
         self.syntax.children().filter_map(Rule::cast)
+    }
+}
+
+// ============================================================================
+// Invariant
+// ============================================================================
+
+/// Invariant definition: Invariant: name
+///
+/// Defines a constraint that can be referenced by ObeysRule.
+///
+/// # Example
+///
+/// ```fsh
+/// Invariant: inv-1
+/// Description: "SHALL have a contact party or an organization or both"
+/// Expression: "telecom or name"
+/// Severity: #error
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Invariant {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for Invariant {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::Invariant
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl Invariant {
+    /// Get the invariant name/key
+    pub fn name(&self) -> Option<String> {
+        get_ident_text(&self.syntax)
+    }
+
+    /// Get the invariant name token (for precise location)
+    pub fn name_token(&self) -> Option<FshSyntaxToken> {
+        token_of_kind(&self.syntax, FshSyntaxKind::Ident)
+    }
+
+    /// Get the description clause
+    pub fn description(&self) -> Option<DescriptionClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::DescriptionClause)
+            .and_then(DescriptionClause::cast)
+    }
+
+    /// Get the severity clause
+    pub fn severity(&self) -> Option<SeverityClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::SeverityClause).and_then(SeverityClause::cast)
+    }
+
+    /// Get the expression clause (FHIRPath)
+    pub fn expression(&self) -> Option<ExpressionClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::ExpressionClause)
+            .and_then(ExpressionClause::cast)
+    }
+
+    /// Get the xpath clause (optional XPath 1.0 expression)
+    pub fn xpath(&self) -> Option<XPathClause> {
+        child_of_kind(&self.syntax, FshSyntaxKind::XpathClause).and_then(XPathClause::cast)
     }
 }
 
@@ -876,6 +1040,166 @@ impl UsageClause {
     }
 }
 
+/// Source clause: Source: SourceSystem
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceClause {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for SourceClause {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::SourceClause
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl SourceClause {
+    pub fn value(&self) -> Option<String> {
+        // Get the identifier after "Source:"
+        get_ident_text(&self.syntax)
+    }
+}
+
+/// Target clause: Target: "http://target-system.org"
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetClause {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for TargetClause {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::TargetClause
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl TargetClause {
+    pub fn value(&self) -> Option<String> {
+        // Get the string after "Target:"
+        get_string_text(&self.syntax)
+    }
+}
+
+/// Severity clause: Severity: #error
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeverityClause {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for SeverityClause {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::SeverityClause
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl SeverityClause {
+    pub fn value(&self) -> Option<String> {
+        // Get the identifier after "Severity:" and optional #
+        // Parser stores # and identifier as separate tokens
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+            .find(|t| t.kind() == FshSyntaxKind::Ident)
+            .map(|t| t.text().trim().to_string())
+    }
+}
+
+/// Expression clause: Expression: "FHIRPath expression"
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpressionClause {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for ExpressionClause {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::ExpressionClause
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl ExpressionClause {
+    pub fn value(&self) -> Option<String> {
+        // Get the string after "Expression:"
+        get_string_text(&self.syntax)
+    }
+}
+
+/// XPath clause: XPath: "XPath 1.0 expression"
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XPathClause {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for XPathClause {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::XpathClause
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl XPathClause {
+    pub fn value(&self) -> Option<String> {
+        // Get the string after "XPath:"
+        get_string_text(&self.syntax)
+    }
+}
+
 // ============================================================================
 // Rules
 // ============================================================================
@@ -891,6 +1215,8 @@ pub enum Rule {
     Contains(ContainsRule),
     Only(OnlyRule),
     Obeys(ObeysRule),
+    AddElement(AddElementRule),
+    Mapping(MappingRule),
 }
 
 impl Rule {
@@ -904,6 +1230,8 @@ impl Rule {
             FshSyntaxKind::ContainsRule => ContainsRule::cast(node).map(Rule::Contains),
             FshSyntaxKind::OnlyRule => OnlyRule::cast(node).map(Rule::Only),
             FshSyntaxKind::ObeysRule => ObeysRule::cast(node).map(Rule::Obeys),
+            FshSyntaxKind::AddElementRule => AddElementRule::cast(node).map(Rule::AddElement),
+            FshSyntaxKind::MappingRule => MappingRule::cast(node).map(Rule::Mapping),
             _ => None,
         }
     }
@@ -918,6 +1246,8 @@ impl Rule {
             Rule::Contains(r) => r.syntax(),
             Rule::Only(r) => r.syntax(),
             Rule::Obeys(r) => r.syntax(),
+            Rule::AddElement(r) => r.syntax(),
+            Rule::Mapping(r) => r.syntax(),
         }
     }
 }
@@ -1342,6 +1672,262 @@ impl ObeysRule {
             .map(|inv| inv.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect()
+    }
+}
+
+/// AddElement rule: * elementName 0..1 MS Type "short" "definition"
+///
+/// Used in Logical models and Resources to define new elements with types.
+///
+/// Grammar: * path CARD flags* TYPE (or TYPE)* STRING STRING?
+///
+/// # Example
+///
+/// ```fsh
+/// * name 0..* HumanName "Name(s) of the human" "The names by which the human is or has been known"
+/// * status 1..1 MS code "Status of the record"
+/// * value[x] 0..1 string or integer "The value"
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddElementRule {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for AddElementRule {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::AddElementRule
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl AddElementRule {
+    /// Get the element path
+    pub fn path(&self) -> Option<Path> {
+        // The path is the previous sibling of the rule node
+        self.syntax
+            .prev_sibling()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .and_then(Path::cast)
+    }
+
+    /// Get the cardinality as a string (e.g., "0..1", "1..*")
+    pub fn cardinality(&self) -> Option<String> {
+        let mut parts = Vec::new();
+
+        // Find min (Integer)
+        if let Some(min_token) = token_of_kind(&self.syntax, FshSyntaxKind::Integer) {
+            parts.push(min_token.text().trim().to_string());
+        }
+
+        // Find max (Integer or Asterisk)
+        for child in self.syntax.children_with_tokens() {
+            if let Some(token) = child.as_token() {
+                match token.kind() {
+                    FshSyntaxKind::Integer => {
+                        if parts.len() == 1 {
+                            parts.push(token.text().trim().to_string());
+                            break;
+                        }
+                    }
+                    FshSyntaxKind::Asterisk => {
+                        if parts.len() == 1 {
+                            parts.push("*".to_string());
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if parts.len() == 2 {
+            Some(format!("{}..{}", parts[0], parts[1]))
+        } else {
+            None
+        }
+    }
+
+    /// Get the flags (MS, SU, TU, etc.)
+    pub fn flags(&self) -> Vec<String> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|e| e.into_token())
+            .filter(|t| {
+                matches!(
+                    t.kind(),
+                    FshSyntaxKind::MsFlag
+                        | FshSyntaxKind::SuFlag
+                        | FshSyntaxKind::TuFlag
+                        | FshSyntaxKind::NFlag
+                        | FshSyntaxKind::DFlag
+                )
+            })
+            .map(|t| t.text().trim().to_string())
+            .collect()
+    }
+
+    /// Get the element types (can be multiple with "or")
+    /// Example: ["HumanName"] or ["string", "integer"]
+    pub fn types(&self) -> Vec<String> {
+        let mut types = Vec::new();
+        let mut in_type_section = false;
+
+        for child in self.syntax.children_with_tokens() {
+            if let Some(token) = child.as_token() {
+                match token.kind() {
+                    FshSyntaxKind::Ident => {
+                        // After cardinality and flags, identifiers are types
+                        if in_type_section
+                            || token.text().chars().next().unwrap_or(' ').is_uppercase()
+                        {
+                            in_type_section = true;
+                            types.push(token.text().trim().to_string());
+                        }
+                    }
+                    FshSyntaxKind::String => {
+                        // Stop when we hit the short description
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        types
+    }
+
+    /// Get the short description (first string literal)
+    pub fn short(&self) -> Option<String> {
+        get_string_text(&self.syntax)
+    }
+
+    /// Get the full definition (second string literal, if present)
+    pub fn definition(&self) -> Option<String> {
+        let mut string_count = 0;
+        for child in self.syntax.children_with_tokens() {
+            if let Some(token) = child.as_token() {
+                if token.kind() == FshSyntaxKind::String {
+                    string_count += 1;
+                    if string_count == 2 {
+                        let text = token.text();
+                        // Remove surrounding quotes
+                        if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+                            return Some(text[1..text.len() - 1].to_string());
+                        } else {
+                            return Some(text.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
+// ============================================================================
+// MappingRule
+// ============================================================================
+
+/// Mapping rule: * path -> "target" "comment" #language
+///
+/// Used in Mapping definitions to map elements to external specifications.
+///
+/// Grammar: * path -> STRING STRING? CODE?
+///
+/// # Examples
+///
+/// ```fsh
+/// * name -> "PID-5"
+/// * status -> "OBX-11" "Observation result status"
+/// * identifier -> "Patient.identifier" "Business identifier" #en
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MappingRule {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for MappingRule {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::MappingRule
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl MappingRule {
+    /// Get the element path (left side of ->)
+    pub fn path(&self) -> Option<Path> {
+        // The path is the previous sibling of the rule node
+        self.syntax
+            .prev_sibling()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .and_then(Path::cast)
+    }
+
+    /// Get the target mapping expression (first string after ->)
+    pub fn map(&self) -> Option<String> {
+        get_string_text(&self.syntax)
+    }
+
+    /// Get the comment (second string literal, if present)
+    pub fn comment(&self) -> Option<String> {
+        let mut string_count = 0;
+        for child in self.syntax.children_with_tokens() {
+            if let Some(token) = child.as_token() {
+                if token.kind() == FshSyntaxKind::String {
+                    string_count += 1;
+                    if string_count == 2 {
+                        let text = token.text();
+                        // Remove surrounding quotes
+                        if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+                            return Some(text[1..text.len() - 1].to_string());
+                        } else {
+                            return Some(text.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Get the language code (e.g., #en, #en-US)
+    pub fn language(&self) -> Option<String> {
+        for child in self.syntax.children_with_tokens() {
+            if let Some(token) = child.as_token() {
+                if token.kind() == FshSyntaxKind::Code {
+                    let text = token.text();
+                    // Remove leading #
+                    if text.starts_with('#') {
+                        return Some(text[1..].to_string());
+                    } else {
+                        return Some(text.to_string());
+                    }
+                }
+            }
+        }
+        None
     }
 }
 

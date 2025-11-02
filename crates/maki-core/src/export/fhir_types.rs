@@ -92,6 +92,10 @@ pub struct StructureDefinition {
     /// Differential view of the structure
     #[serde(skip_serializing_if = "Option::is_none")]
     pub differential: Option<StructureDefinitionDifferential>,
+
+    /// External specification mappings
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mapping: Option<Vec<StructureDefinitionMapping>>,
 }
 
 impl StructureDefinition {
@@ -123,6 +127,7 @@ impl StructureDefinition {
             context: None,
             snapshot: None,
             differential: None,
+            mapping: None,
         }
     }
 
@@ -185,6 +190,10 @@ pub struct StructureDefinitionDifferential {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElementDefinition {
+    /// Unique id for element in definition (for tools)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+
     /// Path of the element in the hierarchy of elements
     pub path: String,
 
@@ -240,12 +249,17 @@ pub struct ElementDefinition {
     /// Pattern value
     #[serde(skip_serializing_if = "Option::is_none", flatten)]
     pub pattern: Option<HashMap<String, serde_json::Value>>,
+
+    /// Map element to another set of definitions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mapping: Option<Vec<ElementDefinitionMapping>>,
 }
 
 impl ElementDefinition {
     /// Create a new ElementDefinition with just a path
     pub fn new(path: String) -> Self {
         Self {
+            id: None,
             path,
             min: None,
             max: None,
@@ -260,6 +274,7 @@ impl ElementDefinition {
             constraint: None,
             fixed: None,
             pattern: None,
+            mapping: None,
         }
     }
 
@@ -383,6 +398,37 @@ pub struct ElementDefinitionConstraint {
     pub expression: Option<String>,
 }
 
+/// Map element to another set of definitions
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ElementDefinitionMapping {
+    /// Reference to mapping declaration in StructureDefinition.mapping
+    pub identity: String,
+
+    /// Computable language of mapping (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+
+    /// Details of the mapping
+    pub map: String,
+
+    /// Comments about the mapping
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+}
+
+impl ElementDefinitionMapping {
+    /// Create a new element mapping
+    pub fn new(identity: impl Into<String>, map: impl Into<String>) -> Self {
+        Self {
+            identity: identity.into(),
+            language: None,
+            map: map.into(),
+            comment: None,
+        }
+    }
+}
+
 // ============================================================================
 // StructureDefinition Context (for Extensions)
 // ============================================================================
@@ -423,6 +469,38 @@ impl StructureDefinitionContext {
     /// Create a fhirpath context
     pub fn fhirpath(expression: impl Into<String>) -> Self {
         Self::new("fhirpath", expression)
+    }
+}
+
+/// External specification mapping for a StructureDefinition
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StructureDefinitionMapping {
+    /// Internal id that identifies this mapping set
+    pub identity: String,
+
+    /// URI that identifies the specification being mapped to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+
+    /// Human-readable name for the specification
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// Comments about the mapping (version notes, issues, scope, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+}
+
+impl StructureDefinitionMapping {
+    /// Create a new mapping with required identity
+    pub fn new(identity: impl Into<String>) -> Self {
+        Self {
+            identity: identity.into(),
+            uri: None,
+            name: None,
+            comment: None,
+        }
     }
 }
 
@@ -1064,6 +1142,142 @@ impl CodeSystemProperty {
             type_: type_.into(),
         }
     }
+}
+
+// ============================================================================
+// ConceptMap
+// ============================================================================
+
+/// FHIR ConceptMap resource
+///
+/// Represents a mapping between two value sets/code systems.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConceptMap {
+    /// Resource type (always "ConceptMap")
+    pub resource_type: String,
+
+    /// Logical id of this artifact
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+
+    /// Canonical identifier for this concept map
+    pub url: String,
+
+    /// Business version of the concept map
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+
+    /// Name for this concept map (computer friendly)
+    pub name: String,
+
+    /// Name for this concept map (human friendly)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
+    /// draft | active | retired | unknown
+    pub status: String,
+
+    /// Date last changed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+
+    /// Name of the publisher
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+
+    /// Natural language description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// For testing purposes, not real usage
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub experimental: Option<bool>,
+
+    /// Source value set or code system
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_uri: Option<String>,
+
+    /// Target value set or code system
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_uri: Option<String>,
+
+    /// Same source and target systems
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<Vec<ConceptMapGroup>>,
+}
+
+impl ConceptMap {
+    /// Create a new ConceptMap with required fields
+    pub fn new(url: String, name: String) -> Self {
+        Self {
+            resource_type: "ConceptMap".to_string(),
+            id: None,
+            url,
+            version: None,
+            name,
+            title: None,
+            status: "draft".to_string(),
+            date: None,
+            publisher: None,
+            description: None,
+            experimental: None,
+            source_uri: None,
+            target_uri: None,
+            group: None,
+        }
+    }
+}
+
+/// A group of mappings for a specific source/target pair
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConceptMapGroup {
+    /// Source system where concepts to be mapped are defined
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+
+    /// Target system that the concepts are to be mapped to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+
+    /// Mappings for a source concept
+    pub element: Vec<ConceptMapElement>,
+}
+
+/// A concept from the source value set that this map refers to
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConceptMapElement {
+    /// Identifies element being mapped
+    pub code: String,
+
+    /// Display for the code
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
+
+    /// Concept in target system for element
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<Vec<ConceptMapTarget>>,
+}
+
+/// Target element for the source concept
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConceptMapTarget {
+    /// Code that identifies the target element
+    pub code: String,
+
+    /// Display for the code
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
+
+    /// relatedto | equivalent | equal | wider | subsumes | narrower | specializes | inexact | unmatched | disjoint
+    pub equivalence: String,
+
+    /// Description of status/issues in mapping
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 #[cfg(test)]

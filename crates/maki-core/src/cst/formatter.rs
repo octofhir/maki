@@ -321,6 +321,8 @@ fn calculate_caret_alignment(rules: &[Rule]) -> usize {
                 Rule::Contains(r) => r.path().map(|p| p.as_string()),
                 Rule::Only(r) => r.path().map(|p| p.as_string()),
                 Rule::Obeys(r) => r.path().map(|p| p.as_string()),
+                Rule::AddElement(r) => r.path().map(|p| p.as_string()),
+                Rule::Mapping(r) => r.path().map(|p| p.as_string()),
             };
             path.map(|p| p.len())
         })
@@ -439,6 +441,61 @@ fn format_rule(ctx: &mut FormatContext, rule: &Rule, caret_column: usize) {
             let path = obeys_rule.path().map(|p| p.as_string()).unwrap_or_default();
             let invariants = obeys_rule.invariants();
             ctx.writeln(&format!("* {} obeys {}", path, invariants.join(" and ")));
+        }
+
+        Rule::AddElement(add_rule) => {
+            let path = add_rule.path().map(|p| p.as_string()).unwrap_or_default();
+            let cardinality = add_rule.cardinality().unwrap_or_default();
+            let flags = add_rule.flags();
+            let types = add_rule.types();
+            let short = add_rule.short();
+            let definition = add_rule.definition();
+
+            // Format: * path card flags type "short" "definition"
+            let mut rule_text = format!("* {} {}", path, cardinality);
+
+            if !flags.is_empty() {
+                rule_text.push(' ');
+                rule_text.push_str(&flags.join(" "));
+            }
+
+            if !types.is_empty() {
+                rule_text.push(' ');
+                rule_text.push_str(&types.join(" or "));
+            }
+
+            if let Some(short_desc) = short {
+                rule_text.push_str(&format!(" \"{}\"", short_desc));
+            }
+
+            if let Some(def_desc) = definition {
+                rule_text.push_str(&format!(" \"{}\"", def_desc));
+            }
+
+            ctx.writeln(&rule_text);
+        }
+
+        Rule::Mapping(mapping_rule) => {
+            let path = mapping_rule
+                .path()
+                .map(|p| p.as_string())
+                .unwrap_or_default();
+            let map = mapping_rule.map().unwrap_or_default();
+            let comment = mapping_rule.comment();
+            let language = mapping_rule.language();
+
+            // Format: * path -> "target" "comment" #language
+            let mut rule_text = format!("* {} -> \"{}\"", path, map);
+
+            if let Some(comment_text) = comment {
+                rule_text.push_str(&format!(" \"{}\"", comment_text));
+            }
+
+            if let Some(lang) = language {
+                rule_text.push_str(&format!(" #{}", lang));
+            }
+
+            ctx.writeln(&rule_text);
         }
     }
 }

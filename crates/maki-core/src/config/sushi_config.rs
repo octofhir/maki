@@ -21,6 +21,7 @@
 //!   hl7.fhir.us.core: 5.0.1
 //! ```
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -31,7 +32,7 @@ use std::path::Path;
 /// Implementation Guide metadata and build settings.
 ///
 /// **Reference**: <https://fshschool.org/docs/sushi/configuration/>
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SushiConfiguration {
     // === Core IG Metadata (Required) ===
@@ -297,7 +298,7 @@ fn parse_code_string(s: &str) -> Result<CodeableConcept, String> {
 }
 
 /// Contact information
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct ContactDetail {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -307,7 +308,7 @@ pub struct ContactDetail {
 }
 
 /// Publisher information (can be string or object)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(untagged)]
 pub enum PublisherInfo {
     /// Simple string publisher name
@@ -334,7 +335,7 @@ impl PublisherInfo {
 }
 
 /// Contact point (phone, email, etc.)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct ContactPoint {
     pub system: String, // phone | fax | email | pager | url | sms | other
     pub value: String,
@@ -350,7 +351,7 @@ pub struct ContactPoint {
 }
 
 /// Usage context
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct UsageContext {
     pub code: Coding,
 
@@ -359,7 +360,7 @@ pub struct UsageContext {
 }
 
 /// CodeableConcept
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct CodeableConcept {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coding: Option<Vec<Coding>>,
@@ -369,7 +370,7 @@ pub struct CodeableConcept {
 }
 
 /// Coding
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct Coding {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system: Option<String>,
@@ -388,7 +389,7 @@ pub struct Coding {
 }
 
 /// Dependency version - can be string or object
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(untagged)]
 pub enum DependencyVersion {
     /// Simple version string
@@ -410,7 +411,7 @@ pub enum DependencyVersion {
 }
 
 /// Global resource profile
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct GlobalProfile {
     #[serde(rename = "type")]
     pub resource_type: String,
@@ -418,7 +419,7 @@ pub struct GlobalProfile {
 }
 
 /// Resource group
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct ResourceGroup {
     pub id: String,
     pub name: String,
@@ -431,7 +432,7 @@ pub struct ResourceGroup {
 }
 
 /// Resource entry
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct ResourceEntry {
     pub reference: serde_json::Value,
 
@@ -458,7 +459,7 @@ pub struct ResourceEntry {
 }
 
 /// Page definition
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PageDefinition {
     #[serde(flatten)]
@@ -478,14 +479,14 @@ pub struct PageDefinition {
 }
 
 /// IG parameter
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct Parameter {
     pub code: String,
     pub value: String,
 }
 
 /// Template definition
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct Template {
     pub code: String,
     pub source: String,
@@ -495,7 +496,7 @@ pub struct Template {
 }
 
 /// Menu item
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MenuItem {
     pub name: String,
@@ -511,7 +512,7 @@ pub struct MenuItem {
 }
 
 /// Instance processing options
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct InstanceOptions {
     /// When to set meta.profile
@@ -528,7 +529,7 @@ pub struct InstanceOptions {
 }
 
 /// Meta profile setting
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum MetaProfileSetting {
     Always,
@@ -538,7 +539,7 @@ pub enum MetaProfileSetting {
 }
 
 /// ID setting
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum IdSetting {
     Always,
@@ -546,7 +547,7 @@ pub enum IdSetting {
 }
 
 /// Definition extension container
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct DefinitionExtension {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension: Option<Vec<serde_json::Value>>,

@@ -3,7 +3,7 @@
 //! Generates JSON Schema from the Rust configuration types using schemars.
 
 use anyhow::Result;
-use maki_core::config::MakiConfiguration;
+use maki_core::config::UnifiedConfig;
 use schemars::schema_for;
 use serde_json::json;
 use std::fs;
@@ -15,13 +15,13 @@ pub struct SchemaGenerator;
 impl SchemaGenerator {
     /// Generate JSON Schema and write to file
     ///
-    /// Generates a complete JSON Schema from the `MakiConfiguration` type
+    /// Generates a complete JSON Schema from the `UnifiedConfig` type
     /// with metadata and writes it to the specified path.
     pub fn generate(output_path: &Path) -> Result<()> {
         tracing::info!("Generating JSON Schema for maki configuration...");
 
         // Generate schema from Rust types using schemars
-        let schema = schema_for!(MakiConfiguration);
+        let schema = schema_for!(UnifiedConfig);
 
         // Convert to JSON value for manipulation
         let mut schema_json = serde_json::to_value(schema)?;
@@ -54,7 +54,7 @@ impl SchemaGenerator {
     pub fn validate() -> Result<()> {
         tracing::info!("Validating schema generation...");
 
-        let schema = schema_for!(MakiConfiguration);
+        let schema = schema_for!(UnifiedConfig);
         let _schema_json = serde_json::to_value(schema)?;
 
         println!("✓ Schema validation passed");

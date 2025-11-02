@@ -1,38 +1,11 @@
 //! Configuration types for maki
+//!
+//! This module contains the sub-configuration types used by UnifiedConfig.
+//! The main configuration structure is UnifiedConfig in unified_config.rs.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
-/// Main maki configuration
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct MakiConfiguration {
-    /// JSON Schema reference for IDE support
-    #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
-    pub schema: Option<String>,
-
-    /// Mark this directory as the root (stop upward search)
-    #[schemars(description = "Stop config file discovery at this directory")]
-    pub root: Option<bool>,
-
-    /// Extend from other configuration files
-    #[schemars(description = "Inherit from other config files (relative or absolute paths)")]
-    pub extends: Option<Vec<String>>,
-
-    /// Linter configuration
-    #[schemars(description = "Linter settings and rules")]
-    pub linter: Option<LinterConfiguration>,
-
-    /// Formatter configuration
-    #[schemars(description = "Code formatter settings")]
-    pub formatter: Option<FormatterConfiguration>,
-
-    /// File pattern configuration
-    #[schemars(description = "File inclusion/exclusion patterns")]
-    pub files: Option<FilesConfiguration>,
-}
 
 /// Linter configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -152,19 +125,6 @@ pub struct RuleConfig {
     pub options: Option<serde_json::Value>,
 }
 
-impl Default for MakiConfiguration {
-    fn default() -> Self {
-        Self {
-            schema: Some("https://octofhir.github.io/maki/schema/v1.json".to_string()),
-            root: Some(false),
-            extends: None,
-            linter: Some(LinterConfiguration::default()),
-            formatter: Some(FormatterConfiguration::default()),
-            files: Some(FilesConfiguration::default()),
-        }
-    }
-}
-
 impl Default for LinterConfiguration {
     fn default() -> Self {
         Self {
@@ -221,14 +181,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_config() {
-        let config = MakiConfiguration::default();
-        assert!(config.linter.is_some());
-        assert!(config.formatter.is_some());
-        assert!(config.files.is_some());
-    }
-
-    #[test]
     fn test_rule_severity_serialization() {
         let severity = RuleSeverity::Error;
         let json = serde_json::to_string(&severity).unwrap();
@@ -237,30 +189,5 @@ mod tests {
         let severity = RuleSeverity::Off;
         let json = serde_json::to_string(&severity).unwrap();
         assert_eq!(json, r#""off""#);
-    }
-
-    #[test]
-    fn test_config_serialization() {
-        let config = MakiConfiguration::default();
-        let json = serde_json::to_string_pretty(&config).unwrap();
-        assert!(json.contains("linter"));
-        assert!(json.contains("formatter"));
-        assert!(json.contains("files"));
-    }
-
-    #[test]
-    fn test_config_deserialization() {
-        let json = r#"{
-            "linter": {
-                "enabled": true,
-                "rules": {
-                    "recommended": true
-                }
-            }
-        }"#;
-
-        let config: MakiConfiguration = serde_json::from_str(json).unwrap();
-        assert!(config.linter.is_some());
-        assert_eq!(config.linter.unwrap().enabled, Some(true));
     }
 }

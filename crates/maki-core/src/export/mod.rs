@@ -26,20 +26,25 @@
 //! - ✅ Build command (Task 28)
 
 pub mod build;
+pub mod build_cache;
 pub mod codesystem_exporter;
 pub mod extension_exporter;
 pub mod fhir_types;
 pub mod file_structure;
 pub mod ig_generator;
 pub mod instance_exporter;
+pub mod invariant_processor;
 pub mod logical_exporter;
+pub mod mapping_exporter;
 pub mod package_json;
 pub mod predefined_resources;
 pub mod profile_exporter;
+pub mod ruleset_integration;
 pub mod snapshot;
 pub mod valueset_exporter;
 
 pub use build::{BuildError, BuildOptions, BuildOrchestrator, BuildResult, BuildStats};
+pub use build_cache::{BuildCache, CacheStats, IncrementalBuildInfo};
 pub use codesystem_exporter::CodeSystemExporter;
 pub use extension_exporter::ExtensionExporter;
 pub use fhir_types::*;
@@ -52,7 +57,9 @@ pub use ig_generator::{
     Reference, ResourceEntry,
 };
 pub use instance_exporter::InstanceExporter;
+pub use invariant_processor::InvariantProcessor;
 pub use logical_exporter::LogicalExporter;
+pub use mapping_exporter::MappingExporter;
 pub use package_json::{Maintainer, PackageJson, Repository};
 pub use predefined_resources::{
     ConflictInfo, GeneratedResourceInfo, PREDEFINED_PACKAGE_NAME, PREDEFINED_PACKAGE_VERSION,

@@ -44,7 +44,7 @@ pub const DATA_DIR: &str = "data";
 /// Creates and manages the fsh-generated/ directory structure
 /// following IG Publisher conventions.
 pub struct FileStructureGenerator {
-    /// Base output directory (usually project root)
+    /// Output directory (the fsh-generated directory path)
     output_dir: PathBuf,
 
     /// Whether to clear existing output before writing
@@ -56,7 +56,7 @@ impl FileStructureGenerator {
     ///
     /// # Arguments
     ///
-    /// * `output_dir` - Base directory where fsh-generated/ will be created
+    /// * `output_dir` - The fsh-generated directory path (not the project root)
     /// * `clean_output` - Whether to clear existing fsh-generated/ directory
     pub fn new(output_dir: impl Into<PathBuf>, clean_output: bool) -> Self {
         Self {
@@ -67,22 +67,23 @@ impl FileStructureGenerator {
 
     /// Get the fsh-generated directory path
     pub fn fsh_generated_dir(&self) -> PathBuf {
-        self.output_dir.join(FSH_GENERATED_DIR)
+        // output_dir is already the fsh-generated directory (set by CLI)
+        self.output_dir.clone()
     }
 
     /// Get the resources directory path
     pub fn resources_dir(&self) -> PathBuf {
-        self.fsh_generated_dir().join(RESOURCES_DIR)
+        self.output_dir.join(RESOURCES_DIR)
     }
 
     /// Get the includes directory path
     pub fn includes_dir(&self) -> PathBuf {
-        self.fsh_generated_dir().join(INCLUDES_DIR)
+        self.output_dir.join(INCLUDES_DIR)
     }
 
     /// Get the data directory path
     pub fn data_dir(&self) -> PathBuf {
-        self.fsh_generated_dir().join(DATA_DIR)
+        self.output_dir.join(DATA_DIR)
     }
 
     /// Initialize the directory structure
@@ -302,27 +303,20 @@ mod tests {
     #[test]
     fn test_directory_paths() {
         let temp = TempDir::new().unwrap();
-        let generator = FileStructureGenerator::new(temp.path(), false);
+        let fsh_gen_path = temp.path().join("fsh-generated");
+        let generator = FileStructureGenerator::new(&fsh_gen_path, false);
 
-        assert_eq!(
-            generator.fsh_generated_dir(),
-            temp.path().join("fsh-generated")
-        );
-        assert_eq!(
-            generator.resources_dir(),
-            temp.path().join("fsh-generated/resources")
-        );
-        assert_eq!(
-            generator.includes_dir(),
-            temp.path().join("fsh-generated/includes")
-        );
-        assert_eq!(generator.data_dir(), temp.path().join("fsh-generated/data"));
+        assert_eq!(generator.fsh_generated_dir(), fsh_gen_path);
+        assert_eq!(generator.resources_dir(), fsh_gen_path.join("resources"));
+        assert_eq!(generator.includes_dir(), fsh_gen_path.join("includes"));
+        assert_eq!(generator.data_dir(), fsh_gen_path.join("data"));
     }
 
     #[test]
     fn test_initialize_creates_directories() {
         let temp = TempDir::new().unwrap();
-        let generator = FileStructureGenerator::new(temp.path(), false);
+        let fsh_gen_path = temp.path().join("fsh-generated");
+        let generator = FileStructureGenerator::new(&fsh_gen_path, false);
 
         generator.initialize().unwrap();
 
@@ -335,7 +329,8 @@ mod tests {
     #[test]
     fn test_initialize_with_clean() {
         let temp = TempDir::new().unwrap();
-        let generator = FileStructureGenerator::new(temp.path(), true);
+        let fsh_gen_path = temp.path().join("fsh-generated");
+        let generator = FileStructureGenerator::new(&fsh_gen_path, true);
 
         // Create directories and a test file
         generator.initialize().unwrap();
@@ -352,7 +347,8 @@ mod tests {
     #[test]
     fn test_write_resource() {
         let temp = TempDir::new().unwrap();
-        let generator = FileStructureGenerator::new(temp.path(), false);
+        let fsh_gen_path = temp.path().join("fsh-generated");
+        let generator = FileStructureGenerator::new(&fsh_gen_path, false);
         generator.initialize().unwrap();
 
         #[derive(Serialize)]
@@ -383,7 +379,8 @@ mod tests {
     #[test]
     fn test_write_fsh_index_txt() {
         let temp = TempDir::new().unwrap();
-        let generator = FileStructureGenerator::new(temp.path(), false);
+        let fsh_gen_path = temp.path().join("fsh-generated");
+        let generator = FileStructureGenerator::new(&fsh_gen_path, false);
         generator.initialize().unwrap();
 
         let index =
@@ -400,7 +397,8 @@ mod tests {
     #[test]
     fn test_write_fsh_index_json() {
         let temp = TempDir::new().unwrap();
-        let generator = FileStructureGenerator::new(temp.path(), false);
+        let fsh_gen_path = temp.path().join("fsh-generated");
+        let generator = FileStructureGenerator::new(&fsh_gen_path, false);
         generator.initialize().unwrap();
 
         let entries = vec![FshIndexEntry {
@@ -424,7 +422,8 @@ mod tests {
     #[test]
     fn test_write_menu_xml() {
         let temp = TempDir::new().unwrap();
-        let generator = FileStructureGenerator::new(temp.path(), false);
+        let fsh_gen_path = temp.path().join("fsh-generated");
+        let generator = FileStructureGenerator::new(&fsh_gen_path, false);
         generator.initialize().unwrap();
 
         let menu_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -444,7 +443,8 @@ mod tests {
     #[test]
     fn test_resource_relative_path() {
         let temp = TempDir::new().unwrap();
-        let generator = FileStructureGenerator::new(temp.path(), false);
+        let fsh_gen_path = temp.path().join("fsh-generated");
+        let generator = FileStructureGenerator::new(&fsh_gen_path, false);
 
         let path = generator.resource_relative_path("StructureDefinition-test.json");
         assert_eq!(

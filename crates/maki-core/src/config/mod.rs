@@ -70,23 +70,22 @@ pub mod auto_dependencies;
 
 mod loader;
 mod maki_config;
-mod merge;
 mod sushi_config;
 mod unified_config;
 
 // Re-export main types
 pub use loader::ConfigLoader;
 pub use maki_config::{
-    FilesConfiguration, FormatterConfiguration, LinterConfiguration, MakiConfiguration, RuleConfig,
-    RuleSeverity, RulesConfiguration,
+    FilesConfiguration, FormatterConfiguration, LinterConfiguration, RuleConfig, RuleSeverity,
+    RulesConfiguration,
 };
 pub use sushi_config::{
-    parse_dependency, CodeableConcept, Coding, ConfigError, ContactDetail, ContactPoint,
-    DefinitionExtension, DependencyVersion, GlobalProfile, IdSetting, InstanceOptions, MenuItem,
-    MetaProfileSetting, PageDefinition, Parameter, PublisherInfo, ResourceEntry, ResourceGroup,
-    SushiConfiguration, Template, UsageContext,
+    CodeableConcept, Coding, ConfigError, ContactDetail, ContactPoint, DefinitionExtension,
+    DependencyVersion, GlobalProfile, IdSetting, InstanceOptions, MenuItem, MetaProfileSetting,
+    PageDefinition, Parameter, PublisherInfo, ResourceEntry, ResourceGroup, SushiConfiguration,
+    Template, UsageContext, parse_dependency,
 };
-pub use unified_config::UnifiedConfig;
+pub use unified_config::{BuildConfiguration, UnifiedConfig};
 
 // Re-export Result type
 pub use loader::Result;

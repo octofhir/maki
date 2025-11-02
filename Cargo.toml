@@ -41,6 +41,7 @@ clap = { version = "4", features = ["derive", "env"] }
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
+futures = "0.3"
 
 # Parallel processing
 rayon = "1.7"
@@ -65,7 +66,7 @@ notify = "8"
 dashmap = "6"
 
 # Canonical package management
-octofhir-canonical-manager = { version = "0.1.10", default-features = false, features = ["cli"] }
+octofhir-canonical-manager = { version = "0.1.11",default-features = false, features = ["cli"] }
 
 # Testing
 criterion = { version = "0.7", features = ["html_reports"] }

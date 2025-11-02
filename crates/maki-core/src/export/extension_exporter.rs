@@ -332,7 +332,11 @@ impl ExtensionExporter {
                 // PathRule is for type constraints
                 Ok(())
             }
-            Rule::Contains(_) | Rule::Only(_) | Rule::Obeys(_) => {
+            Rule::AddElement(_)
+            | Rule::Contains(_)
+            | Rule::Only(_)
+            | Rule::Obeys(_)
+            | Rule::Mapping(_) => {
                 // TODO: Implement these rule types for extensions
                 Ok(())
             }

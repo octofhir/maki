@@ -94,6 +94,22 @@ enum Commands {
         #[arg(long, help = "Show progress bar during build")]
         progress: bool,
 
+        /// Run linter during build for real-time feedback
+        #[arg(long, help = "Run linter during build (default: false)")]
+        lint: bool,
+
+        /// Strict mode: treat warnings as errors
+        #[arg(long, help = "Treat warnings as errors (requires --lint)")]
+        strict: bool,
+
+        /// Format FSH files before building
+        #[arg(long, help = "Auto-format FSH files before build (default: false)")]
+        format: bool,
+
+        /// Disable incremental compilation cache
+        #[arg(long, help = "Disable build cache (default: cache enabled)")]
+        no_cache: bool,
+
         /// Override configuration values (e.g., --config version:2.0.0)
         #[arg(
             short = 'c',
@@ -447,6 +463,10 @@ async fn run_command(cli: Cli) -> Result<()> {
             preprocessed,
             clean,
             progress,
+            lint,
+            strict,
+            format,
+            no_cache,
             config,
         }) => {
             let config_overrides: std::collections::HashMap<String, String> =
@@ -458,14 +478,16 @@ async fn run_command(cli: Cli) -> Result<()> {
                 preprocessed,
                 clean,
                 progress,
+                lint,
+                strict,
+                format,
+                no_cache,
                 config_overrides,
             )
             .await
         }
 
-        Some(Commands::Init { name, default }) => {
-            commands::init::init_command(name, default).await
-        }
+        Some(Commands::Init { name, default }) => commands::init::init_command(name, default).await,
 
         Some(Commands::Lint {
             paths,
@@ -557,10 +579,9 @@ async fn run_command(cli: Cli) -> Result<()> {
                 force,
                 with_examples,
             } => commands::config_init_command(format, force, with_examples).await,
-            ConfigAction::Migrate {
-                output,
-                yes,
-            } => commands::config::migrate_command(yes, output).await,
+            ConfigAction::Migrate { output, yes } => {
+                commands::config::migrate_command(yes, output).await
+            }
             ConfigAction::Validate { path } => commands::config_validate_command(path).await,
             ConfigAction::Show { resolved } => {
                 commands::config_show_command(resolved, cli.config).await

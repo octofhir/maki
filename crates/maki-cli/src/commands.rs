@@ -14,11 +14,12 @@ pub mod build;
 pub mod config;
 pub mod init;
 
+use maki_core::config::UnifiedConfig;
 use maki_core::{
     AstFormatter, AutofixEngine, CachedFshParser, ConfigLoader, DefaultAutofixEngine,
     DefaultExecutor, DefaultFileDiscovery, DefaultSemanticAnalyzer, ExecutionContext, Executor,
-    FileDiscovery, FixConfig, FormatterConfiguration, MakiConfiguration, Result, Rule,
-    RuleCategory, RuleEngine, RuleMetadata,
+    FileDiscovery, FixConfig, FormatterConfiguration, Result, Rule, RuleCategory, RuleEngine,
+    RuleMetadata,
 };
 use maki_rules::gritql::GritQLRuleLoader;
 use maki_rules::{BuiltinRules, DefaultRuleEngine};
@@ -66,7 +67,7 @@ pub async fn lint_command(
         if let Some(discovered_path) = ConfigLoader::auto_discover(start_path)? {
             ConfigLoader::load_from_file(&discovered_path)?
         } else {
-            MakiConfiguration::default()
+            UnifiedConfig::default()
         }
     };
 
@@ -388,7 +389,7 @@ pub async fn format_command(
         if let Some(discovered_path) = ConfigLoader::auto_discover(start_path)? {
             ConfigLoader::load_from_file(&discovered_path)?
         } else {
-            MakiConfiguration::default()
+            UnifiedConfig::default()
         }
     };
 
@@ -578,7 +579,7 @@ pub async fn rules_list_command(
     let config = if let Some(path) = config_path {
         ConfigLoader::load_from_file(&path)?
     } else {
-        MakiConfiguration::default()
+        UnifiedConfig::default()
     };
 
     // Collect all built-in rules
@@ -824,7 +825,7 @@ pub async fn config_validate_command(path: Option<PathBuf>) -> Result<()> {
     match if let Some(p) = path {
         ConfigLoader::load_from_file(&p)
     } else {
-        ConfigLoader::load(None::<&Path>)
+        ConfigLoader::load(None, None)
     } {
         Ok(config) => {
             println!("✅ Configuration is valid");
@@ -857,7 +858,7 @@ pub async fn config_show_command(resolved: bool, config_path: Option<PathBuf>) -
     let config = if let Some(path) = config_path {
         ConfigLoader::load_from_file(&path)?
     } else {
-        MakiConfiguration::default()
+        UnifiedConfig::default()
     };
 
     if resolved {

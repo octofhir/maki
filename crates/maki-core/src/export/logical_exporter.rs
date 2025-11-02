@@ -335,6 +335,13 @@ impl LogicalExporter {
             Rule::FixedValue(fixed_rule) => {
                 self.apply_fixed_value_rule(structure_def, fixed_rule).await
             }
+            Rule::Mapping(_) => {
+                // Mapping rules are handled by MappingExporter
+                Ok(())
+            }
+            Rule::AddElement(add_rule) => {
+                self.apply_add_element_rule(structure_def, add_rule).await
+            }
             Rule::Path(_) => {
                 // PathRule is for type constraints
                 Ok(())
@@ -539,6 +546,98 @@ impl LogicalExporter {
         };
 
         element.pattern = Some(pattern_map);
+
+        Ok(())
+    }
+
+    /// Apply AddElement rule to add a new element to the logical model/resource
+    ///
+    /// AddElement rules define entirely new elements with types and documentation.
+    /// Example: * name 0..* HumanName "Name(s) of the human"
+    async fn apply_add_element_rule(
+        &self,
+        structure_def: &mut StructureDefinition,
+        rule: &crate::cst::ast::AddElementRule,
+    ) -> Result<(), ExportError> {
+        let path_str = rule
+            .path()
+            .map(|p| p.as_string())
+            .ok_or_else(|| ExportError::MissingRequiredField("path".to_string()))?;
+
+        let cardinality = rule
+            .cardinality()
+            .ok_or_else(|| ExportError::MissingRequiredField("cardinality".to_string()))?;
+
+        let types = rule.types();
+        if types.is_empty() {
+            return Err(ExportError::MissingRequiredField(
+                "element type".to_string(),
+            ));
+        }
+
+        let short = rule.short();
+        let definition = rule.definition();
+
+        debug!("Adding new element: {} with type(s): {:?}", path_str, types);
+
+        // Parse cardinality
+        let parts: Vec<&str> = cardinality.split("..").collect();
+        if parts.len() != 2 {
+            return Err(ExportError::InvalidCardinality(cardinality));
+        }
+
+        let min = parts[0]
+            .parse::<u32>()
+            .map_err(|_| ExportError::InvalidCardinality(cardinality.clone()))?;
+        let max = parts[1].to_string();
+
+        // Build full path
+        let full_path = self.resolve_full_path(structure_def, &path_str).await?;
+
+        // Create new element definition
+        let mut element = ElementDefinition::new(full_path.clone());
+        element.path = full_path.clone();
+        element.min = Some(min);
+        element.max = Some(max);
+
+        // Set type(s)
+        let element_types: Vec<ElementDefinitionType> = types
+            .iter()
+            .map(|type_name| ElementDefinitionType {
+                code: type_name.clone(),
+                profile: None,
+                target_profile: None,
+            })
+            .collect();
+        element.type_ = Some(element_types);
+
+        // Set descriptions
+        if let Some(short_desc) = short {
+            element.short = Some(short_desc);
+        }
+        if let Some(def_desc) = definition {
+            element.definition = Some(def_desc);
+        }
+
+        // Apply flags
+        for flag in rule.flags() {
+            self.apply_flag_to_element(&mut element, &flag)?;
+        }
+
+        // Add element to snapshot
+        if let Some(ref mut snapshot) = structure_def.snapshot {
+            // Insert element in correct position (sorted by path)
+            let insert_pos = snapshot
+                .element
+                .iter()
+                .position(|e| e.path > full_path)
+                .unwrap_or(snapshot.element.len());
+
+            snapshot.element.insert(insert_pos, element);
+            debug!("Inserted new element at position {}", insert_pos);
+        } else {
+            warn!("No snapshot available to add element to");
+        }
 
         Ok(())
     }

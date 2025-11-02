@@ -54,6 +54,7 @@
 //!     - "**/*.draft.fsh"
 //! ```
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -64,14 +65,30 @@ use super::{
     SushiConfiguration,
 };
 
+/// Build configuration type (alias for SushiConfiguration for clarity)
+///
+/// This is the configuration for the build process, containing all SUSHI-compatible fields.
+/// We use an alias to make it clear that this is specifically for build configuration.
+pub type BuildConfiguration = SushiConfiguration;
+
 /// Unified configuration with clean section-based structure
 ///
 /// This is the new MAKI configuration format that organizes all settings
 /// into logical sections while maintaining 100% SUSHI compatibility in the
 /// `build` section.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UnifiedConfig {
+    /// JSON Schema reference for IDE support
+    #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub schema: Option<String>,
+
+    /// Mark this directory as the root (stop upward config search)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Stop config file discovery at this directory")]
+    pub root: Option<bool>,
+
     /// Top-level dependencies (shared across build and linter)
     ///
     /// These dependencies are available to both the build process and linter.
@@ -92,7 +109,7 @@ pub struct UnifiedConfig {
     /// This section contains all fields from sushi-config.yaml, allowing
     /// MAKI to act as a drop-in replacement for SUSHI.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub build: Option<SushiConfiguration>,
+    pub build: Option<BuildConfiguration>,
 
     /// Linter configuration
     ///
@@ -194,6 +211,8 @@ impl UnifiedConfig {
 impl Default for UnifiedConfig {
     fn default() -> Self {
         Self {
+            schema: Some("https://octofhir.github.io/maki/schema/v1.json".to_string()),
+            root: Some(false),
             dependencies: None,
             build: None,
             linter: Some(LinterConfiguration::default()),
@@ -239,6 +258,8 @@ mod tests {
     #[test]
     fn test_unified_config_serialization() {
         let config = UnifiedConfig {
+            schema: None,
+            root: None,
             dependencies: None,
             build: Some(SushiConfiguration {
                 canonical: "http://example.org/fhir/my-ig".to_string(),
@@ -278,8 +299,7 @@ formatter:
   indentSize: 2
 "#;
 
-        let config: UnifiedConfig =
-            serde_yaml::from_str(yaml).expect("Failed to deserialize YAML");
+        let config: UnifiedConfig = serde_yaml::from_str(yaml).expect("Failed to deserialize YAML");
 
         assert!(config.build.is_some());
         let build = config.build.unwrap();
@@ -306,8 +326,7 @@ formatter:
 }
 "#;
 
-        let config: UnifiedConfig =
-            serde_json::from_str(json).expect("Failed to deserialize JSON");
+        let config: UnifiedConfig = serde_json::from_str(json).expect("Failed to deserialize JSON");
 
         assert!(config.build.is_some());
         assert_eq!(
@@ -339,10 +358,7 @@ formatter:
 
         assert!(config.has_build_config());
         assert!(config.is_valid_ig_config());
-        assert_eq!(
-            config.build_config().unwrap().canonical,
-            "http://test.org"
-        );
+        assert_eq!(config.build_config().unwrap().canonical, "http://test.org");
     }
 
     #[test]

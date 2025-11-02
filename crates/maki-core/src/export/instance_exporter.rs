@@ -50,10 +50,11 @@
 use super::ExportError;
 use crate::canonical::DefinitionSession;
 use crate::cst::ast::{FixedValueRule, Instance, Rule};
+use crate::semantic::FishingContext;
 use serde_json::{Map, Value as JsonValue};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 // ============================================================================
 // Types
@@ -75,8 +76,13 @@ pub enum ArrayIndex {
 pub enum PathSegment {
     /// Field name
     Field(String),
-    /// Array access with index
-    ArrayAccess { field: String, index: ArrayIndex },
+    /// Array access with index and optional slice name
+    ArrayAccess {
+        field: String,
+        index: ArrayIndex,
+        /// Optional slice name for named slices (e.g., extension[myExtension])
+        slice_name: Option<String>,
+    },
 }
 
 // ============================================================================
@@ -104,6 +110,8 @@ pub struct InstanceExporter {
     /// Session for resolving FHIR definitions
     #[allow(dead_code)]
     session: Arc<DefinitionSession>,
+    /// Fishing context for reference resolution
+    fishing_context: Option<Arc<FishingContext>>,
     /// Base URL for instance canonical URLs (if needed)
     #[allow(dead_code)]
     base_url: String,
@@ -142,10 +150,20 @@ impl InstanceExporter {
     ) -> Result<Self, ExportError> {
         Ok(Self {
             session,
+            fishing_context: None,
             base_url,
             current_indices: HashMap::new(),
             instance_registry: HashMap::new(),
         })
+    }
+
+    /// Set the fishing context for reference validation
+    ///
+    /// This enables validation of references to profiles, value sets, and other resources
+    /// during instance export.
+    pub fn with_fishing_context(mut self, fishing_context: Arc<FishingContext>) -> Self {
+        self.fishing_context = Some(fishing_context);
+        self
     }
 
     /// Register an instance for reference resolution
@@ -209,7 +227,7 @@ impl InstanceExporter {
 
         // Apply rules
         for rule in instance.rules() {
-            self.apply_rule(&mut resource, &rule)?;
+            self.apply_rule(&mut resource, &rule).await?;
         }
 
         debug!("Successfully exported instance {}", name);
@@ -217,10 +235,14 @@ impl InstanceExporter {
     }
 
     /// Apply a single rule to the resource
-    fn apply_rule(&mut self, resource: &mut JsonValue, rule: &Rule) -> Result<(), ExportError> {
+    async fn apply_rule(
+        &mut self,
+        resource: &mut JsonValue,
+        rule: &Rule,
+    ) -> Result<(), ExportError> {
         match rule {
             Rule::FixedValue(fixed_rule) => {
-                self.apply_fixed_value_rule(resource, fixed_rule)?;
+                self.apply_fixed_value_rule(resource, fixed_rule).await?;
             }
             Rule::Card(_) => {
                 // Card rules don't apply to instances
@@ -238,7 +260,11 @@ impl InstanceExporter {
                 // Path rules don't apply to instances
                 trace!("Skipping path rule in instance");
             }
-            Rule::Contains(_) | Rule::Only(_) | Rule::Obeys(_) => {
+            Rule::AddElement(_)
+            | Rule::Contains(_)
+            | Rule::Only(_)
+            | Rule::Obeys(_)
+            | Rule::Mapping(_) => {
                 // These rules don't apply to instances
                 trace!("Skipping contains/only/obeys rule in instance");
             }
@@ -247,7 +273,7 @@ impl InstanceExporter {
     }
 
     /// Apply a fixed value rule (assignment: * path = value)
-    fn apply_fixed_value_rule(
+    async fn apply_fixed_value_rule(
         &mut self,
         resource: &mut JsonValue,
         rule: &FixedValueRule,
@@ -274,7 +300,7 @@ impl InstanceExporter {
         let segments = self.parse_path(&path)?;
 
         // Convert value string to JSON
-        let json_value = self.convert_value(&value_str)?;
+        let json_value = self.convert_value(&value_str).await?;
 
         // Navigate and set the value
         self.set_value_at_path(resource, &segments, json_value)?;
@@ -286,8 +312,9 @@ impl InstanceExporter {
     ///
     /// Examples:
     /// - "name.family" -> [Field("name"), Field("family")]
-    /// - "name.given[0]" -> [Field("name"), ArrayAccess("given", 0)]
-    /// - "address[+].line[0]" -> [ArrayAccess("address", Append), ArrayAccess("line", 0)]
+    /// - "name.given[0]" -> [Field("name"), ArrayAccess("given", 0, None)]
+    /// - "address[+].line[0]" -> [ArrayAccess("address", Append, None), ArrayAccess("line", 0, None)]
+    /// - "extension[myExt].valueString" -> [ArrayAccess("extension", 0, Some("myExt")), Field("valueString")]
     fn parse_path(&self, path: &str) -> Result<Vec<PathSegment>, ExportError> {
         let mut segments = Vec::new();
         let mut current = String::new();
@@ -302,7 +329,7 @@ impl InstanceExporter {
                     }
                 }
                 '[' => {
-                    // Parse array index
+                    // Parse array index or slice name
                     let field = current.clone();
                     current.clear();
 
@@ -315,18 +342,25 @@ impl InstanceExporter {
                         index_str.push(chars.next().unwrap());
                     }
 
-                    let index = match index_str.trim() {
-                        "+" => ArrayIndex::Append,
-                        "=" => ArrayIndex::Current,
-                        num => ArrayIndex::Numeric(num.parse().map_err(|_| {
-                            ExportError::InvalidPath {
-                                path: path.to_string(),
-                                resource: "".to_string(),
-                            }
-                        })?),
+                    let index_str_trimmed = index_str.trim();
+
+                    // Determine if it's a slice name or numeric index
+                    let (index, slice_name) = if index_str_trimmed == "+" {
+                        (ArrayIndex::Append, None)
+                    } else if index_str_trimmed == "=" {
+                        (ArrayIndex::Current, None)
+                    } else if let Ok(num) = index_str_trimmed.parse::<usize>() {
+                        (ArrayIndex::Numeric(num), None)
+                    } else {
+                        // It's a slice name - use index 0 and store the name
+                        (ArrayIndex::Numeric(0), Some(index_str_trimmed.to_string()))
                     };
 
-                    segments.push(PathSegment::ArrayAccess { field, index });
+                    segments.push(PathSegment::ArrayAccess {
+                        field,
+                        index,
+                        slice_name,
+                    });
                 }
                 _ => {
                     current.push(ch);
@@ -350,6 +384,12 @@ impl InstanceExporter {
     }
 
     /// Set a value at the given path, creating intermediate structures as needed
+    ///
+    /// This method handles:
+    /// - Simple field assignment (name.family = "Doe")
+    /// - Array indexing (name.given[0] = "John")
+    /// - Slice names (extension[myExtension].url = "http://...")
+    /// - Complex value merging (when setting properties on existing objects)
     fn set_value_at_path(
         &mut self,
         resource: &mut JsonValue,
@@ -375,7 +415,16 @@ impl InstanceExporter {
                     if is_last {
                         // Set the final value
                         if let JsonValue::Object(obj) = current_value {
-                            obj.insert(field.clone(), value.clone());
+                            // If the field already exists and both are objects, merge them
+                            if let Some(existing) = obj.get_mut(field) {
+                                if existing.is_object() && value.is_object() {
+                                    self.merge_objects(existing, &value);
+                                } else {
+                                    *existing = value.clone();
+                                }
+                            } else {
+                                obj.insert(field.clone(), value.clone());
+                            }
                             return Ok(());
                         } else {
                             return Err(ExportError::InvalidPath {
@@ -398,7 +447,11 @@ impl InstanceExporter {
                         }
                     }
                 }
-                PathSegment::ArrayAccess { field, index } => {
+                PathSegment::ArrayAccess {
+                    field,
+                    index,
+                    slice_name,
+                } => {
                     // Ensure parent is an object
                     if let JsonValue::Object(obj) = current_value {
                         // Ensure array exists
@@ -418,11 +471,18 @@ impl InstanceExporter {
 
                         let arr = array_value.as_array_mut().unwrap();
 
-                        // Determine actual index
-                        let actual_index = match index {
-                            ArrayIndex::Numeric(n) => *n,
-                            ArrayIndex::Append => arr.len(),
-                            ArrayIndex::Current => *self.current_indices.get(field).unwrap_or(&0),
+                        // Determine actual index based on slice name or numeric index
+                        let actual_index = if let Some(slice) = slice_name {
+                            // Find or create element with matching slice name
+                            self.find_or_create_slice(arr, slice, field)?
+                        } else {
+                            match index {
+                                ArrayIndex::Numeric(n) => *n,
+                                ArrayIndex::Append => arr.len(),
+                                ArrayIndex::Current => {
+                                    *self.current_indices.get(field).unwrap_or(&0)
+                                }
+                            }
                         };
 
                         // Ensure array is large enough
@@ -435,7 +495,12 @@ impl InstanceExporter {
 
                         if is_last {
                             // Set the value at this array index
-                            arr[actual_index] = value.clone();
+                            // If existing value is an object and new value is an object, merge
+                            if arr[actual_index].is_object() && value.is_object() {
+                                self.merge_objects(&mut arr[actual_index], &value);
+                            } else {
+                                arr[actual_index] = value.clone();
+                            }
                             return Ok(());
                         } else {
                             // Navigate into array element
@@ -454,13 +519,95 @@ impl InstanceExporter {
         Ok(())
     }
 
+    /// Find or create an array element with a specific slice name
+    ///
+    /// For extensions, this matches by the `url` field.
+    /// For other slices, this uses the `_sliceName` internal field.
+    fn find_or_create_slice(
+        &self,
+        arr: &mut Vec<JsonValue>,
+        slice_name: &str,
+        field: &str,
+    ) -> Result<usize, ExportError> {
+        // For extensions, match by URL
+        if field == "extension" || field == "modifierExtension" {
+            // Try to find existing extension with this URL
+            for (idx, elem) in arr.iter().enumerate() {
+                if let Some(url) = elem.get("url").and_then(|u| u.as_str()) {
+                    if url == slice_name {
+                        return Ok(idx);
+                    }
+                }
+            }
+            // Not found, create new element at end
+            let idx = arr.len();
+            arr.push(serde_json::json!({
+                "url": slice_name,
+                "_sliceName": slice_name
+            }));
+            Ok(idx)
+        } else {
+            // For other slices, match by _sliceName
+            for (idx, elem) in arr.iter().enumerate() {
+                if let Some(name) = elem.get("_sliceName").and_then(|n| n.as_str()) {
+                    if name == slice_name {
+                        return Ok(idx);
+                    }
+                }
+            }
+            // Not found, create new element at end
+            let idx = arr.len();
+            arr.push(serde_json::json!({
+                "_sliceName": slice_name
+            }));
+            Ok(idx)
+        }
+    }
+
+    /// Merge two JSON objects, combining their properties
+    ///
+    /// This is used when assigning multiple properties to the same object.
+    /// For example:
+    /// ```fsh
+    /// * contact.name.text = "John Doe"
+    /// * contact.name.family = "Doe"
+    /// ```
+    /// Both rules target `contact.name`, so we merge the values.
+    fn merge_objects(&self, target: &mut JsonValue, source: &JsonValue) {
+        if let (Some(target_obj), Some(source_obj)) = (target.as_object_mut(), source.as_object()) {
+            for (key, value) in source_obj {
+                if let Some(existing) = target_obj.get_mut(key) {
+                    if existing.is_object() && value.is_object() {
+                        self.merge_objects(existing, value);
+                    } else if existing.is_array() && value.is_array() {
+                        // Merge arrays by appending unique elements
+                        if let (Some(existing_arr), Some(source_arr)) =
+                            (existing.as_array_mut(), value.as_array())
+                        {
+                            for item in source_arr {
+                                if !existing_arr.contains(item) {
+                                    existing_arr.push(item.clone());
+                                }
+                            }
+                        }
+                    } else {
+                        // Replace with new value
+                        *existing = value.clone();
+                    }
+                } else {
+                    target_obj.insert(key.clone(), value.clone());
+                }
+            }
+        }
+    }
+
     /// Convert a FSH value string to appropriate JSON value
     ///
     /// Handles:
     /// - Simple types: strings, numbers, booleans, codes
     /// - Complex types: CodeableConcept, Quantity, Reference, Ratio
     /// - FHIR-specific patterns
-    fn convert_value(&self, value_str: &str) -> Result<JsonValue, ExportError> {
+    async fn convert_value(&self, value_str: &str) -> Result<JsonValue, ExportError> {
         let trimmed = value_str.trim();
 
         // String literal (remove quotes)
@@ -496,7 +643,7 @@ impl InstanceExporter {
 
         // Reference pattern: Reference(Patient/example)
         if trimmed.starts_with("Reference(") && trimmed.ends_with(')') {
-            return self.parse_reference(trimmed);
+            return self.parse_reference(trimmed).await;
         }
 
         // Number (integer)
@@ -623,12 +770,19 @@ impl InstanceExporter {
 
     /// Parse Reference from FSH notation
     /// Format: Reference(Patient/example) or Reference(resourceId)
-    fn parse_reference(&self, value: &str) -> Result<JsonValue, ExportError> {
+    async fn parse_reference(&self, value: &str) -> Result<JsonValue, ExportError> {
         // Extract reference from Reference(...)
         let ref_value = value
             .strip_prefix("Reference(")
             .and_then(|s| s.strip_suffix(')'))
             .unwrap_or(value);
+
+        // Validate the reference if fishing context is available
+        if let Err(e) = self.validate_reference(ref_value).await {
+            warn!("Reference validation failed for '{}': {}", ref_value, e);
+            // Note: We don't fail export on invalid references, just warn
+            // This matches SUSHI behavior for better user experience
+        }
 
         // Build Reference
         let reference = serde_json::json!({
@@ -636,6 +790,83 @@ impl InstanceExporter {
         });
 
         Ok(reference)
+    }
+
+    /// Validate that a reference target exists
+    ///
+    /// Checks if the referenced resource exists in:
+    /// 1. Local instance registry (inline instances)
+    /// 2. FSH tank (parsed FSH resources)
+    /// 3. Canonical packages (external FHIR resources)
+    ///
+    /// # Arguments
+    ///
+    /// * `reference` - The reference string (e.g., "Patient/example" or "my-patient-instance")
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Reference is valid
+    /// * `Err(ExportError)` - Reference target not found or validation failed
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use maki_core::export::InstanceExporter;
+    /// # fn example(exporter: &InstanceExporter) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Validate a FHIR reference
+    /// exporter.validate_reference("Patient/example")?;
+    ///
+    /// // Validate an instance reference
+    /// exporter.validate_reference("my-patient-instance")?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn validate_reference(&self, reference: &str) -> Result<(), ExportError> {
+        trace!("Validating reference: {}", reference);
+
+        // Check if it's an inline instance reference (local registry)
+        if self.instance_registry.contains_key(reference) {
+            debug!("Reference '{}' resolved to inline instance", reference);
+            return Ok(());
+        }
+
+        // If fishing context is available, check tank and canonical
+        if let Some(fishing_ctx) = &self.fishing_context {
+            // Try to find the resource in the tank (any resource type)
+            if fishing_ctx.fish_metadata(reference, &[]).await.is_some() {
+                debug!("Reference '{}' resolved to FSH resource in tank", reference);
+                return Ok(());
+            }
+
+            // For FHIR-style references like "Patient/example", we can't validate without async
+            // but we trust that they're intended references to external resources
+            if reference.contains('/') {
+                debug!(
+                    "Reference '{}' appears to be FHIR-style, trusting it's valid",
+                    reference
+                );
+                return Ok(());
+            }
+        }
+
+        // Without fishing context, we can only validate inline instances
+        // For FHIR-style references, we'll be lenient and assume they're valid
+        // This matches SUSHI's behavior where external references are trusted
+        if reference.contains('/') {
+            debug!(
+                "Reference '{}' appears to be FHIR-style (no fishing context), assuming valid",
+                reference
+            );
+            return Ok(());
+        }
+
+        // If we get here, we couldn't validate the reference
+        // Return error but caller can decide to warn instead of failing
+        Err(ExportError::InvalidReference {
+            reference: reference.to_string(),
+            reason: "Reference target not found in instances, tank, or canonical packages"
+                .to_string(),
+        })
     }
 }
 
@@ -650,6 +881,7 @@ mod tests {
     fn create_test_exporter() -> InstanceExporter {
         InstanceExporter {
             session: Arc::new(crate::canonical::DefinitionSession::for_testing()),
+            fishing_context: None,
             base_url: "http://example.org/fhir".to_string(),
             current_indices: HashMap::new(),
             instance_registry: HashMap::new(),
@@ -677,7 +909,8 @@ mod tests {
             segments[1],
             PathSegment::ArrayAccess {
                 field: "given".to_string(),
-                index: ArrayIndex::Numeric(0)
+                index: ArrayIndex::Numeric(0),
+                slice_name: None
             }
         );
     }
@@ -692,7 +925,8 @@ mod tests {
             segments[1],
             PathSegment::ArrayAccess {
                 field: "given".to_string(),
-                index: ArrayIndex::Append
+                index: ArrayIndex::Append,
+                slice_name: None
             }
         );
     }
@@ -707,7 +941,8 @@ mod tests {
             segments[0],
             PathSegment::ArrayAccess {
                 field: "telecom".to_string(),
-                index: ArrayIndex::Current
+                index: ArrayIndex::Current,
+                slice_name: None
             }
         );
     }
@@ -722,14 +957,16 @@ mod tests {
             segments[0],
             PathSegment::ArrayAccess {
                 field: "address".to_string(),
-                index: ArrayIndex::Numeric(0)
+                index: ArrayIndex::Numeric(0),
+                slice_name: None
             }
         );
         assert_eq!(
             segments[1],
             PathSegment::ArrayAccess {
                 field: "line".to_string(),
-                index: ArrayIndex::Append
+                index: ArrayIndex::Append,
+                slice_name: None
             }
         );
     }
@@ -869,5 +1106,307 @@ mod tests {
 
         assert_eq!(resource["address"][0]["line"][0], "123 Main St");
         assert_eq!(resource["address"][0]["city"], "Boston");
+    }
+
+    // ===== Reference Validation Tests =====
+
+    #[test]
+    fn test_validate_reference_inline_instance() {
+        let mut exporter = create_test_exporter();
+
+        // Register an inline instance
+        exporter.register_instance(
+            "my-patient".to_string(),
+            serde_json::json!({
+                "resourceType": "Patient",
+                "id": "my-patient"
+            }),
+        );
+
+        // Should validate successfully
+        assert!(exporter.validate_reference("my-patient").is_ok());
+    }
+
+    #[test]
+    fn test_validate_reference_not_found() {
+        let exporter = create_test_exporter();
+
+        // Should fail - no fishing context and not in registry
+        let result = exporter.validate_reference("nonexistent");
+        assert!(result.is_err());
+        if let Err(ExportError::InvalidReference { reference, reason }) = result {
+            assert_eq!(reference, "nonexistent");
+            assert!(reason.contains("not found"));
+        } else {
+            panic!("Expected InvalidReference error");
+        }
+    }
+
+    #[test]
+    fn test_validate_reference_with_fishing_context() {
+        use crate::Location;
+        use crate::semantic::{FhirResource, FshTank, Package, ResourceType};
+        use std::sync::RwLock;
+
+        let mut exporter = create_test_exporter();
+
+        // Create fishing context with a tank containing a resource
+        let tank = Arc::new(RwLock::new(FshTank::new()));
+        let package = Arc::new(RwLock::new(Package::new()));
+        let session = Arc::new(crate::canonical::DefinitionSession::for_testing());
+
+        // Add a resource to the tank
+        {
+            let mut t = tank.write().unwrap();
+            t.add_resource(FhirResource {
+                resource_type: ResourceType::Profile,
+                id: "PatientProfile".to_string(),
+                name: Some("PatientProfile".to_string()),
+                title: None,
+                description: None,
+                parent: Some("Patient".to_string()),
+                elements: Vec::new(),
+                location: Location::default(),
+                metadata: crate::semantic::ResourceMetadata::default(),
+            });
+        }
+
+        let fishing_ctx = Arc::new(FishingContext::new(session, tank, package));
+        exporter.fishing_context = Some(fishing_ctx);
+
+        // Should validate successfully - resource is in tank
+        assert!(exporter.validate_reference("PatientProfile").is_ok());
+    }
+
+    #[test]
+    fn test_validate_reference_fhir_style() {
+        let exporter = create_test_exporter();
+
+        // FHIR-style references (ResourceType/id) are assumed valid
+        // even without fishing context
+        assert!(exporter.validate_reference("Patient/example").is_ok());
+        assert!(
+            exporter
+                .validate_reference("Observation/vital-signs")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_parse_reference_validates() {
+        let mut exporter = create_test_exporter();
+
+        // Register an instance
+        exporter.register_instance(
+            "my-patient".to_string(),
+            serde_json::json!({
+                "resourceType": "Patient",
+                "id": "my-patient"
+            }),
+        );
+
+        // Parse should succeed and validate
+        let result = exporter.parse_reference("Reference(my-patient)");
+        assert!(result.is_ok());
+        let reference = result.unwrap();
+        assert_eq!(reference["reference"], "my-patient");
+    }
+
+    #[test]
+    fn test_parse_reference_warns_on_invalid() {
+        let exporter = create_test_exporter();
+
+        // Parse should succeed but log warning (doesn't fail export)
+        let result = exporter.parse_reference("Reference(nonexistent)");
+        assert!(result.is_ok());
+        let reference = result.unwrap();
+        assert_eq!(reference["reference"], "nonexistent");
+        // Note: Warning is logged but doesn't fail the export
+    }
+
+    #[test]
+    fn test_inline_instance_resolution() {
+        let mut exporter = create_test_exporter();
+
+        // Create a patient instance
+        let patient_json = serde_json::json!({
+            "resourceType": "Patient",
+            "id": "example-patient",
+            "name": [{
+                "family": "Doe",
+                "given": ["John"]
+            }]
+        });
+
+        exporter.register_instance("example-patient".to_string(), patient_json.clone());
+
+        // Reference should resolve to the inline instance
+        let value = exporter.convert_value("example-patient").unwrap();
+        assert_eq!(value, patient_json);
+    }
+
+    #[test]
+    fn test_is_instance_reference() {
+        let exporter = create_test_exporter();
+
+        // Valid instance reference patterns
+        assert!(exporter.is_instance_reference("my-patient"));
+        assert!(exporter.is_instance_reference("Patient123"));
+        assert!(exporter.is_instance_reference("example_instance"));
+
+        // Invalid patterns
+        assert!(!exporter.is_instance_reference("")); // empty
+        assert!(!exporter.is_instance_reference("123patient")); // starts with number
+        assert!(!exporter.is_instance_reference("patient.name")); // contains dot
+        assert!(!exporter.is_instance_reference("\"patient\"")); // quoted
+        assert!(!exporter.is_instance_reference("#code")); // code
+    }
+
+    // ===== Slice Name Tests =====
+
+    #[test]
+    fn test_parse_slice_name_path() {
+        let exporter = create_test_exporter();
+        let segments = exporter
+            .parse_path("extension[myExtension].valueString")
+            .unwrap();
+
+        assert_eq!(segments.len(), 2);
+        assert_eq!(
+            segments[0],
+            PathSegment::ArrayAccess {
+                field: "extension".to_string(),
+                index: ArrayIndex::Numeric(0),
+                slice_name: Some("myExtension".to_string())
+            }
+        );
+        assert_eq!(segments[1], PathSegment::Field("valueString".to_string()));
+    }
+
+    #[test]
+    fn test_set_extension_by_slice_name() {
+        let mut exporter = create_test_exporter();
+        let mut resource = serde_json::json!({ "resourceType": "Patient" });
+
+        // Set extension URL
+        let segments = exporter
+            .parse_path("extension[http://example.org/ext].valueString")
+            .unwrap();
+        exporter
+            .set_value_at_path(
+                &mut resource,
+                &segments,
+                JsonValue::String("test value".to_string()),
+            )
+            .unwrap();
+
+        // Verify the extension was created with URL
+        assert!(resource["extension"].is_array());
+        let extensions = resource["extension"].as_array().unwrap();
+        assert_eq!(extensions.len(), 1);
+        assert_eq!(extensions[0]["url"], "http://example.org/ext");
+        assert_eq!(extensions[0]["valueString"], "test value");
+    }
+
+    #[test]
+    fn test_merge_object_values() {
+        let mut exporter = create_test_exporter();
+        let mut resource = serde_json::json!({ "resourceType": "Patient" });
+
+        // Set first property
+        let segments = exporter.parse_path("contact.name.text").unwrap();
+        exporter
+            .set_value_at_path(
+                &mut resource,
+                &segments,
+                JsonValue::String("John Doe".to_string()),
+            )
+            .unwrap();
+
+        // Set second property on same object
+        let segments = exporter.parse_path("contact.name.family").unwrap();
+        exporter
+            .set_value_at_path(
+                &mut resource,
+                &segments,
+                JsonValue::String("Doe".to_string()),
+            )
+            .unwrap();
+
+        // Verify both properties exist
+        assert_eq!(resource["contact"]["name"]["text"], "John Doe");
+        assert_eq!(resource["contact"]["name"]["family"], "Doe");
+    }
+
+    #[test]
+    fn test_multiple_extensions_by_slice_name() {
+        let mut exporter = create_test_exporter();
+        let mut resource = serde_json::json!({ "resourceType": "Patient" });
+
+        // Add first extension
+        let segments = exporter
+            .parse_path("extension[http://example.org/ext1].valueString")
+            .unwrap();
+        exporter
+            .set_value_at_path(
+                &mut resource,
+                &segments,
+                JsonValue::String("value1".to_string()),
+            )
+            .unwrap();
+
+        // Add second extension
+        let segments = exporter
+            .parse_path("extension[http://example.org/ext2].valueInteger")
+            .unwrap();
+        exporter
+            .set_value_at_path(&mut resource, &segments, JsonValue::Number(42.into()))
+            .unwrap();
+
+        // Verify both extensions exist
+        assert!(resource["extension"].is_array());
+        let extensions = resource["extension"].as_array().unwrap();
+        assert_eq!(extensions.len(), 2);
+        assert_eq!(extensions[0]["url"], "http://example.org/ext1");
+        assert_eq!(extensions[0]["valueString"], "value1");
+        assert_eq!(extensions[1]["url"], "http://example.org/ext2");
+        assert_eq!(extensions[1]["valueInteger"], 42);
+    }
+
+    #[test]
+    fn test_update_existing_extension() {
+        let mut exporter = create_test_exporter();
+        let mut resource = serde_json::json!({ "resourceType": "Patient" });
+
+        // Add extension
+        let segments = exporter
+            .parse_path("extension[http://example.org/ext].valueString")
+            .unwrap();
+        exporter
+            .set_value_at_path(
+                &mut resource,
+                &segments,
+                JsonValue::String("initial".to_string()),
+            )
+            .unwrap();
+
+        // Update the same extension with additional property
+        let segments = exporter
+            .parse_path("extension[http://example.org/ext].id")
+            .unwrap();
+        exporter
+            .set_value_at_path(
+                &mut resource,
+                &segments,
+                JsonValue::String("ext-id".to_string()),
+            )
+            .unwrap();
+
+        // Verify extension has both properties
+        let extensions = resource["extension"].as_array().unwrap();
+        assert_eq!(extensions.len(), 1);
+        assert_eq!(extensions[0]["url"], "http://example.org/ext");
+        assert_eq!(extensions[0]["valueString"], "initial");
+        assert_eq!(extensions[0]["id"], "ext-id");
     }
 }

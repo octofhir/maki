@@ -36,9 +36,7 @@ fn init_global_thread_pool(threads: usize) {
     });
 }
 
-use crate::{
-    CompiledRule, Diagnostic, MakiConfiguration, MakiError, Result, RuleEngine, SemanticAnalyzer,
-};
+use crate::{CompiledRule, Diagnostic, MakiError, Result, RuleEngine, SemanticAnalyzer};
 
 /// Progress reporting callback type
 pub type ProgressCallback = Arc<dyn Fn(ProgressInfo) + Send + Sync>;
@@ -246,7 +244,7 @@ impl BackpressureController {
 /// Execution context containing configuration and shared resources
 pub struct ExecutionContext {
     /// Linting configuration
-    pub config: MakiConfiguration,
+    pub config: crate::config::UnifiedConfig,
     /// Compiled rules for execution
     pub rules: Vec<CompiledRule>,
     /// Thread pool configuration
@@ -265,7 +263,7 @@ pub struct ExecutionContext {
 
 impl ExecutionContext {
     /// Create a new execution context
-    pub fn new(config: MakiConfiguration, rules: Vec<CompiledRule>) -> Self {
+    pub fn new(config: crate::config::UnifiedConfig, rules: Vec<CompiledRule>) -> Self {
         Self {
             config,
             rules,
@@ -688,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_execution_context_builder() {
-        let config = MakiConfiguration::default();
+        let config = crate::config::UnifiedConfig::default();
         let rules = vec![];
 
         let context = ExecutionContext::new(config, rules)

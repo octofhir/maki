@@ -36,7 +36,7 @@
 //! ```
 
 use super::fhir_types::*;
-use crate::canonical::DefinitionSession;
+use crate::canonical::{CanonicalLoaderError, DefinitionSession};
 use crate::cst::ast::{
     CardRule, ContainsRule, FixedValueRule, FlagRule, ObeysRule, OnlyRule, Profile, Rule,
     ValueSetRule,
@@ -67,6 +67,27 @@ const UNINHERITED_EXTENSIONS: &[&str] = &[
     "http://hl7.org/fhir/StructureDefinition/resource-lastReviewDate",
 ];
 use tracing::{debug, trace, warn};
+
+/// Convert CamelCase to kebab-case (e.g., "USCorePatient" -> "us-core-patient")
+fn camel_to_kebab(s: &str) -> String {
+    let mut result = String::new();
+    let mut prev_was_lower = false;
+
+    for (i, ch) in s.chars().enumerate() {
+        if ch.is_uppercase() {
+            if i > 0 && prev_was_lower {
+                result.push('-');
+            }
+            result.push(ch.to_ascii_lowercase());
+            prev_was_lower = false;
+        } else {
+            result.push(ch);
+            prev_was_lower = ch.is_lowercase();
+        }
+    }
+
+    result
+}
 
 /// Profile export errors
 #[derive(Debug, Error)]
@@ -113,6 +134,9 @@ pub enum ExportError {
 
     #[error("Type mismatch: expected {expected}, got {actual}")]
     TypeMismatch { expected: String, actual: String },
+
+    #[error("Invalid reference: {reference} - {reason}")]
+    InvalidReference { reference: String, reason: String },
 }
 
 /// Profile exporter
@@ -206,19 +230,26 @@ impl ProfileExporter {
         // 2. Get base StructureDefinition
         let mut structure_def = self.get_base_structure_definition(&parent).await?;
 
+        // FIX Bug 2: Set baseDefinition to point to the parent, not parent's parent
+        let base_definition_url = format!("http://hl7.org/fhir/StructureDefinition/{}", parent);
+        structure_def.base_definition = Some(base_definition_url);
+
         // 3. Apply metadata
         self.apply_metadata(&mut structure_def, profile)?;
 
-        // 4. Make a copy of the base snapshot for comparison
-        let base_snapshot = structure_def.snapshot.clone();
+        // 4. CAPTURE ORIGINAL STATE (SUSHI approach)
+        // After metadata is applied but BEFORE rules are applied,
+        // capture the snapshot. This is what we'll compare against to generate differential.
+        let original_snapshot = structure_def.snapshot.clone();
+        let original_mappings = structure_def.mapping.clone();
 
-        if let Some(ref snap) = base_snapshot {
-            debug!("Base snapshot has {} elements", snap.element.len());
+        if let Some(ref snap) = original_snapshot {
+            debug!("Original snapshot has {} elements", snap.element.len());
         } else {
-            debug!("Base snapshot is None");
+            debug!("Original snapshot is None");
         }
 
-        // 5. Apply all rules to snapshot
+        // 5. Apply all rules to snapshot (modifying in-place)
         for rule in profile.rules() {
             if let Err(e) = self.apply_rule(&mut structure_def, &rule).await {
                 warn!("Failed to apply rule: {}", e);
@@ -230,9 +261,13 @@ impl ProfileExporter {
             debug!("Modified snapshot has {} elements", snap.element.len());
         }
 
-        // 6. Generate differential directly from FSH rules (SUSHI-style)
-        structure_def.differential =
-            Some(self.generate_differential_from_rules(profile, &structure_def.type_field));
+        // 6. Generate differential by comparing current snapshot with original (SUSHI approach)
+        structure_def.differential = Some(self.generate_differential_from_snapshot(
+            &original_snapshot,
+            &structure_def.snapshot,
+            &original_mappings,
+            &structure_def.mapping,
+        ));
 
         // 7. Clear snapshot if not requested (to match SUSHI default behavior)
         if !self.generate_snapshots {
@@ -311,31 +346,130 @@ impl ProfileExporter {
     ) -> Result<StructureDefinition, ExportError> {
         debug!("Resolving parent: {}", parent);
 
-        // Try to resolve as a canonical URL first, then by type name
-        let canonical_url = if parent.starts_with("http://") || parent.starts_with("https://") {
-            parent.to_string()
+        // 1. If canonical provided explicitly, resolve immediately
+        if parent.starts_with("http://") || parent.starts_with("https://") {
+            if let Some(sd) = self
+                .resolve_structure_definition_from_canonical(parent)
+                .await?
+            {
+                debug!("Resolved parent via canonical URL {} → {}", parent, sd.url);
+                return Ok(sd);
+            }
+
+            return Err(ExportError::ParentNotFound(format!(
+                "{}: canonical URL {} not found",
+                parent, parent
+            )));
+        }
+
+        // 2. Try resolving as a FHIR core profile (fast path, avoids expensive index search)
+        let core_candidate = format!("http://hl7.org/fhir/StructureDefinition/{}", parent);
+        if let Some(sd) = self
+            .resolve_structure_definition_from_canonical(&core_candidate)
+            .await?
+        {
+            debug!(
+                "Resolved parent {} using FHIR core canonical {}",
+                parent, core_candidate
+            );
+            return Ok(sd);
+        }
+
+        // 3. Fallback to searching by ID/name via canonical manager index
+        debug!("Searching for StructureDefinition with name/id: {}", parent);
+
+        // Try multiple search strategies:
+        // 1. Search by exact ID match (e.g., "us-core-patient")
+        // 2. Search by name match (e.g., "USCorePatient")
+        // 3. Convert camelCase to kebab-case and search (e.g., "USCorePatient" -> "us-core-patient")
+
+        let canonical_from_search = if let Ok(Some(resource)) = self
+            .session
+            .resource_by_type_and_id("StructureDefinition", parent)
+            .await
+        {
+            debug!("Found parent by exact ID: {}", parent);
+            resource
+                .content
+                .as_object()
+                .and_then(|obj| obj.get("url"))
+                .and_then(|url| url.as_str())
+                .ok_or_else(|| {
+                    ExportError::CanonicalError(format!(
+                        "Found resource but missing url field: {}",
+                        parent
+                    ))
+                })?
+                .to_string()
         } else {
-            // Assume it's a FHIR core resource type
-            format!("http://hl7.org/fhir/StructureDefinition/{}", parent)
+            let kebab_case = camel_to_kebab(parent);
+            debug!("Trying kebab-case variant: {}", kebab_case);
+
+            if let Ok(Some(resource)) = self
+                .session
+                .resource_by_type_and_id("StructureDefinition", &kebab_case)
+                .await
+            {
+                debug!("Found parent by kebab-case ID: {}", kebab_case);
+                resource
+                    .content
+                    .as_object()
+                    .and_then(|obj| obj.get("url"))
+                    .and_then(|url| url.as_str())
+                    .ok_or_else(|| {
+                        ExportError::CanonicalError(format!(
+                            "Found resource but missing url field: {}",
+                            kebab_case
+                        ))
+                    })?
+                    .to_string()
+            } else {
+                debug!(
+                    "No match found via search for {}, assuming FHIR core canonical",
+                    parent
+                );
+                core_candidate
+            }
         };
 
-        let resource = self
-            .session
-            .resolve(&canonical_url)
-            .await
-            .map_err(|e| ExportError::ParentNotFound(format!("{}: {}", parent, e)))?;
+        if let Some(sd) = self
+            .resolve_structure_definition_from_canonical(&canonical_from_search)
+            .await?
+        {
+            debug!(
+                "Resolved parent {} via canonical {}",
+                parent, canonical_from_search
+            );
+            Ok(sd)
+        } else {
+            Err(ExportError::ParentNotFound(format!(
+                "{}: canonical resolution failed for {}",
+                parent, canonical_from_search
+            )))
+        }
+    }
 
-        // Parse JSON into StructureDefinition
-        let structure_def: StructureDefinition =
-            serde_json::from_value((*resource.content).clone()).map_err(|e| {
-                ExportError::CanonicalError(format!(
-                    "Failed to parse StructureDefinition for {}: {}",
-                    parent, e
-                ))
-            })?;
-
-        debug!("Resolved parent: {} ({})", parent, structure_def.url);
-        Ok(structure_def)
+    async fn resolve_structure_definition_from_canonical(
+        &self,
+        canonical_url: &str,
+    ) -> Result<Option<StructureDefinition>, ExportError> {
+        match self.session.resolve(canonical_url).await {
+            Ok(resource) => {
+                let structure_def: StructureDefinition =
+                    serde_json::from_value((*resource.content).clone()).map_err(|e| {
+                        ExportError::CanonicalError(format!(
+                            "Failed to parse StructureDefinition {}: {}",
+                            canonical_url, e
+                        ))
+                    })?;
+                Ok(Some(structure_def))
+            }
+            Err(CanonicalLoaderError::Resolution { .. }) => Ok(None),
+            Err(e) => Err(ExportError::CanonicalError(format!(
+                "Failed resolving {}: {}",
+                canonical_url, e
+            ))),
+        }
     }
 
     /// Apply profile metadata (SUSHI compatible)
@@ -362,6 +496,9 @@ impl ProfileExporter {
         structure_def.experimental = None;
         structure_def.date = None;
         structure_def.publisher = None;
+
+        // NOTE: Mappings should NOT be cleared - they are inherited from parent
+        // (SUSHI behavior: mappings stay in snapshot, only NEW mappings in differential)
 
         // Note: Fields like contact, use_context, jurisdiction, purpose, copyright, keyword
         // don't exist in our simplified struct yet. They would be cleared in a full implementation.
@@ -434,6 +571,15 @@ impl ProfileExporter {
             }
             Rule::FixedValue(fixed_rule) => {
                 self.apply_fixed_value_rule(structure_def, fixed_rule).await
+            }
+            Rule::AddElement(_) => {
+                // AddElement is only for Logical/Resource, not Profiles
+                warn!("AddElement rule not applicable to Profiles");
+                Ok(())
+            }
+            Rule::Mapping(_) => {
+                // Mapping rules are handled by MappingExporter, not ProfileExporter
+                Ok(())
             }
             Rule::Path(_) => {
                 // PathRule is for type constraints - not implemented yet
@@ -735,22 +881,9 @@ impl ProfileExporter {
         if base_element_index.is_none() {
             warn!("Base element not found for slicing: {}", full_path);
             // Create base element if it doesn't exist
-            snapshot.element.push(ElementDefinition {
-                path: full_path.clone(),
-                min: None,
-                max: None,
-                type_: None,
-                short: None,
-                definition: None,
-                comment: None,
-                must_support: None,
-                is_modifier: None,
-                is_summary: None,
-                binding: None,
-                constraint: None,
-                pattern: None,
-                fixed: None,
-            });
+            snapshot
+                .element
+                .push(ElementDefinition::new(full_path.clone()));
         }
 
         // TODO: Add slicing discriminator for extensions
@@ -772,22 +905,8 @@ impl ProfileExporter {
             }
 
             // Create the slice element
-            let mut slice_element = ElementDefinition {
-                path: slice_path.clone(),
-                min: None,
-                max: None,
-                type_: None,
-                short: Some(format!("Slice: {}", item)),
-                definition: None,
-                comment: None,
-                must_support: None,
-                is_modifier: None,
-                is_summary: None,
-                binding: None,
-                constraint: None,
-                pattern: None,
-                fixed: None,
-            };
+            let mut slice_element = ElementDefinition::new(slice_path.clone());
+            slice_element.short = Some(format!("Slice: {}", item));
 
             // For extension slices, try to resolve the extension and set its profile
             if is_extension {
@@ -930,22 +1049,7 @@ impl ProfileExporter {
                             format!("{}.{}", resource_type, path_str)
                         };
 
-                        let mut element = ElementDefinition {
-                            path: full_path.clone(),
-                            min: None,
-                            max: None,
-                            type_: None,
-                            short: None,
-                            definition: None,
-                            comment: None,
-                            must_support: None,
-                            is_summary: None,
-                            is_modifier: None,
-                            binding: None,
-                            constraint: None,
-                            fixed: None,
-                            pattern: None,
-                        };
+                        let mut element = ElementDefinition::new(full_path.clone());
 
                         // Parse cardinality
                         if let Some(card_str) = card_rule.cardinality() {
@@ -986,22 +1090,7 @@ impl ProfileExporter {
                             }
                         } else {
                             // Create new element
-                            let mut element = ElementDefinition {
-                                path: full_path.clone(),
-                                min: None,
-                                max: None,
-                                type_: None,
-                                short: None,
-                                definition: None,
-                                comment: None,
-                                must_support: None,
-                                is_summary: None,
-                                is_modifier: None,
-                                binding: None,
-                                constraint: None,
-                                fixed: None,
-                                pattern: None,
-                            };
+                            let mut element = ElementDefinition::new(full_path.clone());
 
                             if flag_rule.flags().contains(&"MS".to_string()) {
                                 element.must_support = Some(true);
@@ -1034,6 +1123,130 @@ impl ProfileExporter {
         StructureDefinitionDifferential {
             element: differential_elements,
         }
+    }
+
+    /// Generate differential by comparing current snapshot with original (SUSHI approach)
+    ///
+    /// This compares the modified snapshot (after rules applied) with the original snapshot
+    /// (before rules applied) to determine what changed. Only changed elements appear in differential.
+    fn generate_differential_from_snapshot(
+        &self,
+        original_snapshot: &Option<StructureDefinitionSnapshot>,
+        current_snapshot: &Option<StructureDefinitionSnapshot>,
+        _original_mappings: &Option<Vec<StructureDefinitionMapping>>,
+        _current_mappings: &Option<Vec<StructureDefinitionMapping>>,
+    ) -> StructureDefinitionDifferential {
+        let mut differential_elements = Vec::new();
+
+        // Get elements from both snapshots
+        let empty_vec = vec![];
+        let original_elements = original_snapshot
+            .as_ref()
+            .map(|s| &s.element)
+            .unwrap_or(&empty_vec);
+
+        let current_elements = current_snapshot
+            .as_ref()
+            .map(|s| &s.element)
+            .unwrap_or(&empty_vec);
+
+        // Compare each element in current snapshot with original
+        for current_elem in current_elements {
+            // Find matching element in original snapshot
+            let original_elem = original_elements
+                .iter()
+                .find(|e| e.id == current_elem.id || e.path == current_elem.path);
+
+            if let Some(orig) = original_elem {
+                // Element exists in both - check if it changed
+                if self.element_has_diff(orig, current_elem) {
+                    // Create differential element with only changed fields
+                    let diff_elem = self.create_diff_element(orig, current_elem);
+                    differential_elements.push(diff_elem);
+                }
+            } else {
+                // Element is new (e.g., a slice) - include entire element
+                differential_elements.push(current_elem.clone());
+            }
+        }
+
+        debug!(
+            "Generated {} differential elements from snapshot comparison",
+            differential_elements.len()
+        );
+
+        StructureDefinitionDifferential {
+            element: differential_elements,
+        }
+    }
+
+    /// Check if an element has differences between original and current
+    fn element_has_diff(&self, original: &ElementDefinition, current: &ElementDefinition) -> bool {
+        // Check all fields that can be constrained
+        original.min != current.min
+            || original.max != current.max
+            || original.must_support != current.must_support
+            || original.short != current.short
+            || original.definition != current.definition
+            || original.comment != current.comment
+            || original.type_ != current.type_
+            || original.binding != current.binding
+            || original.constraint != current.constraint
+            || original.mapping != current.mapping
+            || original.fixed != current.fixed
+            || original.pattern != current.pattern
+    }
+
+    /// Create a differential element containing only changed fields
+    fn create_diff_element(
+        &self,
+        original: &ElementDefinition,
+        current: &ElementDefinition,
+    ) -> ElementDefinition {
+        let mut diff_elem = ElementDefinition::new(current.path.clone());
+
+        // Always include id and path
+        diff_elem.id = current.id.clone();
+
+        // Include only fields that changed
+        if original.min != current.min {
+            diff_elem.min = current.min;
+        }
+        if original.max != current.max {
+            diff_elem.max = current.max.clone();
+        }
+        if original.must_support != current.must_support {
+            diff_elem.must_support = current.must_support;
+        }
+        if original.short != current.short {
+            diff_elem.short = current.short.clone();
+        }
+        if original.definition != current.definition {
+            diff_elem.definition = current.definition.clone();
+        }
+        if original.comment != current.comment {
+            diff_elem.comment = current.comment.clone();
+        }
+        if original.type_ != current.type_ {
+            diff_elem.type_ = current.type_.clone();
+        }
+        if original.binding != current.binding {
+            diff_elem.binding = current.binding.clone();
+        }
+        if original.constraint != current.constraint {
+            diff_elem.constraint = current.constraint.clone();
+        }
+        if original.mapping != current.mapping {
+            diff_elem.mapping = current.mapping.clone();
+        }
+        if original.fixed != current.fixed {
+            diff_elem.fixed = current.fixed.clone();
+        }
+        if original.pattern != current.pattern {
+            diff_elem.pattern = current.pattern.clone();
+        }
+
+        diff_elem
     }
 
     /// Generate differential by comparing snapshot with base (static version for testing)
