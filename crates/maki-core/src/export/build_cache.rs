@@ -4,6 +4,7 @@
 //! by only re-processing files that have changed since the last build.
 
 use crate::cst::FshSyntaxNode;
+use crate::export::run_blocking_io;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -54,7 +55,7 @@ impl BuildCache {
             return Ok(Self::new());
         }
 
-        let content = fs::read_to_string(&cache_path)?;
+        let content = run_blocking_io(|| fs::read_to_string(&cache_path))?;
         let cache: BuildCache = serde_json::from_str(&content).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -86,7 +87,7 @@ impl BuildCache {
             )
         })?;
 
-        fs::write(&cache_path, content)?;
+        run_blocking_io(|| fs::write(&cache_path, &content))?;
         debug!("Saved cache to {:?}", cache_path);
         Ok(())
     }
@@ -99,7 +100,7 @@ impl BuildCache {
         }
 
         // Quick check: modification time
-        let metadata = fs::metadata(path)?;
+        let metadata = run_blocking_io(|| fs::metadata(path))?;
         let current_mtime = metadata.modified()?;
 
         if let Some(&cached_mtime) = self.file_mtimes.get(path) {
@@ -119,7 +120,7 @@ impl BuildCache {
     /// Update cache entry for a file
     pub fn update_file(&mut self, path: &Path) -> io::Result<()> {
         let hash = Self::hash_file(path)?;
-        let metadata = fs::metadata(path)?;
+        let metadata = run_blocking_io(|| fs::metadata(path))?;
         let mtime = metadata.modified()?;
 
         self.file_hashes.insert(path.to_path_buf(), hash);
@@ -146,7 +147,7 @@ impl BuildCache {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 
-        let content = fs::read_to_string(path)?;
+        let content = run_blocking_io(|| fs::read_to_string(path))?;
 
         let mut hasher = DefaultHasher::new();
         content.hash(&mut hasher);

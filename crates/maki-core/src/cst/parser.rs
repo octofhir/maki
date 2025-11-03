@@ -280,7 +280,7 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::DescriptionKw => self.parse_description_clause(),
 
                 // CodeSystem concepts starting with *
-                FshSyntaxKind::Asterisk => self.parse_concept(),
+                FshSyntaxKind::Asterisk => self.parse_concept_as_path_rule(),
 
                 // Caret rules (for metadata like ^status)
                 FshSyntaxKind::Caret => self.parse_rule(),
@@ -1067,8 +1067,28 @@ impl<'a> Parser<'a> {
                 self.expect(FshSyntaxKind::ContainsKw);
                 self.consume_trivia();
 
-                // Parse contains items
-                while !self.at_end() && !self.at(FshSyntaxKind::Newline) {
+                // Parse contains items (support multiline with indentation)
+                self.consume_trivia_and_newlines(); // Allow newlines after 'contains'
+                
+                while !self.at_end() {
+                    // Stop if we hit a new rule (starts with *) or definition
+                    if self.at(FshSyntaxKind::Asterisk) || self.at_definition_keyword() {
+                        break;
+                    }
+                    
+                    // Skip whitespace and comments
+                    if self.at_trivia() {
+                        self.consume_trivia();
+                        continue;
+                    }
+                    
+                    // Skip newlines but continue parsing
+                    if self.at(FshSyntaxKind::Newline) {
+                        self.add_current_token();
+                        self.advance();
+                        continue;
+                    }
+                    
                     if self.at(FshSyntaxKind::Ident) {
                         self.add_current_token();
                         self.advance();
@@ -1100,11 +1120,13 @@ impl<'a> Parser<'a> {
                             self.consume_trivia();
                         }
 
+                        // Handle 'and' keyword
                         if self.at(FshSyntaxKind::AndKw) {
                             self.add_current_token();
                             self.advance();
-                            self.consume_trivia();
+                            self.consume_trivia_and_newlines(); // Allow newlines after 'and'
                         } else {
+                            // No 'and' means this is the last item
                             break;
                         }
                     } else {
@@ -1329,6 +1351,14 @@ impl<'a> Parser<'a> {
         if self.at(FshSyntaxKind::Caret) {
             self.add_current_token();
             self.advance();
+        }
+
+        // Handle root path "." (single dot)
+        if self.at(FshSyntaxKind::Dot) {
+            self.add_current_token();
+            self.advance();
+            self.builder.finish_node(); // PATH
+            return;
         }
 
         while !self.at_end() {
@@ -1953,6 +1983,58 @@ impl<'a> Parser<'a> {
         self.builder.finish_node(); // CONCEPT
     }
 
+    /// Parse CodeSystem concept as PathRule: #code "display"
+    ///
+    /// This creates a PathRule node that the AST can recognize, with the path
+    /// (#code) as a previous sibling and the display string as a child.
+    fn parse_concept_as_path_rule(&mut self) {
+        // Consume the asterisk (don't add it to any node)
+        self.expect(FshSyntaxKind::Asterisk);
+        self.consume_trivia();
+
+        // Parse the path first (as a sibling to the rule)
+        // The path is: #CODE (e.g., "#code1")
+        self.builder.start_node(FshSyntaxKind::Path);
+
+        // Parse one or more #CODE tokens (for hierarchy)
+        // Format: * #code or * #parent #child
+        while self.at(FshSyntaxKind::Hash) {
+            self.add_current_token(); // #
+            self.advance();
+
+            // Code identifier after #
+            if self.at(FshSyntaxKind::Ident) || self.at(FshSyntaxKind::Integer) {
+                self.add_current_token();
+                self.advance();
+            }
+
+            self.consume_trivia();
+        }
+
+        self.builder.finish_node(); // Path
+        self.consume_trivia();
+
+        // Now create the PathRule node
+        self.builder.start_node(FshSyntaxKind::PathRule);
+
+        // Optional display string (as a child of PathRule)
+        if self.at(FshSyntaxKind::String) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
+        // Optional definition string (second string)
+        if self.at(FshSyntaxKind::String) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
+        self.consume_trivia_and_newlines();
+        self.builder.finish_node(); // PathRule
+    }
+
     /// Parse a ValueSet rule (include/exclude components)
     fn parse_vs_rule(&mut self) {
         self.expect(FshSyntaxKind::Asterisk);
@@ -1975,8 +2057,62 @@ impl<'a> Parser<'a> {
         } else {
             // Concept component: * include http://system#code "display"
             // or just: * http://system#code (implicit include)
-            self.parse_vs_concept_component();
+            // Parse as PathRule so AST can recognize it
+            self.parse_vs_concept_as_path_rule();
         }
+    }
+
+    /// Parse ValueSet concept component as PathRule: system#code "display"
+    ///
+    /// This creates a PathRule node that the AST can recognize, with the path
+    /// (system#code) as a previous sibling and the display string as a child.
+    fn parse_vs_concept_as_path_rule(&mut self) {
+        // Parse the path first (as a sibling to the rule)
+        // The path is: SYSTEM#CODE (e.g., "SPTY#AMN")
+        self.builder.start_node(FshSyntaxKind::Path);
+
+        // Parse system part (identifier before #)
+        while !self.at_end()
+            && !self.at(FshSyntaxKind::Hash)
+            && !self.at(FshSyntaxKind::String)
+            && !self.at(FshSyntaxKind::Newline)
+            && !self.at(FshSyntaxKind::Whitespace)
+        {
+            self.add_current_token();
+            self.advance();
+        }
+
+        // Hash separator
+        if self.at(FshSyntaxKind::Hash) {
+            self.add_current_token();
+            self.advance();
+        }
+
+        // Code part (after #)
+        while !self.at_end()
+            && !self.at(FshSyntaxKind::String)
+            && !self.at(FshSyntaxKind::Newline)
+            && !self.at(FshSyntaxKind::Whitespace)
+        {
+            self.add_current_token();
+            self.advance();
+        }
+
+        self.builder.finish_node(); // Path
+        self.consume_trivia();
+
+        // Now create the PathRule node
+        self.builder.start_node(FshSyntaxKind::PathRule);
+
+        // Optional display string (as a child of PathRule)
+        if self.at(FshSyntaxKind::String) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
+        self.consume_trivia_and_newlines();
+        self.builder.finish_node(); // PathRule
     }
 
     /// Parse ValueSet concept component: system#code "display"

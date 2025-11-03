@@ -29,6 +29,7 @@
 //!
 //! **SUSHI Reference**: `src/ig/predefinedResources.ts`
 
+use crate::export::run_blocking_io;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::fs;
@@ -79,7 +80,7 @@ pub struct PredefinedResource {
 impl PredefinedResource {
     /// Create from a JSON file
     pub fn from_file(path: &Path) -> Result<Self, PredefinedResourceError> {
-        let content = fs::read_to_string(path)
+        let content = run_blocking_io(|| fs::read_to_string(path))
             .map_err(|e| PredefinedResourceError::ReadFile(path.to_path_buf(), e))?;
 
         let json: JsonValue = serde_json::from_str(&content)
@@ -195,9 +196,10 @@ impl PredefinedResourcesLoader {
 
     /// Recursively add subdirectories
     fn add_recursive_subdirs(&self, base_path: &Path, paths: &mut Vec<PathBuf>) {
-        if let Ok(entries) = fs::read_dir(base_path) {
+        if let Ok(entries) = run_blocking_io(|| fs::read_dir(base_path)) {
             for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata()
+                let metadata_res = run_blocking_io(|| entry.metadata());
+                if let Ok(metadata) = metadata_res
                     && metadata.is_dir()
                 {
                     let dir_path = entry.path();
@@ -218,28 +220,37 @@ impl PredefinedResourcesLoader {
         let resource_paths = self.get_resource_paths();
 
         for dir_path in resource_paths {
-            // Use WalkDir to recursively find all JSON files
-            for entry in WalkDir::new(&dir_path)
-                .follow_links(true)
-                .into_iter()
-                .filter_map(|e| e.ok())
-            {
-                let path = entry.path();
+            // Collect JSON paths using blocking IO helper to avoid starving Tokio
+            let json_files: Vec<PathBuf> = run_blocking_io(|| {
+                WalkDir::new(&dir_path)
+                    .follow_links(true)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                    .filter_map(|entry| {
+                        let path = entry.into_path();
+                        if path.is_file()
+                            && path.extension().and_then(|s| s.to_str()) == Some("json")
+                        {
+                            Some(path)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            });
 
-                // Only process .json files
-                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("json") {
-                    match PredefinedResource::from_file(path) {
-                        Ok(resource) => {
-                            resources.push(resource);
-                        }
-                        Err(e) => {
-                            // Log warning but continue processing
-                            eprintln!(
-                                "Warning: Failed to load predefined resource from {}: {}",
-                                path.display(),
-                                e
-                            );
-                        }
+            for path in json_files {
+                match PredefinedResource::from_file(&path) {
+                    Ok(resource) => {
+                        resources.push(resource);
+                    }
+                    Err(e) => {
+                        // Log warning but continue processing
+                        eprintln!(
+                            "Warning: Failed to load predefined resource from {}: {}",
+                            path.display(),
+                            e
+                        );
                     }
                 }
             }

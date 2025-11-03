@@ -810,22 +810,29 @@ impl BuildOrchestrator {
             return Ok(fsh_files);
         }
 
-        for entry in walkdir::WalkDir::new(&self.options.input_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if path.is_file()
-                && path
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s == "fsh")
-                    .unwrap_or(false)
-            {
-                fsh_files.push(path.to_path_buf());
-            }
-        }
+        let candidate_files: Vec<PathBuf> = crate::export::run_blocking_io(|| {
+            walkdir::WalkDir::new(&self.options.input_dir)
+                .follow_links(true)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter_map(|entry| {
+                    let path = entry.into_path();
+                    let is_fsh = path.is_file()
+                        && path
+                            .extension()
+                            .and_then(|s| s.to_str())
+                            .map(|s| s == "fsh")
+                            .unwrap_or(false);
+                    if is_fsh {
+                        Some(path)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        });
+
+        fsh_files.extend(candidate_files);
 
         Ok(fsh_files)
     }
@@ -839,9 +846,10 @@ impl BuildOrchestrator {
 
         for file in files {
             eprintln!("[DEBUG MAKI BUILD] Parsing file: {:?}", file);
-            let content = std::fs::read_to_string(file).map_err(|e| {
-                BuildError::ParseError(format!("Failed to read file {:?}: {}", file, e))
-            })?;
+            let content = crate::export::run_blocking_io(|| std::fs::read_to_string(file))
+                .map_err(|e| {
+                    BuildError::ParseError(format!("Failed to read file {:?}: {}", file, e))
+                })?;
             eprintln!("[DEBUG MAKI BUILD] Read {} bytes from {:?}", content.len(), file);
 
             eprintln!("[DEBUG MAKI BUILD] About to call parse_fsh");

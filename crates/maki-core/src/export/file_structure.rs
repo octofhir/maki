@@ -22,6 +22,7 @@
 //!
 //! **Reference**: <https://fshschool.org/docs/sushi/project/>
 
+use crate::export::run_blocking_io;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -95,7 +96,7 @@ impl FileStructureGenerator {
 
         // Clean existing directory if requested
         if self.clean_output && fsh_gen.exists() {
-            fs::remove_dir_all(&fsh_gen)
+            run_blocking_io(|| fs::remove_dir_all(&fsh_gen))
                 .map_err(|e| FileStructureError::RemoveDirectory(fsh_gen.clone(), e))?;
         }
 
@@ -109,8 +110,11 @@ impl FileStructureGenerator {
 
     /// Create a directory, including all parent directories
     fn create_directory(&self, path: &Path) -> Result<(), FileStructureError> {
-        fs::create_dir_all(path)
-            .map_err(|e| FileStructureError::CreateDirectory(path.to_path_buf(), e))
+        let result = run_blocking_io(|| fs::create_dir_all(path));
+        if let Err(e) = result {
+            return Err(FileStructureError::CreateDirectory(path.to_path_buf(), e));
+        }
+        Ok(())
     }
 
     /// Write a FHIR resource to the resources directory
@@ -135,7 +139,11 @@ impl FileStructureGenerator {
     /// * `index` - FSH index content
     pub fn write_fsh_index_txt(&self, index: &str) -> Result<(), FileStructureError> {
         let path = self.fsh_generated_dir().join("fsh-index.txt");
-        fs::write(&path, index).map_err(|e| FileStructureError::WriteFile(path, e))
+        let result = run_blocking_io(|| fs::write(&path, index));
+        if let Err(e) = result {
+            return Err(FileStructureError::WriteFile(path, e));
+        }
+        Ok(())
     }
 
     /// Write the FSH index file (machine-readable JSON)
@@ -155,7 +163,11 @@ impl FileStructureGenerator {
     /// * `menu_xml` - XML content for the menu
     pub fn write_menu_xml(&self, menu_xml: &str) -> Result<(), FileStructureError> {
         let path = self.includes_dir().join("menu.xml");
-        fs::write(&path, menu_xml).map_err(|e| FileStructureError::WriteFile(path, e))
+        let result = run_blocking_io(|| fs::write(&path, menu_xml));
+        if let Err(e) = result {
+            return Err(FileStructureError::WriteFile(path, e));
+        }
+        Ok(())
     }
 
     /// Write package.json to the root output directory
@@ -177,10 +189,15 @@ impl FileStructureGenerator {
         path: &Path,
         content: &T,
     ) -> Result<(), FileStructureError> {
+        let path_buf = path.to_path_buf();
         let json = serde_json::to_string_pretty(content)
-            .map_err(|e| FileStructureError::SerializeJson(path.to_path_buf(), e))?;
+            .map_err(|e| FileStructureError::SerializeJson(path_buf.clone(), e))?;
 
-        fs::write(path, json).map_err(|e| FileStructureError::WriteFile(path.to_path_buf(), e))
+        let result = run_blocking_io(|| fs::write(&path_buf, &json));
+        if let Err(e) = result {
+            return Err(FileStructureError::WriteFile(path_buf, e));
+        }
+        Ok(())
     }
 
     /// Get the relative path for a resource file

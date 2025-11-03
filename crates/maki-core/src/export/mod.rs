@@ -28,6 +28,7 @@
 pub mod build;
 pub mod build_cache;
 pub mod codesystem_exporter;
+pub mod differential_generator;
 pub mod extension_exporter;
 pub mod fhir_types;
 pub mod file_structure;
@@ -46,6 +47,7 @@ pub mod valueset_exporter;
 pub use build::{BuildError, BuildOptions, BuildOrchestrator, BuildResult, BuildStats};
 pub use build_cache::{BuildCache, CacheStats, IncrementalBuildInfo};
 pub use codesystem_exporter::CodeSystemExporter;
+pub use differential_generator::{DifferentialError, DifferentialGenerator, RuleContext, RuleProcessor};
 pub use extension_exporter::ExtensionExporter;
 pub use fhir_types::*;
 pub use file_structure::{
@@ -68,3 +70,20 @@ pub use predefined_resources::{
 pub use profile_exporter::{ExportError, ProfileExporter};
 pub use snapshot::{SnapshotError, SnapshotGenerator};
 pub use valueset_exporter::ValueSetExporter;
+
+/// Execute a blocking filesystem operation without starving Tokio's scheduler.
+///
+/// Uses `tokio::task::block_in_place` when running inside a multi-threaded
+/// Tokio runtime. Otherwise, runs the operation directly.
+pub(crate) fn run_blocking_io<F, R>(operation: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    if let Ok(handle) = tokio::runtime::Handle::try_current()
+        && handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
+    {
+        tokio::task::block_in_place(operation)
+    } else {
+        operation()
+    }
+}

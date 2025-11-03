@@ -51,9 +51,9 @@
 //! # }
 //! ```
 
-use super::{CodeSystemResource, ExportError};
+use super::{CodeSystemConcept, CodeSystemResource, ExportError};
 use crate::canonical::DefinitionSession;
-use crate::cst::ast::{CodeSystem, FixedValueRule, Rule};
+use crate::cst::ast::{AstNode, CodeSystem, FixedValueRule, PathRule, Rule};
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
@@ -206,12 +206,10 @@ impl CodeSystemExporter {
         // Set version from config if available (SUSHI parity)
         resource.version = self.version.clone();
 
-        // Track concept rules for Phase 2
-        let mut has_concepts = false;
-        let mut concept_count = 0;
-
-        // Process rules
-        for rule in codesystem.rules() {
+        // Process rules and collect concepts
+        let rules: Vec<_> = codesystem.rules().collect();
+        debug!("Processing {} rules for CodeSystem {}", rules.len(), name);
+        for rule in rules {
             match rule {
                 Rule::FixedValue(fixed_rule) => {
                     self.apply_metadata_rule(&mut resource, &fixed_rule)?;
@@ -228,12 +226,11 @@ impl CodeSystemExporter {
                     // ValueSet rules don't apply to codesystem definitions
                     trace!("Skipping valueset rule in codesystem definition");
                 }
-                Rule::Path(_) => {
-                    // Path rules are for concept definitions
-                    // Phase 2: Parse and add to concept list
-                    trace!("Concept rule detected (Phase 2 feature)");
-                    has_concepts = true;
-                    concept_count += 1;
+                Rule::Path(path_rule) => {
+                    // Path rules are for concept definitions: * #code "Display"
+                    if let Some(concept) = self.parse_concept_rule(&path_rule, &name)? {
+                        resource.add_concept(concept);
+                    }
                 }
                 Rule::AddElement(_)
                 | Rule::Contains(_)
@@ -247,14 +244,9 @@ impl CodeSystemExporter {
             }
         }
 
-        // Log info about concepts if found
-        if has_concepts {
-            warn!(
-                "CodeSystem {} has {} concept rules, but full parsing not yet implemented",
-                name, concept_count
-            );
-            // For now, add a placeholder to indicate concepts should be here
-            // Phase 2 will populate this properly
+        // Set count if we have concepts
+        if let Some(ref concepts) = resource.concept {
+            resource.count = Some(concepts.len() as u32);
         }
 
         debug!("Successfully exported CodeSystem {}", name);
@@ -369,6 +361,85 @@ impl CodeSystemExporter {
         } else {
             trimmed.to_string()
         }
+    }
+
+    /// Parse a concept rule (PathRule) into a CodeSystemConcept
+    ///
+    /// Handles syntax like:
+    /// - `* #code "Display"` - code with display
+    /// - `* #code` - code without display
+    ///
+    /// Returns: CodeSystemConcept
+    fn parse_concept_rule(
+        &self,
+        path_rule: &PathRule,
+        codesystem_name: &str,
+    ) -> Result<Option<CodeSystemConcept>, ExportError> {
+        // Get the path (e.g., "#code1")
+        let path = match path_rule.path() {
+            Some(p) => p.as_string(),
+            None => {
+                trace!("PathRule without path in CodeSystem {}", codesystem_name);
+                return Ok(None);
+            }
+        };
+
+        // Parse: #code
+        // The path should start with # for concepts
+        let code = if let Some(stripped) = path.strip_prefix('#') {
+            stripped.trim().to_string()
+        } else {
+            trace!(
+                "Invalid concept format '{}' in CodeSystem {} (expected #code)",
+                path,
+                codesystem_name
+            );
+            return Ok(None);
+        };
+
+        // Try to get display text from following String token
+        let display = self.get_display_text(path_rule);
+
+        // Create concept
+        let concept = if let Some(display_text) = display {
+            CodeSystemConcept::with_display(code, display_text)
+        } else {
+            CodeSystemConcept::new(code)
+        };
+
+        trace!(
+            "Parsed concept: code={}, display={:?}",
+            concept.code,
+            concept.display
+        );
+
+        Ok(Some(concept))
+    }
+
+    /// Extract display text from a PathRule
+    ///
+    /// Looks for a String token following the path in the syntax tree.
+    /// Example: `* #code1 "Code 1"` -> Some("Code 1")
+    fn get_display_text(&self, path_rule: &PathRule) -> Option<String> {
+        use crate::cst::FshSyntaxKind;
+
+        // Look for a String token following the PathRule node
+        // We iterate through all descendants with tokens to find a String
+        for child in path_rule.syntax().descendants_with_tokens() {
+            if let rowan::NodeOrToken::Token(token) = child {
+                if token.kind() == FshSyntaxKind::String {
+                    let text = token.text();
+                    // Remove surrounding quotes
+                    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+                        return Some(text[1..text.len() - 1].to_string());
+                    } else {
+                        return Some(text.to_string());
+                    }
+                }
+            }
+        }
+
+        None
     }
 }
 

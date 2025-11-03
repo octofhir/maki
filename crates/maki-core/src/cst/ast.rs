@@ -1547,22 +1547,46 @@ impl ContainsRule {
     pub fn items(&self) -> Vec<String> {
         let text = self.syntax.text().to_string();
 
-        // Remove "contains" keyword
+        // Remove "contains" keyword and clean up whitespace/newlines
         let after_contains = text
             .trim_start()
             .strip_prefix("contains")
             .unwrap_or(&text)
             .trim();
 
+        // Clean up the text - replace newlines with spaces and normalize whitespace
+        let cleaned_text = after_contains
+            .replace('\n', " ")
+            .replace('\r', " ");
+        
         // Split by "and" keyword and extract item names
-        after_contains
+        cleaned_text
             .split("and")
             .map(|item| {
+                let item = item.trim();
+                
                 // Handle "Item1 named slice1" format - extract the item name before "named"
                 if let Some(named_pos) = item.find("named") {
                     item[..named_pos].trim().to_string()
                 } else {
-                    item.trim().to_string()
+                    // Extract just the extension name (first word before cardinality/flags)
+                    let words: Vec<&str> = item.split_whitespace().collect();
+                    if let Some(first_word) = words.first() {
+                        let first_word = first_word.trim();
+                        // Skip cardinality patterns and flags
+                        if !first_word.is_empty() 
+                            && !first_word.contains("..")  // Skip cardinality like "0..1"
+                            && first_word != "MS"          // Skip MustSupport flag
+                            && first_word != "SU"          // Skip Summary flag
+                            && !first_word.starts_with("//") // Skip comments
+                        {
+                            first_word.to_string()
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        item.to_string()
+                    }
                 }
             })
             .filter(|s| !s.is_empty())

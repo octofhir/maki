@@ -36,6 +36,7 @@
 //! ```
 
 use super::fhir_types::*;
+use super::differential_generator::DifferentialGenerator;
 use crate::canonical::{CanonicalLoaderError, DefinitionSession};
 use crate::cst::ast::{
     CardRule, CaretValueRule, ContainsRule, FixedValueRule, FlagRule, ObeysRule, OnlyRule, Profile,
@@ -137,6 +138,9 @@ pub enum ExportError {
 
     #[error("Invalid reference: {reference} - {reason}")]
     InvalidReference { reference: String, reason: String },
+
+    #[error("Invalid context expression: {0}")]
+    InvalidContextExpression(String),
 }
 
 /// Profile exporter
@@ -147,6 +151,8 @@ pub struct ProfileExporter {
     session: Arc<DefinitionSession>,
     /// Path resolver for finding elements
     path_resolver: Arc<PathResolver>,
+    /// Differential generator for rule-based differential creation
+    differential_generator: DifferentialGenerator,
     /// Base URL for generated profiles
     base_url: String,
     /// Whether to generate snapshots (default: false to match SUSHI)
@@ -197,10 +203,16 @@ impl ProfileExporter {
         publisher: Option<String>,
     ) -> Result<Self, ExportError> {
         let path_resolver = Arc::new(PathResolver::new(session.clone()));
+        let differential_generator = DifferentialGenerator::new(
+            session.clone(),
+            path_resolver.clone(),
+            base_url.clone(),
+        );
 
         Ok(Self {
             session,
             path_resolver,
+            differential_generator,
             base_url,
             generate_snapshots: false, // Default OFF to match SUSHI
             version,
@@ -286,13 +298,22 @@ impl ProfileExporter {
             debug!("Modified snapshot has {} elements", snap.element.len());
         }
 
-        // 6. Generate differential by comparing current snapshot with original (SUSHI approach)
-        structure_def.differential = Some(self.generate_differential_from_snapshot(
-            &original_snapshot,
-            &structure_def.snapshot,
-            &original_mappings,
-            &structure_def.mapping,
-        ));
+        // 6. Generate differential using the new rule-based approach
+        match self.differential_generator.generate_from_rules(profile, &structure_def).await {
+            Ok(differential) => {
+                structure_def.differential = Some(differential);
+            }
+            Err(e) => {
+                warn!("Failed to generate differential using new approach: {}", e);
+                // Fallback to old snapshot comparison approach
+                structure_def.differential = Some(self.generate_differential_from_snapshot(
+                    &original_snapshot,
+                    &structure_def.snapshot,
+                    &original_mappings,
+                    &structure_def.mapping,
+                ));
+            }
+        }
 
         // 7. Clear snapshot if not requested (to match SUSHI default behavior)
         if !self.generate_snapshots {
