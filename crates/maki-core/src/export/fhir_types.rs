@@ -81,6 +81,10 @@ pub struct StructureDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub derivation: Option<String>,
 
+    /// Extensions (inherited from parent, may need filtering)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension: Option<Vec<serde_json::Value>>,
+
     /// Extension context (for extensions only) - where can this extension be used
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<Vec<StructureDefinitionContext>>,
@@ -124,6 +128,7 @@ impl StructureDefinition {
             type_field,
             base_definition: None,
             derivation: Some("constraint".to_string()),
+            extension: None,
             context: None,
             snapshot: None,
             differential: None,

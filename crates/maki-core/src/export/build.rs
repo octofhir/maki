@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 /// Resource with source location tracking
 #[derive(Debug, Clone)]
@@ -250,9 +250,12 @@ impl BuildOrchestrator {
     /// Run the complete build pipeline with two-phase export
     pub async fn build(&self) -> std::result::Result<BuildResult, BuildError> {
         info!("🚀 Starting MAKI build...");
+        info!("Step 1: Initializing canonical package manager...");
 
         // Create canonical session for FHIR package resolution
-        use crate::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
+        use crate::canonical::{
+            CanonicalFacade, CanonicalLoaderError, CanonicalOptions, FhirRelease,
+        };
         use octofhir_canonical_manager::config::{
             FcmConfig, OptimizationConfig, RegistryConfig, StorageConfig,
         };
@@ -260,6 +263,7 @@ impl BuildOrchestrator {
 
         // Create optimized FcmConfig programmatically for excellent performance
         // This enables multi-worker parallel loading for large IGs
+        info!("Step 1a: Creating FcmConfig...");
         let fcm_config = {
             // Use global ~/.maki directory for package cache (shared across all IGs)
             let home_dir = std::env::var("HOME").unwrap_or_else(|_| String::from("/tmp"));
@@ -277,7 +281,7 @@ impl BuildOrchestrator {
                     max_cache_size: "5GB".to_string(),
                 },
                 optimization: OptimizationConfig {
-                    parallel_workers: rayon::current_num_threads(), // Use all CPU cores
+                    parallel_workers: rayon::current_num_threads(), // Use all CPU cores for performance
                     batch_size: 200,
                     enable_checksums: true,
                     checksum_algorithm: "blake3".to_string(),
@@ -291,17 +295,25 @@ impl BuildOrchestrator {
             }
         };
 
+        info!("Step 1b: Configuring CanonicalOptions...");
         let options = CanonicalOptions {
             config: Some(fcm_config), // Pass our optimized config
             auto_install_core: true,  // Auto-install FHIR core packages based on fhirVersion
             quick_init: true, // Prefer fast initialization; defer heavy indexing unless needed
             ..Default::default()
         };
+
+        info!("Step 1c: Creating CanonicalFacade (this may take a moment)...");
+        eprintln!("[DEBUG MAKI BUILD] About to call CanonicalFacade::new()");
         let facade = CanonicalFacade::new(options).await.map_err(|e| {
             BuildError::ExportError(format!("Failed to create CanonicalFacade: {}", e))
         })?;
+        eprintln!("[DEBUG MAKI BUILD] CanonicalFacade::new() returned");
+        info!("Step 1c: ✓ CanonicalFacade created successfully");
 
         // Parse FHIR version from config
+        eprintln!("[DEBUG MAKI BUILD] About to parse FHIR versions");
+        info!("Step 2: Parsing FHIR versions from config...");
         let fhir_releases: Vec<FhirRelease> = self
             .build_config()
             .fhir_version
@@ -330,6 +342,7 @@ impl BuildOrchestrator {
             fhir_releases
         };
 
+        eprintln!("[DEBUG MAKI BUILD] Logging FHIR versions");
         info!(
             "✓ Using FHIR version(s): {}",
             fhir_releases
@@ -340,20 +353,27 @@ impl BuildOrchestrator {
         );
 
         // Create session ONCE for both installation and resolution
-        info!("✓ Creating FHIR package resolution session");
+        eprintln!("[DEBUG MAKI BUILD] About to create session");
+        info!("Step 3: Creating FHIR package resolution session (this may take a moment)...");
         let session = Arc::new(facade.session(fhir_releases).await.map_err(|e| {
             BuildError::ExportError(format!("Failed to create DefinitionSession: {}", e))
         })?);
+        eprintln!("[DEBUG MAKI BUILD] Session created");
+        info!("Step 3: ✓ Session created successfully");
 
         // Install dependencies using the SAME session
+        eprintln!("[DEBUG BUILD.RS LINE 365] config.dependencies = {:?}", self.config.dependencies);
         if let Some(ref dependencies) = self.config.dependencies {
+            eprintln!("[DEBUG BUILD.RS LINE 367] INSIDE if Some block! dependencies.len() = {}", dependencies.len());
             info!(
-                "📦 Installing {} dependencies from config...",
+                "Step 4: Installing {} dependencies from config...",
                 dependencies.len()
             );
 
             if !dependencies.is_empty() {
+                eprintln!("[DEBUG BUILD.RS LINE 374] Dependencies NOT empty, installing...");
                 use crate::canonical::PackageCoordinate;
+
                 let mut coords = Vec::new();
 
                 for (package_id, version) in dependencies {
@@ -364,7 +384,7 @@ impl BuildOrchestrator {
                         }
                     };
 
-                    info!("  Installing: {}@{}", package_id, version_str);
+                    info!("  → Queueing: {}@{}", package_id, version_str);
 
                     coords.push(PackageCoordinate {
                         name: package_id.clone(),
@@ -373,19 +393,52 @@ impl BuildOrchestrator {
                     });
                 }
 
-                // Install all dependencies at once in the main session
-                match session.ensure_packages(coords).await {
-                    Err(e) => {
-                        warn!("  ⚠ Failed to install some dependencies: {}", e);
-                        warn!("  Continuing with partial dependencies...");
+                // Install all dependencies at once in the main session with timeout
+                eprintln!("[DEBUG BUILD.RS LINE 398] About to call ensure_packages with {} packages: {:?}", coords.len(), coords);
+                info!(
+                    "Step 4a: Calling ensure_packages with {} packages...",
+                    coords.len()
+                );
+                let result = session.ensure_packages(coords).await;
+                eprintln!("[DEBUG BUILD.RS LINE 403] ensure_packages returned!");
+                match result {
+                    Ok(()) => {
+                        info!("Step 4b: ✓ All dependencies installed successfully");
                     }
-                    Ok(_) => {
-                        info!("  ✓ All dependencies installed successfully");
+                    Err(CanonicalLoaderError::PackageInstallTimeout {
+                        packages,
+                        timeout_secs,
+                    }) => {
+                        let package_list = packages
+                            .iter()
+                            .map(|pkg| format!("{}@{}", pkg.name, pkg.version))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        error!(
+                            "Step 4b: ❌ TIMEOUT: Dependency installation exceeded {}s for [{}]",
+                            timeout_secs, package_list
+                        );
+                        error!("  This indicates a bug in the canonical package manager.");
+                        error!("  Please report this issue with the following debug information:");
+                        error!(
+                            "    - IG: {}",
+                            self.build_config().name.as_deref().unwrap_or("Unknown")
+                        );
+                        error!("    - Dependencies: {} packages", dependencies.len());
+                        error!("    - Database: ~/.maki/index/storage.db");
+                        return Err(BuildError::ExportError(format!(
+                            "Dependency installation timed out after {} seconds for [{}]",
+                            timeout_secs, package_list
+                        )));
+                    }
+                    Err(e) => {
+                        warn!("Step 4b: ⚠ Failed to install some dependencies: {}", e);
+                        warn!("  Continuing with partial dependencies...");
                     }
                 }
             }
         } else {
-            info!("📦 No dependencies found in config");
+            info!("Step 4: No dependencies found in config");
         }
 
         // Create FishingContext with Tank and Package
@@ -393,40 +446,51 @@ impl BuildOrchestrator {
         // 1. Package (exported resources) - highest priority
         // 2. Tank (parsed FSH resources) - blocks external lookup if found
         // 3. Canonical (external FHIR packages) - fallback
+        eprintln!("[DEBUG MAKI BUILD] About to create FishingContext");
         use crate::semantic::{FishingContext, FshTank, Package};
         use tokio::sync::RwLock; // Use async-aware RwLock
 
+        eprintln!("[DEBUG MAKI BUILD] Creating tank");
         let tank = Arc::new(RwLock::new(FshTank::new()));
+        eprintln!("[DEBUG MAKI BUILD] Creating package");
         let package = Arc::new(RwLock::new(Package::new()));
+        eprintln!("[DEBUG MAKI BUILD] Creating FishingContext");
         let fishing_ctx = Arc::new(FishingContext::new(
             session.clone(),
             tank.clone(),
             package.clone(),
         ));
+        eprintln!("[DEBUG MAKI BUILD] FishingContext created");
         info!("✓ Created fishing context (Tank + Package + Canonical)");
 
         info!("  Input directory: {:?}", self.options.input_dir);
         info!("  Output directory: {:?}", self.options.output_dir);
 
         // Initialize file structure
+        eprintln!("[DEBUG MAKI BUILD] About to initialize file structure");
         let file_structure =
             FileStructureGenerator::new(&self.options.output_dir, self.options.clean_output);
         file_structure.initialize()?;
+        eprintln!("[DEBUG MAKI BUILD] File structure initialized");
 
         // Initialize stats
         let mut stats = BuildStats::default();
         let mut fsh_index = Vec::new();
 
         // Step 1: Discover FSH files
+        eprintln!("[DEBUG MAKI BUILD] About to discover FSH files");
         info!("📂 Discovering FSH files...");
         let fsh_files = self.discover_fsh_files()?;
+        eprintln!("[DEBUG MAKI BUILD] Discovered {} FSH files", fsh_files.len());
         if fsh_files.is_empty() {
             return Err(BuildError::NoFshFiles);
         }
         info!("  Found {} FSH files", fsh_files.len());
 
         // Step 1.5: Load cache and analyze changes (if enabled)
+        eprintln!("[DEBUG MAKI BUILD] About to check if cache is enabled");
         let mut cache = if self.options.use_cache {
+            eprintln!("[DEBUG MAKI BUILD] Cache is enabled, loading...");
             use crate::export::build_cache::BuildCache;
             let cache = BuildCache::load(&self.options.output_dir).unwrap_or_else(|e| {
                 debug!("Failed to load cache: {}, starting fresh", e);
@@ -455,15 +519,19 @@ impl BuildOrchestrator {
 
             Some(cache)
         } else {
+            eprintln!("[DEBUG MAKI BUILD] Cache is disabled");
             None
         };
 
         // Step 2: Parse FSH files
+        eprintln!("[DEBUG MAKI BUILD] About to parse FSH files");
         info!("📝 Parsing FSH files...");
         let parsed_files = self.parse_fsh_files(&fsh_files)?;
+        eprintln!("[DEBUG MAKI BUILD] Parsed {} FSH files successfully", parsed_files.len());
         debug!("  Parsed {} FSH files", parsed_files.len());
 
         // Update cache with parsed files
+        eprintln!("[DEBUG MAKI BUILD] About to update cache");
         if let Some(ref mut cache) = cache {
             for file in &fsh_files {
                 if let Err(e) = cache.update_file(file) {
@@ -471,43 +539,56 @@ impl BuildOrchestrator {
                 }
             }
         }
+        eprintln!("[DEBUG MAKI BUILD] Cache updated");
 
         // Note: Linting (if enabled via --lint flag) is handled at CLI level
         // before build() is called to avoid circular dependencies
 
         // Step 3: Extract resources from parsed files
+        eprintln!("[DEBUG MAKI BUILD] About to extract resources");
         info!("🔍 Extracting FSH resources...");
         let resources = self.extract_resources(&parsed_files)?;
+        eprintln!("[DEBUG MAKI BUILD] Resources extracted");
         let total_resources = resources.profiles.len()
             + resources.extensions.len()
             + resources.valuesets.len()
             + resources.codesystems.len()
             + resources.instances.len();
+        eprintln!("[DEBUG MAKI BUILD] Counted {} total resources", total_resources);
         info!("  Extracted {} resources total", total_resources);
 
         // === POPULATE TANK ===
         // Convert extracted CST resources to semantic FhirResources and add to Tank
         // This enables fishing to find local FSH definitions before checking external packages
+        eprintln!("[DEBUG MAKI BUILD] About to populate Tank");
         info!("📥 Populating Tank with parsed FSH resources...");
         let analyzer = DefaultSemanticAnalyzer::new();
+        eprintln!("[DEBUG MAKI BUILD] Created semantic analyzer");
 
         // Add profiles to tank
-        for tracked in &resources.profiles {
+        eprintln!("[DEBUG MAKI BUILD] About to loop over {} profiles", resources.profiles.len());
+        for (idx, tracked) in resources.profiles.iter().enumerate() {
+            eprintln!("[DEBUG MAKI BUILD] Processing profile {} of {}", idx + 1, resources.profiles.len());
             let source_text = parsed_files
                 .iter()
                 .find(|(path, _)| path == &tracked.source_file)
                 .map(|(_, root)| root.text().to_string())
                 .unwrap_or_default();
 
+            eprintln!("[DEBUG MAKI BUILD] About to build_profile_resource");
             let fhir_resource = analyzer.build_profile_resource(
                 &tracked.resource,
                 &source_text,
                 &tracked.source_file,
             );
+            eprintln!("[DEBUG MAKI BUILD] About to acquire tank write lock");
             tank.write().await.add_resource(fhir_resource);
+            eprintln!("[DEBUG MAKI BUILD] Added resource to tank");
         }
+        eprintln!("[DEBUG MAKI BUILD] Finished adding profiles to tank");
 
         // Add extensions to tank
+        eprintln!("[DEBUG MAKI BUILD] Adding {} extensions to tank", resources.extensions.len());
         for tracked in &resources.extensions {
             let source_text = parsed_files
                 .iter()
@@ -524,6 +605,7 @@ impl BuildOrchestrator {
         }
 
         // Add valuesets to tank
+        eprintln!("[DEBUG MAKI BUILD] Adding {} valuesets to tank", resources.valuesets.len());
         for tracked in &resources.valuesets {
             let source_text = parsed_files
                 .iter()
@@ -540,6 +622,7 @@ impl BuildOrchestrator {
         }
 
         // Add codesystems to tank
+        eprintln!("[DEBUG MAKI BUILD] Adding {} codesystems to tank", resources.codesystems.len());
         for tracked in &resources.codesystems {
             let source_text = parsed_files
                 .iter()
@@ -555,7 +638,9 @@ impl BuildOrchestrator {
             tank.write().await.add_resource(fhir_resource);
         }
 
+        eprintln!("[DEBUG MAKI BUILD] About to read tank count");
         let tank_count = tank.read().await.all_resources().len();
+        eprintln!("[DEBUG MAKI BUILD] Tank count: {}", tank_count);
         info!("  ✓ Added {} resources to Tank", tank_count);
 
         // === PHASE 1: Expand RuleSets ===
@@ -593,6 +678,7 @@ impl BuildOrchestrator {
         }
 
         // Step 4: Export profiles and extensions
+        eprintln!("[DEBUG MAKI BUILD] About to export profiles and extensions");
         self.export_profiles_and_extensions(
             session.clone(),
             package.clone(),
@@ -602,6 +688,7 @@ impl BuildOrchestrator {
             &mut fsh_index,
         )
         .await?;
+        eprintln!("[DEBUG MAKI BUILD] Finished exporting profiles and extensions");
 
         // Step 5: Export instances
         self.export_instances(
@@ -634,19 +721,29 @@ impl BuildOrchestrator {
             self.apply_deferred_rules()?;
         }
 
-        // Step 7: Generate ImplementationGuide resource
-        if self.options.show_progress {
-            info!("📝 Generating additional files...");
-        }
-        self.generate_implementation_guide(&file_structure)?;
-        if self.options.show_progress {
-            info!("  ✓ ImplementationGuide resource");
-        }
+        // Step 7 & 8: Generate ImplementationGuide and package.json (skip if FSHOnly mode)
+        let fsh_only = self.build_config().fsh_only.unwrap_or(false);
 
-        // Step 8: Write package.json
-        self.write_package_json(&file_structure)?;
-        if self.options.show_progress {
-            info!("  ✓ package.json");
+        if !fsh_only {
+            if self.options.show_progress {
+                info!("📝 Generating additional files...");
+            }
+
+            // Generate ImplementationGuide resource
+            self.generate_implementation_guide(&file_structure)?;
+            if self.options.show_progress {
+                info!("  ✓ ImplementationGuide resource");
+            }
+
+            // Write package.json
+            self.write_package_json(&file_structure)?;
+            if self.options.show_progress {
+                info!("  ✓ package.json");
+            }
+        } else {
+            if self.options.show_progress {
+                info!("📝 FSHOnly mode: Skipping ImplementationGuide and package.json");
+            }
         }
 
         // Step 9: Load predefined resources
@@ -659,13 +756,24 @@ impl BuildOrchestrator {
         }
 
         info!("✅ Build completed successfully!");
-        info!(
-            "   Profiles: {}, Extensions: {}, ValueSets: {}, CodeSystems: {}, Instances: {}",
-            stats.profiles, stats.extensions, stats.value_sets, stats.code_systems, stats.instances
-        );
+        info!("");
+        info!("📊 BUILD SUMMARY:");
+        info!("   📋 Profiles exported: {} / {}", stats.profiles, resources.profiles.len());
+        info!("   🔌 Extensions exported: {} / {}", stats.extensions, resources.extensions.len());
+        info!("   📚 ValueSets exported: {} / {}", stats.value_sets, resources.valuesets.len());
+        info!("   🏷️  CodeSystems exported: {} / {}", stats.code_systems, resources.codesystems.len());
+        info!("   📦 Instances exported: {} / {}", stats.instances, resources.instances.len());
+        info!("");
+        info!("   ✅ Total exported: {} / {}", stats.total_resources(), total_resources);
+
+        let failed_count = total_resources - stats.total_resources();
+        if failed_count > 0 {
+            error!("   ❌ Failed to export: {} resources", failed_count);
+        }
+
         if stats.errors > 0 || stats.warnings > 0 {
             warn!(
-                "⚠️  Build had {} errors and {} warnings",
+                "   ⚠️  Build had {} errors and {} warnings",
                 stats.errors, stats.warnings
             );
         }
@@ -730,11 +838,15 @@ impl BuildOrchestrator {
         let mut parsed = Vec::new();
 
         for file in files {
+            eprintln!("[DEBUG MAKI BUILD] Parsing file: {:?}", file);
             let content = std::fs::read_to_string(file).map_err(|e| {
                 BuildError::ParseError(format!("Failed to read file {:?}: {}", file, e))
             })?;
+            eprintln!("[DEBUG MAKI BUILD] Read {} bytes from {:?}", content.len(), file);
 
+            eprintln!("[DEBUG MAKI BUILD] About to call parse_fsh");
             let (root, errors) = crate::cst::parse_fsh(&content);
+            eprintln!("[DEBUG MAKI BUILD] parse_fsh returned, got {} errors", errors.len());
 
             // Check for parse errors
             if !errors.is_empty() {
@@ -742,6 +854,7 @@ impl BuildOrchestrator {
             }
 
             parsed.push((file.clone(), root));
+            eprintln!("[DEBUG MAKI BUILD] Finished parsing {:?}", file);
         }
 
         Ok(parsed)
@@ -828,6 +941,18 @@ impl BuildOrchestrator {
             }
         }
 
+        let total_extracted = profiles.len() + extensions.len() + valuesets.len() + codesystems.len() + instances.len();
+
+        info!(
+            "✅ EXTRACTED {} TOTAL RESOURCES from {} FSH files:",
+            total_extracted, parsed_files.len()
+        );
+        info!("   📋 Profiles: {}", profiles.len());
+        info!("   🔌 Extensions: {}", extensions.len());
+        info!("   📚 ValueSets: {}", valuesets.len());
+        info!("   🏷️  CodeSystems: {}", codesystems.len());
+        info!("   📦 Instances: {}", instances.len());
+
         debug!(
             "Extracted {} profiles, {} extensions, {} valuesets, {} codesystems, {} instances",
             profiles.len(),
@@ -862,22 +987,39 @@ impl BuildOrchestrator {
         use tokio::sync::Mutex; // Use async-aware Mutex
 
         // Create exporters
-        let mut profile_exporter =
-            ProfileExporter::new(session.clone(), self.build_config().canonical.clone())
-                .await
-                .map_err(|e| {
-                    BuildError::ExportError(format!("Failed to create ProfileExporter: {}", e))
-                })?;
+        eprintln!("[DEBUG EXPORT] About to create ProfileExporter");
+        let publisher_name = self
+            .build_config()
+            .publisher
+            .as_ref()
+            .and_then(|p| p.name().map(|s| s.to_string()));
+        let mut profile_exporter = ProfileExporter::new(
+            session.clone(),
+            self.build_config().canonical.clone(),
+            self.build_config().version.clone(),
+            self.build_config().status.clone(),
+            publisher_name.clone(),
+        )
+        .await
+        .map_err(|e| {
+            BuildError::ExportError(format!("Failed to create ProfileExporter: {}", e))
+        })?;
+        eprintln!("[DEBUG EXPORT] ProfileExporter created");
 
         // Configure snapshot generation
         profile_exporter.set_generate_snapshots(self.options.generate_snapshots);
 
-        let extension_exporter =
-            ExtensionExporter::new(session.clone(), self.build_config().canonical.clone())
-                .await
-                .map_err(|e| {
-                    BuildError::ExportError(format!("Failed to create ExtensionExporter: {}", e))
-                })?;
+        eprintln!("[DEBUG EXPORT] About to create ExtensionExporter");
+        let extension_exporter = ExtensionExporter::new(
+            session.clone(),
+            self.build_config().canonical.clone(),
+            self.build_config().version.clone(),
+        )
+        .await
+        .map_err(|e| {
+            BuildError::ExportError(format!("Failed to create ExtensionExporter: {}", e))
+        })?;
+        eprintln!("[DEBUG EXPORT] ExtensionExporter created");
 
         // Create progress bar for profiles if show_progress is enabled
         let profile_pb = if self.options.show_progress && !resources.profiles.is_empty() {
@@ -1009,8 +1151,10 @@ impl BuildOrchestrator {
                 })
                 .collect();
 
-            // Execute up to 4 profile exports concurrently
-            let concurrency = 4;
+            // Execute profile exports with controlled concurrency
+            // NOTE: canonical-manager's session.resolve() has concurrency issues with sqlite
+            // Reducing to 1 (sequential) until canonical-manager supports concurrent queries
+            let concurrency = 1; // Sequential to avoid database deadlock
             let mut results_stream = stream::iter(profile_tasks).buffer_unordered(concurrency);
 
             // Wait for all tasks to complete
@@ -1175,7 +1319,8 @@ impl BuildOrchestrator {
                 .collect();
 
             // Execute up to 4 extension exports concurrently
-            let concurrency = 4;
+            // Sequential execution to avoid tokio runtime deadlock
+            let concurrency = 1;
             let mut results_stream = stream::iter(extension_tasks).buffer_unordered(concurrency);
 
             // Wait for all tasks to complete
@@ -1329,7 +1474,7 @@ impl BuildOrchestrator {
                 .collect();
 
             // Execute up to 4 instance exports concurrently
-            let concurrency = 4;
+            let concurrency = 4; // Parallel with proper tokio runtime
             let mut results_stream = stream::iter(instance_tasks).buffer_unordered(concurrency);
 
             // Wait for all tasks to complete
@@ -1424,19 +1569,25 @@ impl BuildOrchestrator {
         use tokio::sync::Mutex; // Use async-aware Mutex
 
         // Create exporters
-        let valueset_exporter =
-            ValueSetExporter::new(session.clone(), self.build_config().canonical.clone())
-                .await
-                .map_err(|e| {
-                    BuildError::ExportError(format!("Failed to create ValueSetExporter: {}", e))
-                })?;
+        let valueset_exporter = ValueSetExporter::new(
+            session.clone(),
+            self.build_config().canonical.clone(),
+            self.build_config().version.clone(),
+        )
+        .await
+        .map_err(|e| {
+            BuildError::ExportError(format!("Failed to create ValueSetExporter: {}", e))
+        })?;
 
-        let codesystem_exporter =
-            CodeSystemExporter::new(session, self.build_config().canonical.clone())
-                .await
-                .map_err(|e| {
-                    BuildError::ExportError(format!("Failed to create CodeSystemExporter: {}", e))
-                })?;
+        let codesystem_exporter = CodeSystemExporter::new(
+            session,
+            self.build_config().canonical.clone(),
+            self.build_config().version.clone(),
+        )
+        .await
+        .map_err(|e| {
+            BuildError::ExportError(format!("Failed to create CodeSystemExporter: {}", e))
+        })?;
 
         // Export valuesets in parallel using async concurrency
         {
@@ -1549,7 +1700,7 @@ impl BuildOrchestrator {
                 .collect();
 
             // Execute up to 4 valueset exports concurrently
-            let concurrency = 4;
+            let concurrency = 4; // Parallel with proper tokio runtime
             let mut results_stream = stream::iter(valueset_tasks).buffer_unordered(concurrency);
 
             while let Some(()) = results_stream.next().await {
@@ -1683,7 +1834,7 @@ impl BuildOrchestrator {
                 .collect();
 
             // Execute up to 4 codesystem exports concurrently
-            let concurrency = 4;
+            let concurrency = 4; // Parallel with proper tokio runtime
             let mut results_stream = stream::iter(codesystem_tasks).buffer_unordered(concurrency);
 
             while let Some(()) = results_stream.next().await {

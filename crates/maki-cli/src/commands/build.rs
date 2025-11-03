@@ -3,13 +3,13 @@
 //! SUSHI-compatible build command for compiling FSH to FHIR resources.
 
 use colored::Colorize;
-use maki_core::config::{BuildConfiguration, ConfigLoader, SushiConfiguration, UnifiedConfig};
+use maki_core::config::{ConfigLoader, SushiConfiguration, UnifiedConfig};
 use maki_core::export::{BuildOptions, BuildOrchestrator, BuildStats};
 use maki_core::{MakiError, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Build FSH files to FHIR resources (SUSHI-compatible)
 ///
@@ -34,8 +34,13 @@ pub async fn build_command(
     strict: bool,
     format: bool,
     no_cache: bool,
+    skip_deps: bool,
     config_overrides: HashMap<String, String>,
 ) -> Result<()> {
+    // TODO: Implement skip_deps functionality
+    if skip_deps {
+        warn!("--skip-deps flag is not yet implemented, dependencies will still be installed");
+    }
     let start_time = Instant::now();
 
     // Resolve project path

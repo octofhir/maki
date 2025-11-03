@@ -100,6 +100,8 @@ pub struct CodeSystemExporter {
     session: Arc<DefinitionSession>,
     /// Base URL for codesystem canonical URLs
     base_url: String,
+    /// Version from config
+    version: Option<String>,
 }
 
 impl CodeSystemExporter {
@@ -128,8 +130,13 @@ impl CodeSystemExporter {
     pub async fn new(
         session: Arc<DefinitionSession>,
         base_url: String,
+        version: Option<String>,
     ) -> Result<Self, ExportError> {
-        Ok(Self { session, base_url })
+        Ok(Self {
+            session,
+            base_url,
+            version,
+        })
     }
 
     /// Export a CodeSystem to a FHIR resource (JSON)
@@ -196,6 +203,9 @@ impl CodeSystemExporter {
             resource.description = Some(desc_value);
         }
 
+        // Set version from config if available (SUSHI parity)
+        resource.version = self.version.clone();
+
         // Track concept rules for Phase 2
         let mut has_concepts = false;
         let mut concept_count = 0;
@@ -229,7 +239,8 @@ impl CodeSystemExporter {
                 | Rule::Contains(_)
                 | Rule::Only(_)
                 | Rule::Obeys(_)
-                | Rule::Mapping(_) => {
+                | Rule::Mapping(_)
+                | Rule::CaretValue(_) => {
                     // These rules don't apply to codesystems
                     trace!("Skipping contains/only/obeys rule in codesystem");
                 }

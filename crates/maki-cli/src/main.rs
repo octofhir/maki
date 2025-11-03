@@ -110,6 +110,10 @@ enum Commands {
         #[arg(long, help = "Disable build cache (default: cache enabled)")]
         no_cache: bool,
 
+        /// Skip dependency installation (workaround for timeout issues)
+        #[arg(long, help = "Skip installing FHIR package dependencies")]
+        skip_deps: bool,
+
         /// Override configuration values (e.g., --config version:2.0.0)
         #[arg(
             short = 'c',
@@ -399,8 +403,22 @@ fn parse_config_override(s: &str) -> std::result::Result<(String, String), Strin
     Ok((parts[0].to_string(), parts[1].to_string()))
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    // Configure tokio runtime with enough threads to handle concurrent database operations
+    // Each concurrent export may spawn blocking tasks for DB queries (via tokio-rusqlite)
+    // With 4 concurrent exports × 3-4 DB queries each = ~16 blocking operations
+    // So we need: worker_threads (CPU-bound) + max_blocking_threads (I/O-bound)
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(num_cpus::get()) // CPU-bound async tasks
+        .max_blocking_threads(512) // I/O-bound blocking operations (DB queries) - high to prevent deadlock
+        .enable_all()
+        .build()
+        .expect("Failed to create Tokio runtime");
+
+    runtime.block_on(async_main())
+}
+
+async fn async_main() -> Result<()> {
     let cli = Cli::parse();
 
     // Handle shell completion generation
@@ -467,6 +485,7 @@ async fn run_command(cli: Cli) -> Result<()> {
             strict,
             format,
             no_cache,
+            skip_deps,
             config,
         }) => {
             let config_overrides: std::collections::HashMap<String, String> =
@@ -482,6 +501,7 @@ async fn run_command(cli: Cli) -> Result<()> {
                 strict,
                 format,
                 no_cache,
+                skip_deps,
                 config_overrides,
             )
             .await

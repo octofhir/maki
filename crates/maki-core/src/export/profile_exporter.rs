@@ -38,8 +38,8 @@
 use super::fhir_types::*;
 use crate::canonical::{CanonicalLoaderError, DefinitionSession};
 use crate::cst::ast::{
-    CardRule, ContainsRule, FixedValueRule, FlagRule, ObeysRule, OnlyRule, Profile, Rule,
-    ValueSetRule,
+    CardRule, CaretValueRule, ContainsRule, FixedValueRule, FlagRule, ObeysRule, OnlyRule, Profile,
+    Rule, ValueSetRule,
 };
 use crate::semantic::path_resolver::PathResolver;
 use serde_json::Value as JsonValue;
@@ -151,6 +151,12 @@ pub struct ProfileExporter {
     base_url: String,
     /// Whether to generate snapshots (default: false to match SUSHI)
     generate_snapshots: bool,
+    /// Version from config
+    version: Option<String>,
+    /// Status from config (draft | active | retired | unknown)
+    status: Option<String>,
+    /// Publisher from config
+    publisher: Option<String>,
 }
 
 impl ProfileExporter {
@@ -160,6 +166,9 @@ impl ProfileExporter {
     ///
     /// * `session` - DefinitionSession for resolving base definitions
     /// * `base_url` - Base URL for generated profile canonical URLs
+    /// * `version` - Version from configuration
+    /// * `status` - Status from configuration (draft | active | retired | unknown)
+    /// * `publisher` - Publisher from configuration
     ///
     /// # Example
     ///
@@ -173,6 +182,9 @@ impl ProfileExporter {
     /// let exporter = ProfileExporter::new(
     ///     session,
     ///     "http://example.org/fhir".to_string(),
+    ///     Some("1.0.0".to_string()),
+    ///     Some("draft".to_string()),
+    ///     Some("Example Org".to_string()),
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -180,6 +192,9 @@ impl ProfileExporter {
     pub async fn new(
         session: Arc<DefinitionSession>,
         base_url: String,
+        version: Option<String>,
+        status: Option<String>,
+        publisher: Option<String>,
     ) -> Result<Self, ExportError> {
         let path_resolver = Arc::new(PathResolver::new(session.clone()));
 
@@ -188,6 +203,9 @@ impl ProfileExporter {
             path_resolver,
             base_url,
             generate_snapshots: false, // Default OFF to match SUSHI
+            version,
+            status,
+            publisher,
         })
     }
 
@@ -217,6 +235,7 @@ impl ProfileExporter {
             .name()
             .ok_or_else(|| ExportError::MissingRequiredField("profile name".to_string()))?;
 
+        eprintln!("[PROFILE EXPORT] Step 1: Starting export for profile: {}", profile_name);
         debug!("Exporting profile: {}", profile_name);
 
         // 1. Get parent type
@@ -225,10 +244,13 @@ impl ProfileExporter {
             .and_then(|p| p.value())
             .ok_or_else(|| ExportError::MissingRequiredField("parent".to_string()))?;
 
+        eprintln!("[PROFILE EXPORT] Step 2: Got parent type: {}", parent);
         debug!("Parent type: {}", parent);
 
         // 2. Get base StructureDefinition
+        eprintln!("[PROFILE EXPORT] Step 3: About to call get_base_structure_definition for: {}", parent);
         let mut structure_def = self.get_base_structure_definition(&parent).await?;
+        eprintln!("[PROFILE EXPORT] Step 4: Successfully got base structure definition");
 
         // FIX Bug 2: Set baseDefinition to point to the parent, not parent's parent
         let base_definition_url = format!("http://hl7.org/fhir/StructureDefinition/{}", parent);
@@ -250,8 +272,11 @@ impl ProfileExporter {
         }
 
         // 5. Apply all rules to snapshot (modifying in-place)
-        for rule in profile.rules() {
-            if let Err(e) = self.apply_rule(&mut structure_def, &rule).await {
+        let all_rules: Vec<_> = profile.rules().collect();
+        debug!("Profile has {} rules", all_rules.len());
+        for (i, rule) in all_rules.iter().enumerate() {
+            debug!("  Rule {}: {:?}", i, std::mem::discriminant(rule));
+            if let Err(e) = self.apply_rule(&mut structure_def, rule).await {
                 warn!("Failed to apply rule: {}", e);
                 // Continue with other rules instead of failing completely
             }
@@ -344,14 +369,17 @@ impl ProfileExporter {
         &self,
         parent: &str,
     ) -> Result<StructureDefinition, ExportError> {
+        eprintln!("[GET_BASE_SD] Step 1: Starting resolution for parent: {}", parent);
         debug!("Resolving parent: {}", parent);
 
         // 1. If canonical provided explicitly, resolve immediately
         if parent.starts_with("http://") || parent.starts_with("https://") {
+            eprintln!("[GET_BASE_SD] Step 2: Parent is a canonical URL, resolving...");
             if let Some(sd) = self
                 .resolve_structure_definition_from_canonical(parent)
                 .await?
             {
+                eprintln!("[GET_BASE_SD] Step 3: Resolved parent via canonical URL {} → {}", parent, sd.url);
                 debug!("Resolved parent via canonical URL {} → {}", parent, sd.url);
                 return Ok(sd);
             }
@@ -362,7 +390,29 @@ impl ProfileExporter {
             )));
         }
 
-        // 2. Try resolving as a FHIR core profile (fast path, avoids expensive index search)
+        // 2. Try resolving as FHIR resource by name via canonical manager
+        // This handles cases like "USCorePatient" which may be defined as an alias
+        // or exists in a loaded package with that name
+        eprintln!("[GET_BASE_SD] Step 4: Trying to resolve parent '{}' via canonical manager by name", parent);
+        debug!("Trying to resolve parent '{}' via canonical manager by name", parent);
+
+        eprintln!("[GET_BASE_SD] Step 5: About to call session.resolve()");
+        if let Ok(resource) = self.session.resolve(parent).await {
+            eprintln!("[GET_BASE_SD] Step 6: Found parent '{}' in canonical packages by name", parent);
+            debug!("Found parent '{}' in canonical packages by name", parent);
+            let sd_json = (*resource.content).clone();
+            match serde_json::from_value::<StructureDefinition>(sd_json) {
+                Ok(sd) => {
+                    debug!("Successfully parsed StructureDefinition for parent: {}", parent);
+                    return Ok(sd);
+                }
+                Err(e) => {
+                    debug!("Failed to parse StructureDefinition for parent {}: {}", parent, e);
+                }
+            }
+        }
+
+        // 3. Try resolving as a FHIR core profile (fast path)
         let core_candidate = format!("http://hl7.org/fhir/StructureDefinition/{}", parent);
         if let Some(sd) = self
             .resolve_structure_definition_from_canonical(&core_candidate)
@@ -375,7 +425,7 @@ impl ProfileExporter {
             return Ok(sd);
         }
 
-        // 3. Fallback to searching by ID/name via canonical manager index
+        // 4. Fallback to searching by ID/name via canonical manager index
         debug!("Searching for StructureDefinition with name/id: {}", parent);
 
         // Try multiple search strategies:
@@ -503,9 +553,28 @@ impl ProfileExporter {
         // Note: Fields like contact, use_context, jurisdiction, purpose, copyright, keyword
         // don't exist in our simplified struct yet. They would be cleared in a full implementation.
 
-        // STEP 3: Extension filtering would happen here
-        // Note: Our StructureDefinition doesn't have an extension field yet.
-        // In full implementation, we would filter out UNINHERITED_EXTENSIONS here.
+        // STEP 3: Filter out uninherited extensions (SUSHI parity)
+        // These HL7-specific extensions should not be inherited from parent
+        if let Some(extensions) = &structure_def.extension {
+            let filtered: Vec<serde_json::Value> = extensions
+                .iter()
+                .filter(|ext| {
+                    // Extract URL from extension object
+                    if let Some(url) = ext.get("url").and_then(|u| u.as_str()) {
+                        !UNINHERITED_EXTENSIONS.contains(&url)
+                    } else {
+                        true // Keep extensions without URL
+                    }
+                })
+                .cloned()
+                .collect();
+
+            structure_def.extension = if filtered.is_empty() {
+                None
+            } else {
+                Some(filtered)
+            };
+        }
 
         // STEP 4: Set new metadata from profile
         structure_def.name = profile_name.clone();
@@ -548,11 +617,17 @@ impl ProfileExporter {
             structure_def.description = None;
         }
 
-        // Set status from config
-        structure_def.status = "draft".to_string(); // TODO: Get from config
+        // Set status from config (defaults to "draft" if not specified)
+        structure_def.status = self
+            .status
+            .clone()
+            .unwrap_or_else(|| "draft".to_string());
 
-        // Note: version is typically not set in differential, IG Publisher handles it
-        structure_def.version = None;
+        // Set publisher from config if available
+        structure_def.publisher = self.publisher.clone();
+
+        // Set version from config if available (SUSHI parity)
+        structure_def.version = self.version.clone();
 
         Ok(())
     }
@@ -590,6 +665,9 @@ impl ProfileExporter {
             }
             Rule::Only(only_rule) => self.apply_only_rule(structure_def, only_rule).await,
             Rule::Obeys(obeys_rule) => self.apply_obeys_rule(structure_def, obeys_rule).await,
+            Rule::CaretValue(caret_rule) => {
+                self.apply_caret_value_rule(structure_def, caret_rule).await
+            }
         }
     }
 
@@ -1025,6 +1103,116 @@ impl ProfileExporter {
             warn!("Element not found for obeys rule: {}", full_path);
         }
 
+        Ok(())
+    }
+
+    /// Apply caret value rule (metadata assignment)
+    ///
+    /// Example: * identifier ^short = "Patient identifier"
+    /// Example: * ^version = "1.0.0"
+    ///
+    /// Applies metadata fields to either elements or the profile itself.
+    async fn apply_caret_value_rule(
+        &self,
+        structure_def: &mut StructureDefinition,
+        caret_rule: &CaretValueRule,
+    ) -> Result<(), ExportError> {
+        let field = caret_rule
+            .field()
+            .ok_or_else(|| ExportError::MissingRequiredField("caret field".to_string()))?;
+        let value = caret_rule
+            .value()
+            .ok_or_else(|| ExportError::MissingRequiredField("caret value".to_string()))?;
+
+        // Check if this is an element-level caret rule or profile-level
+        if let Some(element_path) = caret_rule.element_path() {
+            // Element-level: * identifier ^short = "Patient identifier"
+            let path_str = element_path.as_string();
+            debug!(
+                "Applying element-level caret rule: {} ^{} = {}",
+                path_str, field, value
+            );
+
+            // Resolve full path
+            let full_path = self.resolve_full_path(structure_def, &path_str).await?;
+
+            // Find the element in snapshot
+            let snapshot = structure_def.get_or_create_snapshot();
+
+            if let Some(element) = snapshot.element.iter_mut().find(|e| e.path == full_path) {
+                // Apply the field to the element
+                self.apply_field_to_element(element, &field, &value)?;
+            } else {
+                warn!("Element not found for caret rule: {}", full_path);
+            }
+        } else {
+            // Profile-level: * ^version = "1.0.0"
+            debug!("Applying profile-level caret rule: ^{} = {}", field, value);
+
+            // Apply the field to the StructureDefinition itself
+            self.apply_field_to_structure(structure_def, &field, &value)?;
+        }
+
+        Ok(())
+    }
+
+    /// Apply a field to an ElementDefinition
+    fn apply_field_to_element(
+        &self,
+        element: &mut ElementDefinition,
+        field: &str,
+        value: &str,
+    ) -> Result<(), ExportError> {
+        match field {
+            "short" => {
+                element.short = Some(value.trim_matches('"').to_string());
+            }
+            "definition" => {
+                element.definition = Some(value.trim_matches('"').to_string());
+            }
+            "comment" => {
+                element.comment = Some(value.trim_matches('"').to_string());
+            }
+            _ => {
+                debug!("Unhandled element field in caret rule: {}", field);
+                // Note: requirements, meaningWhenMissing, and other fields may not be
+                // available in the current ElementDefinition struct
+            }
+        }
+        Ok(())
+    }
+
+    /// Apply a field to the StructureDefinition
+    fn apply_field_to_structure(
+        &self,
+        structure_def: &mut StructureDefinition,
+        field: &str,
+        value: &str,
+    ) -> Result<(), ExportError> {
+        match field {
+            "version" => {
+                structure_def.version = Some(value.trim_matches('"').to_string());
+            }
+            "status" => {
+                // Remove # prefix if present
+                let status_value = value.trim_start_matches('#').trim_matches('"');
+                structure_def.status = status_value.to_string();
+            }
+            "experimental" => {
+                structure_def.experimental = Some(value == "true");
+            }
+            "publisher" => {
+                structure_def.publisher = Some(value.trim_matches('"').to_string());
+            }
+            "description" => {
+                structure_def.description = Some(value.trim_matches('"').to_string());
+            }
+            _ => {
+                debug!("Unhandled structure field in caret rule: {}", field);
+                // Note: purpose, copyright, and other fields may not be
+                // available in the current StructureDefinition struct
+            }
+        }
         Ok(())
     }
 

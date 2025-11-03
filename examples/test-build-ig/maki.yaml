@@ -1,15 +1,20 @@
 $schema: https://octofhir.github.io/maki/schema/v1.json
 root: true
+dependencies:
+  hl7.fhir.r4.core: 4.0.1
 build:
   canonical: http://example.org/fhir/examples/test-build-ig
   fhirVersion:
   - 4.0.1
-  id: my.example.examples/test-build-ig
-  name: examples/test-build-ig
-  title: examples/test-build-ig
+  id: my.example.test-build-ig
+  name: TestBuildIG
+  title: Test Build IG
   version: 0.1.0
   status: draft
   publisher: Example Publisher
+  parameters:
+    show-inherited-invariants: false
+  FSHOnly: true
 linter:
   enabled: true
   rules:
@@ -28,9 +33,12 @@ formatter:
   alignCarets: true
 files:
   include:
-  - input/fsh/**/*.fsh
+  - '**/*.fsh'
   exclude:
   - '**/node_modules/**'
-  - '**/fsh-generated/**'
+  - '**/temp/**'
+  - '**/*.generated.fsh'
+  - '**/target/**'
+  - '**/build/**'
   ignoreFiles:
   - .fshlintignore

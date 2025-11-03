@@ -49,9 +49,10 @@
 //! # }
 //! ```
 
-use super::{ExportError, ValueSetCompose, ValueSetResource};
+use super::{ExportError, ValueSetCompose, ValueSetConcept, ValueSetInclude, ValueSetResource};
 use crate::canonical::DefinitionSession;
-use crate::cst::ast::{FixedValueRule, Rule, ValueSet};
+use crate::cst::ast::{AstNode, Document, FixedValueRule, PathRule, Rule, ValueSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
@@ -96,6 +97,8 @@ pub struct ValueSetExporter {
     session: Arc<DefinitionSession>,
     /// Base URL for valueset canonical URLs
     base_url: String,
+    /// Version from config
+    version: Option<String>,
 }
 
 impl ValueSetExporter {
@@ -124,8 +127,13 @@ impl ValueSetExporter {
     pub async fn new(
         session: Arc<DefinitionSession>,
         base_url: String,
+        version: Option<String>,
     ) -> Result<Self, ExportError> {
-        Ok(Self { session, base_url })
+        Ok(Self {
+            session,
+            base_url,
+            version,
+        })
     }
 
     /// Export a ValueSet to a FHIR resource (JSON)
@@ -192,9 +200,18 @@ impl ValueSetExporter {
             resource.description = Some(desc_value);
         }
 
+        // Set version from config if available (SUSHI parity)
+        resource.version = self.version.clone();
+
+        // Build alias map from parent document
+        let alias_map = self.build_alias_map(&valueset);
+        trace!("Built alias map with {} entries", alias_map.len());
+
         // Initialize compose for component rules
-        let compose = ValueSetCompose::new();
-        let mut has_components = false;
+        let mut compose = ValueSetCompose::new();
+
+        // Group codes by system for includes
+        let mut system_includes: HashMap<String, Vec<ValueSetConcept>> = HashMap::new();
 
         // Process rules
         for rule in valueset.rules() {
@@ -214,31 +231,34 @@ impl ValueSetExporter {
                     // ValueSet binding rules don't apply to valueset definitions
                     trace!("Skipping valueset rule in valueset definition");
                 }
-                Rule::Path(_) => {
+                Rule::Path(path_rule) => {
                     // Path rules are for component includes/excludes
-                    // Phase 2: Parse and add to compose
-                    trace!("Component rule detected (Phase 2 feature)");
-                    has_components = true;
+                    // Parse: * SPTY#AMN "Amniotic fluid"
+                    if let Some((system, concept)) = self.parse_component_rule(&path_rule, &alias_map, &name)? {
+                        system_includes.entry(system).or_insert_with(Vec::new).push(concept);
+                    }
                 }
                 Rule::AddElement(_)
                 | Rule::Contains(_)
                 | Rule::Only(_)
                 | Rule::Obeys(_)
-                | Rule::Mapping(_) => {
+                | Rule::Mapping(_)
+                | Rule::CaretValue(_) => {
                     // These rules don't apply to valuesets
                     trace!("Skipping contains/only/obeys rule in valueset");
                 }
             }
         }
 
-        // Add compose if we found any component rules
-        if has_components {
-            // For now, just add empty compose structure
-            // Phase 2 will populate this with actual includes/excludes
-            warn!(
-                "ValueSet {} has component rules, but full parsing not yet implemented",
-                name
-            );
+        // Build compose.include from grouped codes
+        if !system_includes.is_empty() {
+            for (system, concepts) in system_includes {
+                let mut include = ValueSetInclude::from_system(system);
+                for concept in concepts {
+                    include.add_concept(concept);
+                }
+                compose.add_include(include);
+            }
             resource.compose = Some(compose);
         }
 
@@ -338,6 +358,123 @@ impl ValueSetExporter {
         } else {
             trimmed.to_string()
         }
+    }
+
+    /// Build alias map from parent document
+    ///
+    /// Traverses up to the parent Document node and extracts all aliases
+    /// into a HashMap for quick lookup during component rule parsing.
+    fn build_alias_map(&self, valueset: &ValueSet) -> HashMap<String, String> {
+        let mut alias_map = HashMap::new();
+
+        // Get parent document by traversing up the tree
+        if let Some(parent) = valueset.syntax().parent() {
+            if let Some(document) = Document::cast(parent) {
+                for alias in document.aliases() {
+                    if let Some(name) = alias.name() {
+                        if let Some(value) = alias.value() {
+                            alias_map.insert(name, value);
+                        }
+                    }
+                }
+            }
+        }
+
+        trace!("Built alias map with {} entries", alias_map.len());
+        alias_map
+    }
+
+    /// Parse a component rule (PathRule) into a system and concept
+    ///
+    /// Handles syntax like:
+    /// - `* SPTY#AMN "Amniotic fluid"` - code with display
+    /// - `* SPTY#BLD` - code without display
+    ///
+    /// Returns: (resolved_system_url, ValueSetConcept)
+    fn parse_component_rule(
+        &self,
+        path_rule: &PathRule,
+        alias_map: &HashMap<String, String>,
+        valueset_name: &str,
+    ) -> Result<Option<(String, ValueSetConcept)>, ExportError> {
+        // Get the path (e.g., "SPTY#AMN")
+        let path = match path_rule.path() {
+            Some(p) => p.as_string(),
+            None => {
+                warn!("PathRule without path in ValueSet {}", valueset_name);
+                return Ok(None);
+            }
+        };
+
+        // Parse: CodeSystemPrefix#Code
+        let parts: Vec<&str> = path.split('#').collect();
+        if parts.len() != 2 {
+            warn!(
+                "Invalid component rule format '{}' in ValueSet {}. Expected format: SYSTEM#CODE",
+                path, valueset_name
+            );
+            return Ok(None);
+        }
+
+        let system_prefix = parts[0].trim();
+        let code = parts[1].trim();
+
+        // Resolve alias to full URL
+        let system_url = match alias_map.get(system_prefix) {
+            Some(url) => url.clone(),
+            None => {
+                warn!(
+                    "Unresolved alias '{}' in ValueSet {}. Using as-is.",
+                    system_prefix, valueset_name
+                );
+                system_prefix.to_string()
+            }
+        };
+
+        // Try to get display text from following String token
+        let display = self.get_display_text(path_rule);
+
+        // Create concept
+        let concept = if let Some(display_text) = display {
+            ValueSetConcept::with_display(code, display_text)
+        } else {
+            ValueSetConcept::new(code)
+        };
+
+        trace!(
+            "Parsed component rule: system={}, code={}, display={:?}",
+            system_url,
+            code,
+            concept.display
+        );
+
+        Ok(Some((system_url, concept)))
+    }
+
+    /// Extract display text from a PathRule
+    ///
+    /// Looks for a String token following the path in the syntax tree.
+    /// Example: `* SPTY#AMN "Amniotic fluid"` -> Some("Amniotic fluid")
+    fn get_display_text(&self, path_rule: &PathRule) -> Option<String> {
+        use crate::cst::FshSyntaxKind;
+
+        // Look for a String token following the PathRule node
+        // We iterate through all descendants with tokens to find a String
+        for child in path_rule.syntax().descendants_with_tokens() {
+            if let rowan::NodeOrToken::Token(token) = child {
+                if token.kind() == FshSyntaxKind::String {
+                    let text = token.text();
+                    // Remove surrounding quotes
+                    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+                        return Some(text[1..text.len() - 1].to_string());
+                    } else {
+                        return Some(text.to_string());
+                    }
+                }
+            }
+        }
+
+        None
     }
 }
 

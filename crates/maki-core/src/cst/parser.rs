@@ -1797,6 +1797,29 @@ impl<'a> Parser<'a> {
 
     /// Parse the rest of a standard sdRule after path has been consumed
     fn parse_standard_sd_rule(&mut self) {
+        // Check for caret rule: * path ^field = value
+        if self.at(FshSyntaxKind::Caret) {
+            self.builder.start_node(FshSyntaxKind::CaretValueRule);
+
+            // Parse caret path (^field or ^field.subfield)
+            self.parse_path();
+            self.consume_trivia();
+
+            // Assignment (= or +=)
+            if self.at(FshSyntaxKind::Equals) || self.at(FshSyntaxKind::PlusEquals) {
+                self.add_current_token();
+                self.advance();
+                self.consume_trivia();
+
+                // Value expression
+                self.parse_value_expression();
+            }
+
+            self.consume_trivia_and_newlines();
+            self.builder.finish_node();
+            return;
+        }
+
         // Determine rule type based on what follows the path
         let rule_kind = if self.at(FshSyntaxKind::Arrow) {
             FshSyntaxKind::MappingRule

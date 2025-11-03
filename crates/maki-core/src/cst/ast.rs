@@ -1217,6 +1217,7 @@ pub enum Rule {
     Obeys(ObeysRule),
     AddElement(AddElementRule),
     Mapping(MappingRule),
+    CaretValue(CaretValueRule),
 }
 
 impl Rule {
@@ -1232,6 +1233,7 @@ impl Rule {
             FshSyntaxKind::ObeysRule => ObeysRule::cast(node).map(Rule::Obeys),
             FshSyntaxKind::AddElementRule => AddElementRule::cast(node).map(Rule::AddElement),
             FshSyntaxKind::MappingRule => MappingRule::cast(node).map(Rule::Mapping),
+            FshSyntaxKind::CaretValueRule => CaretValueRule::cast(node).map(Rule::CaretValue),
             _ => None,
         }
     }
@@ -1248,6 +1250,7 @@ impl Rule {
             Rule::Obeys(r) => r.syntax(),
             Rule::AddElement(r) => r.syntax(),
             Rule::Mapping(r) => r.syntax(),
+            Rule::CaretValue(r) => r.syntax(),
         }
     }
 }
@@ -1928,6 +1931,99 @@ impl MappingRule {
             }
         }
         None
+    }
+}
+
+/// Caret value rule: * path ^field = value or * ^field = value
+/// Used to set metadata on elements or the profile itself
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaretValueRule {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for CaretValueRule {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::CaretValueRule
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl CaretValueRule {
+    /// Get the element path (if present, for element-level caret rules)
+    /// For profile-level caret rules (like * ^version = "1.0"), this returns None
+    pub fn element_path(&self) -> Option<Path> {
+        // Look for a path before the caret path
+        // The structure is: * [element_path] ^field = value
+        // We need to find the first Path that doesn't start with a caret
+        for sibling in self.syntax.siblings_with_tokens(rowan::Direction::Prev) {
+            if let Some(node) = sibling.as_node() {
+                if node.kind() == FshSyntaxKind::Path {
+                    // Check if this path starts with a caret (^field path)
+                    let text = node.text().to_string();
+                    if !text.trim().starts_with('^') {
+                        return Path::cast(FshSyntaxNode::from(node.clone()));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Get the caret path (the ^field part)
+    pub fn caret_path(&self) -> Option<Path> {
+        // Find the Path child that represents the caret field
+        for child in self.syntax.children() {
+            if child.kind() == FshSyntaxKind::Path {
+                return Path::cast(child);
+            }
+        }
+        None
+    }
+
+    /// Get the field name (without the caret)
+    pub fn field(&self) -> Option<String> {
+        self.caret_path().map(|p| {
+            let text = p.syntax().text().to_string();
+            // Remove leading ^ if present
+            if text.starts_with('^') {
+                text[1..].to_string()
+            } else {
+                text
+            }
+        })
+    }
+
+    /// Get the assigned value
+    pub fn value(&self) -> Option<String> {
+        // Value can be code (with optional display), string, number, identifier, or boolean
+        // Priority: Code > Identifier > String > Number > Boolean
+        token_of_kind(&self.syntax, FshSyntaxKind::Code)
+            .map(|t| t.text().to_string())
+            .or_else(|| get_ident_text(&self.syntax))
+            .or_else(|| get_string_text(&self.syntax))
+            .or_else(|| {
+                token_of_kind(&self.syntax, FshSyntaxKind::Integer).map(|t| t.text().to_string())
+            })
+            .or_else(|| {
+                token_of_kind(&self.syntax, FshSyntaxKind::Decimal).map(|t| t.text().to_string())
+            })
+            .or_else(|| {
+                token_of_kind(&self.syntax, FshSyntaxKind::True).map(|t| t.text().to_string())
+            })
+            .or_else(|| {
+                token_of_kind(&self.syntax, FshSyntaxKind::False).map(|t| t.text().to_string())
+            })
     }
 }
 

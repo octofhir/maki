@@ -323,6 +323,7 @@ fn calculate_caret_alignment(rules: &[Rule]) -> usize {
                 Rule::Obeys(r) => r.path().map(|p| p.as_string()),
                 Rule::AddElement(r) => r.path().map(|p| p.as_string()),
                 Rule::Mapping(r) => r.path().map(|p| p.as_string()),
+                Rule::CaretValue(r) => r.element_path().map(|p| p.as_string()),
             };
             path.map(|p| p.len())
         })
@@ -496,6 +497,24 @@ fn format_rule(ctx: &mut FormatContext, rule: &Rule, caret_column: usize) {
             }
 
             ctx.writeln(&rule_text);
+        }
+
+        Rule::CaretValue(caret_rule) => {
+            // Format: * path ^field = value or * ^field = value
+            let element_path = caret_rule
+                .element_path()
+                .map(|p| p.as_string())
+                .unwrap_or_default();
+            let field = caret_rule.field().unwrap_or_default();
+            let value = caret_rule.value().unwrap_or_default();
+
+            if element_path.is_empty() {
+                // Profile-level caret rule: * ^version = "1.0.0"
+                ctx.writeln(&format!("* ^{} = {}", field, value));
+            } else {
+                // Element-level caret rule: * identifier ^short = "Patient identifier"
+                ctx.writeln(&format!("* {} ^{} = {}", element_path, field, value));
+            }
         }
     }
 }

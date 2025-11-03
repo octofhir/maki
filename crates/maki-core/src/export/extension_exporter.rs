@@ -65,6 +65,8 @@ pub struct ExtensionExporter {
     path_resolver: Arc<PathResolver>,
     /// Base URL for generated extensions
     base_url: String,
+    /// Version from config
+    version: Option<String>,
 }
 
 impl ExtensionExporter {
@@ -74,6 +76,7 @@ impl ExtensionExporter {
     ///
     /// * `session` - DefinitionSession for resolving base definitions
     /// * `base_url` - Base URL for generated extension canonical URLs
+    /// * `version` - Version from configuration
     ///
     /// # Example
     ///
@@ -87,6 +90,7 @@ impl ExtensionExporter {
     /// let exporter = ExtensionExporter::new(
     ///     session,
     ///     "http://example.org/fhir".to_string(),
+    ///     Some("1.0.0".to_string()),
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -94,6 +98,7 @@ impl ExtensionExporter {
     pub async fn new(
         session: Arc<DefinitionSession>,
         base_url: String,
+        version: Option<String>,
     ) -> Result<Self, ExportError> {
         let path_resolver = Arc::new(PathResolver::new(session.clone()));
 
@@ -101,6 +106,7 @@ impl ExtensionExporter {
             session,
             path_resolver,
             base_url,
+            version,
         })
     }
 
@@ -225,6 +231,9 @@ impl ExtensionExporter {
             structure_def.description = Some(desc);
         }
 
+        // Set version from config if available (SUSHI parity)
+        structure_def.version = self.version.clone();
+
         Ok(())
     }
 
@@ -336,7 +345,8 @@ impl ExtensionExporter {
             | Rule::Contains(_)
             | Rule::Only(_)
             | Rule::Obeys(_)
-            | Rule::Mapping(_) => {
+            | Rule::Mapping(_)
+            | Rule::CaretValue(_) => {
                 // TODO: Implement these rule types for extensions
                 Ok(())
             }

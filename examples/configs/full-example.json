@@ -1,0 +1,87 @@
+{
+  "$schema": "https://octofhir.github.io/maki/schema/v1.json",
+  "root": true,
+  "dependencies": {
+    "hl7.terminology.r4": "5.3.0",
+    "hl7.fhir.us.core": "6.1.0"
+  },
+  "build": {
+    "canonical": "http://example.org/fhir/my-ig",
+    "fhirVersion": [
+      "4.0.1"
+    ],
+    "id": "my.example.ig",
+    "name": "MyImplementationGuide",
+    "title": "My Example Implementation Guide",
+    "version": "1.0.0",
+    "status": "draft",
+    "experimental": true,
+    "date": "2024-01-01",
+    "publisher": {
+      "name": "Example Organization",
+      "url": "http://example.org",
+      "email": "contact@example.org"
+    },
+    "description": "This is a comprehensive example Implementation Guide showcasing all configuration options.",
+    "copyright": "Copyright (c) 2024 Example Organization",
+    "license": "CC0-1.0",
+    "dependencies": {
+      "hl7.terminology.r4": "5.3.0",
+      "hl7.fhir.us.core": "6.1.0"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "all": false,
+      "blocking": {
+        "validate-critical-requirements": "error"
+      },
+      "correctness": {
+        "missing-parent": "error",
+        "invalid-reference": "error",
+        "duplicate-definition": "error"
+      },
+      "suspicious": {
+        "implicit-cardinality": "warn",
+        "unused-alias": "warn"
+      },
+      "style": {
+        "prefer-title-case": "info",
+        "naming-convention": "warn"
+      },
+      "documentation": {
+        "require-description": "warn",
+        "require-purpose": "info"
+      }
+    },
+    "ruleDirectories": [
+      "custom-rules/"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentSize": 2,
+    "lineWidth": 100,
+    "alignCarets": true
+  },
+  "files": {
+    "include": [
+      "input/fsh/**/*.fsh",
+      "fsh/**/*.fsh"
+    ],
+    "exclude": [
+      "**/node_modules/**",
+      "**/temp/**",
+      "**/*.generated.fsh",
+      "**/target/**",
+      "**/build/**",
+      "**/*.draft.fsh"
+    ],
+    "ignoreFiles": [
+      ".fshlintignore",
+      ".gitignore"
+    ]
+  }
+}

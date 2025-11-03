@@ -1,0 +1,10 @@
+[
+  {
+    "outputFile": "StructureDefinition-my-patient.json",
+    "fshName": "MyPatient",
+    "fshType": "Profile",
+    "fshFile": "patient.fsh",
+    "startLine": 1,
+    "endLine": 19
+  }
+]

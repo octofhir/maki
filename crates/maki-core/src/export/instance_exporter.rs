@@ -264,7 +264,8 @@ impl InstanceExporter {
             | Rule::Contains(_)
             | Rule::Only(_)
             | Rule::Obeys(_)
-            | Rule::Mapping(_) => {
+            | Rule::Mapping(_)
+            | Rule::CaretValue(_) => {
                 // These rules don't apply to instances
                 trace!("Skipping contains/only/obeys rule in instance");
             }

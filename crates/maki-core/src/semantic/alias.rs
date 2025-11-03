@@ -5,13 +5,23 @@
 //!
 //! # FSH Alias Syntax
 //!
+//! FSH supports two types of aliases (SUSHI-compatible):
+//!
+//! 1. **URL aliases** (with `$` prefix) - for CodeSystems, ValueSets, etc.
+//! 2. **Profile/Extension aliases** (without `$`) - for StructureDefinitions
+//!
 //! ```fsh
+//! // URL aliases (with $)
 //! Alias: $SCT = http://snomed.info/sct
 //! Alias: $LOINC = http://loinc.org
 //! Alias: $UCUM = http://unitsofmeasure.org
 //!
+//! // Profile aliases (without $)
+//! Alias: USCorePatient = http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient
+//! Alias: USCoreCondition = http://hl7.org/fhir/us/core/StructureDefinition/us-core-condition-problems-health-concerns
+//!
 //! Profile: MyProfile
-//! Parent: Observation
+//! Parent: USCorePatient
 //! * code from $SCT
 //! * code = $LOINC#8480-6
 //! ```
@@ -48,14 +58,18 @@ pub type Span = Range<usize>;
 
 /// An alias definition mapping a short name to a full URL
 ///
-/// # Example
+/// # Examples
 ///
 /// ```fsh
+/// // URL alias (with $)
 /// Alias: $SCT = http://snomed.info/sct
+///
+/// // Profile alias (without $)
+/// Alias: USCorePatient = http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Alias {
-    /// Alias name (must start with '$')
+    /// Alias name (may or may not start with '$')
     pub name: String,
 
     /// Full URL this alias resolves to
@@ -136,12 +150,13 @@ impl AliasTable {
 
     /// Add an alias to the table
     ///
+    /// Supports both URL aliases (with `$`) and Profile/Extension aliases (without `$`).
+    ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The alias name doesn't start with '$'
     /// - The alias is already defined (stricter than SUSHI)
-    /// - The URL is invalid
+    /// - The URL is empty
     ///
     /// # Example
     ///
@@ -161,10 +176,10 @@ impl AliasTable {
     /// assert!(table.add_alias(alias).is_ok());
     /// ```
     pub fn add_alias(&mut self, alias: Alias) -> Result<(), AliasError> {
-        // Validate alias name starts with '$'
-        if !alias.name.starts_with('$') {
-            return Err(AliasError::InvalidAliasName(alias.name.clone()));
-        }
+        // NOTE: SUSHI supports two types of aliases:
+        // 1. URL aliases with '$' prefix (e.g., $SCT = http://snomed.info/sct)
+        // 2. Profile/Extension aliases WITHOUT '$' (e.g., USCorePatient = http://...)
+        // We support both for SUSHI compatibility.
 
         // Validate URL is not empty
         if alias.url.is_empty() {
@@ -367,15 +382,15 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_alias_name() {
+    fn test_alias_without_dollar_sign() {
         let mut table = AliasTable::new();
 
-        // Missing '$' prefix
-        let alias = make_alias("SCT", "http://snomed.info/sct");
+        // Profile aliases don't need '$' prefix (SUSHI-compatible)
+        let alias = make_alias("USCorePatient", "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient");
 
         let result = table.add_alias(alias);
-        assert!(result.is_err());
-        assert!(matches!(result, Err(AliasError::InvalidAliasName(_))));
+        assert!(result.is_ok());
+        assert_eq!(table.resolve("USCorePatient"), Some("http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"));
     }
 
     #[test]

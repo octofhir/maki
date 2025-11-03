@@ -1,0 +1,29 @@
+{
+  "resourceType": "ImplementationGuide",
+  "id": "my.example.test-build-ig",
+  "url": "http://example.org/fhir/examples/test-build-ig/ImplementationGuide/my.example.test-build-ig",
+  "version": "0.1.0",
+  "name": "TestBuildIG",
+  "title": "Test Build IG",
+  "status": "draft",
+  "publisher": "Example Publisher",
+  "packageId": "my.example.test-build-ig",
+  "fhirVersion": [
+    "4.0.1"
+  ],
+  "definition": {
+    "resource": [],
+    "page": {
+      "nameUrl": "toc.html",
+      "title": "Table of Contents",
+      "generation": "html",
+      "page": []
+    },
+    "parameter": [
+      {
+        "code": "show-inherited-invariants",
+        "value": "false"
+      }
+    ]
+  }
+}

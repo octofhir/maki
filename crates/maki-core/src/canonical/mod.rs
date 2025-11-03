@@ -20,10 +20,16 @@ use octofhir_canonical_manager::{CanonicalManager, FcmError, config::FcmConfig};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::fs;
-use tracing::{debug, warn};
+use tracing::{debug, error, info, warn};
 
 /// Result type returned by canonical loader operations.
 pub type CanonicalResult<T> = Result<T, CanonicalLoaderError>;
+
+/// Timeout applied to canonical package installation in seconds.
+/// Increased to 300s (5 minutes) to handle large IGs with many dependencies.
+/// Note: Blocking SQLite operations in async context cause thread pool starvation.
+/// TODO: Convert canonical-manager to use tokio-rusqlite or spawn_blocking.
+const CANONICAL_INSTALL_TIMEOUT_SECS: u64 = 300;
 
 /// Errors produced by the canonical loader facade.
 #[derive(Debug, Error)]
@@ -49,6 +55,12 @@ pub enum CanonicalLoaderError {
         version: String,
         #[source]
         source: FcmError,
+    },
+
+    #[error("package installation timed out after {timeout_secs}s for packages: {packages:?}")]
+    PackageInstallTimeout {
+        packages: Vec<PackageCoordinate>,
+        timeout_secs: u64,
     },
 
     #[error("canonical resolution failed for {url}: {source}")]
@@ -225,8 +237,11 @@ impl CanonicalFacade {
             config.add_package(&pkg.name, &pkg.version, Some(pkg.priority));
         }
 
+        eprintln!("[DEBUG MAKI] About to call CanonicalManager::new()");
         let manager = CanonicalManager::new(config).await?;
+        eprintln!("[DEBUG MAKI] CanonicalManager::new() returned successfully");
 
+        eprintln!("[DEBUG MAKI] Creating CanonicalFacade");
         Ok(Self {
             manager: Arc::new(manager),
             options,
@@ -333,13 +348,15 @@ impl DefinitionSession {
         I: IntoIterator<Item = PackageCoordinate>,
     {
         let mut to_install = Vec::new();
-        let mut failed_keys = Vec::new();
 
         for pkg in packages.into_iter() {
             let key = format!("{}@{}", pkg.name, pkg.version);
             // only install once per session
             if self.installed.insert(key.clone()) {
-                debug!("Queuing FHIR package {key} for batch installation");
+                info!(
+                    "Queuing FHIR package {}@{} (priority {}) for installation",
+                    pkg.name, pkg.version, pkg.priority
+                );
                 to_install.push((pkg, key));
             } else {
                 debug!("Package {key} already installed in session");
@@ -350,7 +367,7 @@ impl DefinitionSession {
             return Ok(());
         }
 
-        debug!("Installing {} packages in batch", to_install.len());
+        info!("Installing {} canonical package(s)", to_install.len());
         let specs: Vec<octofhir_canonical_manager::config::PackageSpec> = to_install
             .iter()
             .map(|(pkg, _)| octofhir_canonical_manager::config::PackageSpec {
@@ -360,22 +377,74 @@ impl DefinitionSession {
             })
             .collect();
 
-        if let Err(source) = self.facade.manager.install_packages_batch(specs).await {
-            for (pkg, key) in to_install {
-                self.installed.remove(&key);
-                failed_keys.push((pkg, key));
-            }
+        let packages_only: Vec<PackageCoordinate> =
+            to_install.iter().map(|(pkg, _)| pkg.clone()).collect();
+        let keys: Vec<String> = to_install.iter().map(|(_, key)| key.clone()).collect();
 
-            if let Some((pkg, _)) = failed_keys.first() {
-                return Err(CanonicalLoaderError::PackageInstall {
-                    name: pkg.name.clone(),
-                    version: pkg.version.clone(),
-                    source,
-                });
-            }
+        info!(
+            "Canonical install timeout set to {}s",
+            CANONICAL_INSTALL_TIMEOUT_SECS
+        );
+        for (index, pkg) in packages_only.iter().enumerate() {
+            info!(
+                "  [{} / {}] {}@{}",
+                index + 1,
+                packages_only.len(),
+                pkg.name,
+                pkg.version
+            );
         }
 
-        Ok(())
+        // Use new parallel installation pipeline for maximum performance
+        let install_future = self.facade.manager.install_packages_parallel(specs);
+
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(CANONICAL_INSTALL_TIMEOUT_SECS),
+            install_future,
+        )
+        .await
+        {
+            Ok(Ok(())) => {
+                info!(
+                    "Canonical packages installed successfully ({} total)",
+                    packages_only.len()
+                );
+                Ok(())
+            }
+            Ok(Err(source)) => {
+                for key in keys {
+                    self.installed.remove(&key);
+                }
+
+                if let Some(pkg) = packages_only.first() {
+                    error!(
+                        "Failed to install canonical package {}@{}: {}",
+                        pkg.name, pkg.version, source
+                    );
+                    Err(CanonicalLoaderError::PackageInstall {
+                        name: pkg.name.clone(),
+                        version: pkg.version.clone(),
+                        source,
+                    })
+                } else {
+                    Err(CanonicalLoaderError::from(source))
+                }
+            }
+            Err(_) => {
+                for key in keys {
+                    self.installed.remove(&key);
+                }
+
+                error!(
+                    "Package installation timed out after {}s: {:?}",
+                    CANONICAL_INSTALL_TIMEOUT_SECS, packages_only
+                );
+                Err(CanonicalLoaderError::PackageInstallTimeout {
+                    packages: packages_only,
+                    timeout_secs: CANONICAL_INSTALL_TIMEOUT_SECS,
+                })
+            }
+        }
     }
 
     /// Resolve a canonical URL into a cached definition.
@@ -411,7 +480,10 @@ impl DefinitionSession {
                 .await
             {
                 Ok(resolved) => {
-                    debug!("Successfully resolved {} with FHIR version {}", canonical_url, fhir_version);
+                    debug!(
+                        "Successfully resolved {} with FHIR version {}",
+                        canonical_url, fhir_version
+                    );
                     resolved
                 }
                 Err(version_err) => {
@@ -432,7 +504,10 @@ impl DefinitionSession {
             }
         } else {
             // No FHIR version specified, use version-agnostic resolution
-            debug!("No FHIR version configured for session, using version-agnostic resolution for {}", canonical_url);
+            debug!(
+                "No FHIR version configured for session, using version-agnostic resolution for {}",
+                canonical_url
+            );
             self.facade
                 .manager
                 .resolve(canonical_url)

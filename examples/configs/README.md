@@ -1,116 +1,203 @@
-# Configuration Examples
+# MAKI Configuration Examples
 
-This directory contains example configuration files for maki.
+This directory contains example configuration files for MAKI, showcasing different configuration scenarios.
 
-## Files
+## Configuration Files
 
-### minimal.json
-A minimal configuration file with just the essential settings. Good starting point for new projects.
+### `full-example.json` / `full-example.yaml`
 
-### base.json
-A base configuration with common settings. Can be extended by other configs.
+Comprehensive configuration file demonstrating **all available options** in MAKI. This example includes:
 
-### full.jsonc
-A comprehensive configuration showing all available options. Uses JSONC format (JSON with comments).
+- **JSON Schema reference** - For IDE autocomplete and validation
+- **Root marker** - Stops configuration file discovery at this directory
+- **Top-level dependencies** - Shared FHIR packages across build and linter
+- **Build configuration** - SUSHI-compatible IG metadata
+- **Linter configuration** - All rule categories with custom severity levels
+- **Formatter configuration** - Code formatting preferences
+- **Files configuration** - Include/exclude patterns for FSH files
 
-## Usage
+Use this as a reference when you need to:
+- Understand all available configuration options
+- Set up complex linting rules
+- Configure custom rule directories
+- Fine-tune file discovery patterns
 
-### Using a configuration file
+## Configuration Sections
 
-Place a `maki.json` or `maki.jsonc` file in your project root:
-
-```bash
-# Copy a template
-cp examples/configs/minimal.json ./maki.json
-
-# Or create your own
-cat > maki.json << 'EOF'
-{
-  "$schema": "https://octofhir.github.io/maki/schema/v1.json",
-  "root": true,
-  "linter": {
-    "enabled": true,
-    "rules": {
-      "recommended": true
-    }
-  }
-}
-EOF
-```
-
-### Extending a base configuration
-
-You can extend other configurations using the `extends` field:
-
-```jsonc
-{
-  "extends": ["./base.json"],
-  "linter": {
-    "rules": {
-      "correctness": {
-        "duplicate-definition": "error"
-      }
-    }
-  }
-}
-```
-
-### Configuration discovery
-
-maki will automatically discover configuration files by searching upward from the current directory:
-
-1. Starts from the current directory
-2. Looks for `maki.jsonc` or `maki.json`
-3. If not found, moves up to the parent directory
-4. Stops when a config with `"root": true` is found or reaches filesystem root
-
-### Schema validation
-
-Modern editors with JSON Schema support will provide:
-- Auto-completion
-- Validation
-- Documentation tooltips
-
-Just include the `$schema` field in your config:
+### 1. Schema and Root
 
 ```json
 {
-  "$schema": "https://octofhir.github.io/maki/schema/v1.json"
+  "$schema": "https://octofhir.github.io/maki/schema/v1.json",
+  "root": true
 }
 ```
 
-## Rule Severities
+- `$schema` - Enables IDE autocomplete and validation
+- `root` - Stops upward config file search (useful for monorepos)
 
-Rules can be configured with the following severities:
+### 2. Dependencies
 
-- `"off"` - Disable the rule
-- `"info"` - Informational message (doesn't fail build)
-- `"warn"` - Warning (doesn't fail build)
-- `"error"` - Error (fails build)
+```json
+{
+  "dependencies": {
+    "hl7.fhir.us.core": "6.1.0",
+    "hl7.terminology.r4": "5.3.0"
+  }
+}
+```
 
-## Rule Categories
+Top-level dependencies are shared between build and linter, avoiding duplication.
 
-Rules are organized into categories:
+### 3. Build Configuration (SUSHI-compatible)
 
-- **blocking** - Critical requirements that must pass before other rules run
-- **correctness** - Errors in FSH logic (semantic errors)
-- **suspicious** - Patterns that often indicate bugs
-- **style** - Formatting and naming conventions
-- **documentation** - Metadata and guidance requirements
+```json
+{
+  "build": {
+    "canonical": "http://example.org/fhir/my-ig",
+    "fhirVersion": ["4.0.1"],
+    "id": "my.example.ig",
+    "name": "MyImplementationGuide",
+    "title": "My Example Implementation Guide",
+    "version": "1.0.0",
+    "status": "draft",
+    "publisher": {
+      "name": "Example Organization",
+      "url": "http://example.org"
+    }
+  }
+}
+```
 
-## Custom Rules
+Contains all fields from `sushi-config.yaml`, allowing MAKI to act as a drop-in replacement for SUSHI.
 
-You can load custom GritQL-based rules from directories:
+### 4. Linter Configuration
 
-```jsonc
+```json
 {
   "linter": {
-    "ruleDirectories": [
-      "./custom-rules",
-      "./node_modules/@my-org/fsh-rules/rules"
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "blocking": {
+        "validate-critical-requirements": "error"
+      },
+      "correctness": {
+        "duplicate-definition": "error",
+        "invalid-reference": "error"
+      },
+      "suspicious": {
+        "unused-alias": "warn"
+      },
+      "style": {
+        "naming-convention": "warn"
+      },
+      "documentation": {
+        "require-description": "warn"
+      }
+    },
+    "ruleDirectories": ["custom-rules/"]
+  }
+}
+```
+
+#### Rule Categories
+
+- **blocking** - Critical requirements that must pass before other rules run
+- **correctness** - Syntax and semantic errors
+- **suspicious** - Patterns that often indicate bugs
+- **style** - Naming conventions and formatting
+- **documentation** - Metadata requirements
+
+#### Severity Levels
+
+- `off` - Disable the rule
+- `info` - Informational message
+- `warn` - Warning (doesn't fail build)
+- `error` - Error (fails build)
+
+### 5. Formatter Configuration
+
+```json
+{
+  "formatter": {
+    "enabled": true,
+    "indentSize": 2,
+    "lineWidth": 100,
+    "alignCarets": true
+  }
+}
+```
+
+Controls automatic code formatting with options for:
+- Indentation (spaces)
+- Maximum line width
+- Caret alignment for readability
+
+### 6. Files Configuration
+
+```json
+{
+  "files": {
+    "include": [
+      "input/fsh/**/*.fsh",
+      "fsh/**/*.fsh"
+    ],
+    "exclude": [
+      "**/node_modules/**",
+      "**/temp/**",
+      "**/*.generated.fsh"
+    ],
+    "ignoreFiles": [
+      ".fshlintignore",
+      ".gitignore"
     ]
   }
 }
 ```
 
-Place `.grit` files in these directories to define custom linting rules.
+Specifies which FSH files to process using glob patterns.
+
+## Generating Configuration Files
+
+You can generate these example files using the `maki-devtools` command:
+
+```bash
+# Generate full example in JSON
+cargo run --package maki-devtools -- generate-config --full --output maki.json
+
+# Generate full example in YAML
+cargo run --package maki-devtools -- generate-config --full --output maki.yaml
+
+# Generate minimal default configuration
+cargo run --package maki-devtools -- generate-config --output maki.json
+```
+
+## Configuration Formats
+
+MAKI supports multiple configuration formats:
+
+- **JSON** (`.json`) - Standard JSON format
+- **YAML** (`.yaml`, `.yml`) - Human-friendly YAML format
+
+All formats are functionally equivalent; choose the one that best fits your workflow.
+
+## Configuration Discovery
+
+MAKI searches for configuration files in this order:
+
+1. `maki.yaml` or `maki.yml`
+2. `maki.json`
+3. `.makirc.json`
+4. `.makirc` (JSON)
+
+The search starts in the current directory and walks up the directory tree until:
+- A configuration file is found
+- A configuration with `"root": true` is found
+- The root of the filesystem is reached
+
+## Additional Resources
+
+- [MAKI Documentation](../../docs)
+- [SUSHI Configuration Reference](https://fshschool.org/docs/sushi/configuration/)
+- [FHIR IG Specification](http://hl7.org/fhir/R4/implementationguide.html)
