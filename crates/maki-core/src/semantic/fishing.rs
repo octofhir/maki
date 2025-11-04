@@ -18,6 +18,13 @@ use std::sync::Arc;
 use tokio::sync::RwLock; // Use async-aware RwLock
 use tracing::{debug, trace};
 
+#[cfg(test)]
+fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
+    tokio::runtime::Runtime::new()
+        .expect("create test runtime")
+        .block_on(future)
+}
+
 /// Lightweight metadata for fast resource lookups without full export
 ///
 /// This struct contains only the essential fields needed for dependency resolution
@@ -523,43 +530,41 @@ mod tests {
         let tank = Arc::new(RwLock::new(FshTank::new()));
         let package = Arc::new(RwLock::new(Package::new()));
 
-        // Add to both package and tank
-        {
-            let mut pkg = package.write().unwrap();
-            pkg.add_resource(
-                "http://example.org/test".to_string(),
-                serde_json::json!({"source": "package"}),
-            );
-        }
-        {
-            let mut t = tank.write().unwrap();
-            t.add_resource(create_test_resource("test", "Test", ResourceType::Profile));
-        }
+        block_on(async {
+            {
+                let mut pkg = package.write().await;
+                pkg.add_resource(
+                    "http://example.org/test".to_string(),
+                    serde_json::json!({"source": "package"}),
+                );
+            }
+            {
+                let mut t = tank.write().await;
+                t.add_resource(create_test_resource("test", "Test", ResourceType::Profile));
+            }
 
-        // Test package lookup directly
-        let pkg = package.read().unwrap();
-        let result = pkg.fish("http://example.org/test");
-        assert!(result.is_some());
-        assert_eq!(result.unwrap()["source"], "package");
+            let pkg = package.read().await;
+            let result = pkg.fish("http://example.org/test");
+            assert!(result.is_some());
+            assert_eq!(result.unwrap()["source"], "package");
+        });
     }
 
     #[test]
     fn test_fishing_tank_blocks_external() {
         let tank = Arc::new(RwLock::new(FshTank::new()));
 
-        // Add only to tank
-        {
-            let mut t = tank.write().unwrap();
-            t.add_resource(create_test_resource("test", "Test", ResourceType::Profile));
-        }
+        block_on(async {
+            {
+                let mut t = tank.write().await;
+                t.add_resource(create_test_resource("test", "Test", ResourceType::Profile));
+            }
 
-        // Test tank lookup directly
-        let t = tank.read().unwrap();
-        let result = t.fish("test", &[ResourceType::Profile]);
-        assert!(result.is_some());
-
-        // Verify it's in the tank (would block external lookup)
-        assert!(t.contains("test", &[ResourceType::Profile]));
+            let t = tank.read().await;
+            let result = t.fish("test", &[ResourceType::Profile]);
+            assert!(result.is_some());
+            assert!(t.contains("test", &[ResourceType::Profile]));
+        });
     }
 
     // ===== Metadata Extraction Tests =====
@@ -634,25 +639,27 @@ mod tests {
         let package = Arc::new(RwLock::new(Package::new()));
         let session = Arc::new(DefinitionSession::for_testing());
 
-        // Add resource to tank
-        {
-            let mut t = tank.write().unwrap();
-            let mut resource =
-                create_test_resource("patient-profile", "PatientProfile", ResourceType::Profile);
-            resource.parent = Some("Patient".to_string());
-            t.add_resource(resource);
-        }
+        block_on(async {
+            {
+                let mut t = tank.write().await;
+                let mut resource = create_test_resource(
+                    "patient-profile",
+                    "PatientProfile",
+                    ResourceType::Profile,
+                );
+                resource.parent = Some("Patient".to_string());
+                t.add_resource(resource);
+            }
 
-        let ctx = FishingContext::new(session, tank, package);
+            let ctx = FishingContext::new(session, tank, package);
+            let metadata = ctx.fish_metadata("patient-profile", &[]).await;
+            assert!(metadata.is_some());
 
-        // Fish for metadata by ID
-        let metadata = ctx.fish_metadata("patient-profile", &[]);
-        assert!(metadata.is_some());
-
-        let metadata = metadata.unwrap();
-        assert_eq!(metadata.id, "patient-profile");
-        assert_eq!(metadata.name, "PatientProfile");
-        assert_eq!(metadata.parent, Some("Patient".to_string()));
+            let metadata = metadata.unwrap();
+            assert_eq!(metadata.id, "patient-profile");
+            assert_eq!(metadata.name, "PatientProfile");
+            assert_eq!(metadata.parent, Some("Patient".to_string()));
+        });
     }
 
     #[test]
@@ -661,25 +668,24 @@ mod tests {
         let package = Arc::new(RwLock::new(Package::new()));
         let session = Arc::new(DefinitionSession::for_testing());
 
-        // Add resource to tank
-        {
-            let mut t = tank.write().unwrap();
-            t.add_resource(create_test_resource(
-                "patient-profile",
-                "PatientProfile",
-                ResourceType::Profile,
-            ));
-        }
+        block_on(async {
+            {
+                let mut t = tank.write().await;
+                t.add_resource(create_test_resource(
+                    "patient-profile",
+                    "PatientProfile",
+                    ResourceType::Profile,
+                ));
+            }
 
-        let ctx = FishingContext::new(session, tank, package);
+            let ctx = FishingContext::new(session, tank, package);
+            let metadata = ctx.fish_metadata("PatientProfile", &[]).await;
+            assert!(metadata.is_some());
 
-        // Fish for metadata by name
-        let metadata = ctx.fish_metadata("PatientProfile", &[]);
-        assert!(metadata.is_some());
-
-        let metadata = metadata.unwrap();
-        assert_eq!(metadata.id, "patient-profile");
-        assert_eq!(metadata.name, "PatientProfile");
+            let metadata = metadata.unwrap();
+            assert_eq!(metadata.id, "patient-profile");
+            assert_eq!(metadata.name, "PatientProfile");
+        });
     }
 
     #[test]
@@ -688,36 +694,40 @@ mod tests {
         let package = Arc::new(RwLock::new(Package::new()));
         let session = Arc::new(DefinitionSession::for_testing());
 
-        // Add resources of different types
-        {
-            let mut t = tank.write().unwrap();
-            t.add_resource(create_test_resource(
-                "patient-profile",
-                "PatientProfile",
-                ResourceType::Profile,
-            ));
-            t.add_resource(create_test_resource(
-                "patient-vs",
-                "PatientVS",
-                ResourceType::ValueSet,
-            ));
-        }
+        block_on(async {
+            {
+                let mut t = tank.write().await;
+                t.add_resource(create_test_resource(
+                    "patient-profile",
+                    "PatientProfile",
+                    ResourceType::Profile,
+                ));
+                t.add_resource(create_test_resource(
+                    "patient-vs",
+                    "PatientVS",
+                    ResourceType::ValueSet,
+                ));
+            }
 
-        let ctx = FishingContext::new(session, tank, package);
+            let ctx = FishingContext::new(session, tank, package);
 
-        // Should find profile when filtering by Profile
-        let metadata = ctx.fish_metadata("patient-profile", &[ResourceType::Profile]);
-        assert!(metadata.is_some());
-        assert_eq!(metadata.unwrap().sd_type, Some("Profile".to_string()));
+            let metadata = ctx
+                .fish_metadata("patient-profile", &[ResourceType::Profile])
+                .await;
+            assert!(metadata.is_some());
+            assert_eq!(metadata.unwrap().sd_type, Some("Profile".to_string()));
 
-        // Should not find profile when filtering by ValueSet
-        let metadata = ctx.fish_metadata("patient-profile", &[ResourceType::ValueSet]);
-        assert!(metadata.is_none());
+            let metadata = ctx
+                .fish_metadata("patient-profile", &[ResourceType::ValueSet])
+                .await;
+            assert!(metadata.is_none());
 
-        // Should find valueset when filtering by ValueSet
-        let metadata = ctx.fish_metadata("patient-vs", &[ResourceType::ValueSet]);
-        assert!(metadata.is_some());
-        assert_eq!(metadata.unwrap().resource_type, "ValueSet");
+            let metadata = ctx
+                .fish_metadata("patient-vs", &[ResourceType::ValueSet])
+                .await;
+            assert!(metadata.is_some());
+            assert_eq!(metadata.unwrap().resource_type, "ValueSet");
+        });
     }
 
     #[test]
@@ -726,11 +736,11 @@ mod tests {
         let package = Arc::new(RwLock::new(Package::new()));
         let session = Arc::new(DefinitionSession::for_testing());
 
-        let ctx = FishingContext::new(session, tank, package);
-
-        // Should return None for non-existent resource
-        let metadata = ctx.fish_metadata("nonexistent", &[]);
-        assert!(metadata.is_none());
+        block_on(async {
+            let ctx = FishingContext::new(session, tank, package);
+            let metadata = ctx.fish_metadata("nonexistent", &[]).await;
+            assert!(metadata.is_none());
+        });
     }
 
     #[test]
@@ -739,31 +749,30 @@ mod tests {
         let package = Arc::new(RwLock::new(Package::new()));
         let session = Arc::new(DefinitionSession::for_testing());
 
-        {
-            let mut t = tank.write().unwrap();
-            t.add_resource(create_test_resource(
-                "patient-profile",
-                "PatientProfile",
-                ResourceType::Profile,
-            ));
-            t.add_resource(create_test_resource(
-                "my-vs",
-                "MyVS",
-                ResourceType::ValueSet,
-            ));
-        }
+        block_on(async {
+            {
+                let mut t = tank.write().await;
+                t.add_resource(create_test_resource(
+                    "patient-profile",
+                    "PatientProfile",
+                    ResourceType::Profile,
+                ));
+                t.add_resource(create_test_resource(
+                    "my-vs",
+                    "MyVS",
+                    ResourceType::ValueSet,
+                ));
+            }
 
-        let ctx = FishingContext::new(session, tank, package);
+            let ctx = FishingContext::new(session, tank, package);
+            let metadata = ctx.fish_metadata("patient-profile", &[]).await.unwrap();
+            assert_eq!(
+                metadata.url,
+                "http://example.org/fhir/StructureDefinition/patient-profile"
+            );
 
-        // Check URL format for profile
-        let metadata = ctx.fish_metadata("patient-profile", &[]).unwrap();
-        assert_eq!(
-            metadata.url,
-            "http://example.org/fhir/StructureDefinition/patient-profile"
-        );
-
-        // Check URL format for valueset
-        let metadata = ctx.fish_metadata("my-vs", &[]).unwrap();
-        assert_eq!(metadata.url, "http://example.org/fhir/ValueSet/my-vs");
+            let metadata = ctx.fish_metadata("my-vs", &[]).await.unwrap();
+            assert_eq!(metadata.url, "http://example.org/fhir/ValueSet/my-vs");
+        });
     }
 }

@@ -237,7 +237,9 @@ impl CodeSystemExporter {
                 | Rule::Only(_)
                 | Rule::Obeys(_)
                 | Rule::Mapping(_)
-                | Rule::CaretValue(_) => {
+                | Rule::CaretValue(_)
+                | Rule::CodeCaretValue(_)
+                | Rule::CodeInsert(_) => {
                     // These rules don't apply to codesystems
                     trace!("Skipping contains/only/obeys rule in codesystem");
                 }
@@ -391,8 +393,7 @@ impl CodeSystemExporter {
         } else {
             trace!(
                 "Invalid concept format '{}' in CodeSystem {} (expected #code)",
-                path,
-                codesystem_name
+                path, codesystem_name
             );
             return Ok(None);
         };
@@ -409,8 +410,7 @@ impl CodeSystemExporter {
 
         trace!(
             "Parsed concept: code={}, display={:?}",
-            concept.code,
-            concept.display
+            concept.code, concept.display
         );
 
         Ok(Some(concept))
@@ -456,6 +456,7 @@ mod tests {
         CodeSystemExporter {
             session: Arc::new(crate::canonical::DefinitionSession::for_testing()),
             base_url: "http://example.org/fhir".to_string(),
+            version: None,
         }
     }
 

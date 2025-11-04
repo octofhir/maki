@@ -386,11 +386,17 @@ mod tests {
         let mut table = AliasTable::new();
 
         // Profile aliases don't need '$' prefix (SUSHI-compatible)
-        let alias = make_alias("USCorePatient", "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient");
+        let alias = make_alias(
+            "USCorePatient",
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient",
+        );
 
         let result = table.add_alias(alias);
         assert!(result.is_ok());
-        assert_eq!(table.resolve("USCorePatient"), Some("http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"));
+        assert_eq!(
+            table.resolve("USCorePatient"),
+            Some("http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient")
+        );
     }
 
     #[test]

@@ -47,7 +47,10 @@
 use super::ExportError;
 use super::fhir_types::*;
 use crate::canonical::DefinitionSession;
-use crate::cst::ast::{AstNode, CardRule, ContainsRule, Extension, FixedValueRule, FlagRule, OnlyRule, Rule, ValueSetRule};
+use crate::cst::ast::{
+    AstNode, CardRule, ContainsRule, Extension, FixedValueRule, FlagRule, OnlyRule, Rule,
+    ValueSetRule,
+};
 use crate::semantic::path_resolver::PathResolver;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -143,7 +146,8 @@ impl ExtensionExporter {
         let base_snapshot = structure_def.snapshot.clone();
 
         // 4. Generate and set extension context definitions
-        self.generate_context_definitions(&mut structure_def, extension).await?;
+        self.generate_context_definitions(&mut structure_def, extension)
+            .await?;
 
         // 5. Apply all rules to snapshot with enhanced processing
         for rule in extension.rules() {
@@ -154,7 +158,8 @@ impl ExtensionExporter {
         }
 
         // 6. Process extension value constraints and nested extensions
-        self.process_extension_constraints(&mut structure_def, extension).await?;
+        self.process_extension_constraints(&mut structure_def, extension)
+            .await?;
 
         // 7. Ensure proper extension structure (url, value[x] or extension)
         self.ensure_extension_structure(&mut structure_def)?;
@@ -263,25 +268,28 @@ impl ExtensionExporter {
         let mut found_context_rules = false;
 
         // First pass: collect all context-related rules and group them
-        let mut context_entries: std::collections::HashMap<String, (Option<String>, Option<String>)> = std::collections::HashMap::new();
+        let mut context_entries: std::collections::HashMap<
+            String,
+            (Option<String>, Option<String>),
+        > = std::collections::HashMap::new();
         let mut current_index = 0;
         let mut last_plus_index = 0;
 
         debug!("Starting context rule processing for extension");
-        
+
         for rule in extension.rules() {
             if let Rule::CaretValue(caret_rule) = rule {
                 if let Some(path) = caret_rule.caret_path() {
                     let path_str = path.as_string();
-                    
+
                     debug!("Processing caret rule path: '{}'", path_str);
-                    
+
                     // Handle context type rules: ^context[0].type, ^context[+].type, etc.
                     if path_str.starts_with("context") && path_str.contains(".type") {
                         if let Some(value) = caret_rule.value() {
                             let context_type = value.trim_start_matches('#');
                             let raw_index = self.extract_context_index(&path_str);
-                            
+
                             // Handle special SUSHI indices
                             let index_key = match raw_index.as_str() {
                                 "+" => {
@@ -304,21 +312,25 @@ impl ExtensionExporter {
                                     }
                                 }
                             };
-                            
-                            let entry = context_entries.entry(index_key.clone()).or_insert((None, None));
+
+                            let entry = context_entries
+                                .entry(index_key.clone())
+                                .or_insert((None, None));
                             entry.0 = Some(context_type.to_string());
                             found_context_rules = true;
-                            
-                            debug!("Found context type rule: {} = {} (index_key: {})", path_str, context_type, index_key);
+
+                            debug!(
+                                "Found context type rule: {} = {} (index_key: {})",
+                                path_str, context_type, index_key
+                            );
                         }
                     }
-                    
                     // Handle context expression rules: ^context[0].expression, ^context[=].expression, etc.
                     else if path_str.starts_with("context") && path_str.contains(".expression") {
                         if let Some(value) = caret_rule.value() {
                             let expression = value.trim_matches('"');
                             let raw_index = self.extract_context_index(&path_str);
-                            
+
                             // Handle special SUSHI indices (same logic as above)
                             let index_key = match raw_index.as_str() {
                                 "+" => {
@@ -338,20 +350,24 @@ impl ExtensionExporter {
                                     }
                                 }
                             };
-                            
-                            let entry = context_entries.entry(index_key.clone()).or_insert((None, None));
+
+                            let entry = context_entries
+                                .entry(index_key.clone())
+                                .or_insert((None, None));
                             entry.1 = Some(expression.to_string());
                             found_context_rules = true;
-                            
-                            debug!("Found context expression rule: {} = {} (index_key: {})", path_str, expression, index_key);
+
+                            debug!(
+                                "Found context expression rule: {} = {} (index_key: {})",
+                                path_str, expression, index_key
+                            );
                         }
                     }
-                    
                     // Handle direct context expression rules: ^context = "Patient"
                     else if path_str == "context" {
                         if let Some(expression) = caret_rule.value() {
                             let clean_expression = expression.trim_matches('"');
-                            
+
                             // Determine context type based on expression
                             let context = if clean_expression.starts_with("http://") {
                                 StructureDefinitionContext::extension(clean_expression)
@@ -361,7 +377,7 @@ impl ExtensionExporter {
                                 // Assume it's a resource type
                                 StructureDefinitionContext::element(clean_expression)
                             };
-                            
+
                             contexts.push(context);
                             found_context_rules = true;
                         }
@@ -372,17 +388,17 @@ impl ExtensionExporter {
                 if let Some(path) = fixed_rule.path() {
                     let path_str = path.as_string();
                     debug!("Processing fixed value rule path: '{}'", path_str);
-                    
+
                     // Check if this is a context rule (starts with ^context)
                     if path_str.starts_with("^context") {
                         let clean_path = path_str.trim_start_matches('^');
-                        
+
                         // Handle context type rules: ^context[0].type, ^context[+].type, etc.
                         if clean_path.starts_with("context") && clean_path.contains(".type") {
                             if let Some(value) = fixed_rule.value() {
                                 let context_type = value.trim_start_matches('#');
                                 let raw_index = self.extract_context_index(&clean_path);
-                                
+
                                 // Handle special SUSHI indices
                                 let index_key = match raw_index.as_str() {
                                     "+" => {
@@ -405,21 +421,27 @@ impl ExtensionExporter {
                                         }
                                     }
                                 };
-                                
-                                let entry = context_entries.entry(index_key.clone()).or_insert((None, None));
+
+                                let entry = context_entries
+                                    .entry(index_key.clone())
+                                    .or_insert((None, None));
                                 entry.0 = Some(context_type.to_string());
                                 found_context_rules = true;
-                                
-                                debug!("Found context type rule via FixedValue: {} = {} (index_key: {})", path_str, context_type, index_key);
+
+                                debug!(
+                                    "Found context type rule via FixedValue: {} = {} (index_key: {})",
+                                    path_str, context_type, index_key
+                                );
                             }
                         }
-                        
                         // Handle context expression rules: ^context[0].expression, ^context[=].expression, etc.
-                        else if clean_path.starts_with("context") && clean_path.contains(".expression") {
+                        else if clean_path.starts_with("context")
+                            && clean_path.contains(".expression")
+                        {
                             if let Some(value) = fixed_rule.value() {
                                 let expression = value.trim_matches('"');
                                 let raw_index = self.extract_context_index(&clean_path);
-                                
+
                                 // Handle special SUSHI indices (same logic as above)
                                 let index_key = match raw_index.as_str() {
                                     "+" => {
@@ -439,20 +461,24 @@ impl ExtensionExporter {
                                         }
                                     }
                                 };
-                                
-                                let entry = context_entries.entry(index_key.clone()).or_insert((None, None));
+
+                                let entry = context_entries
+                                    .entry(index_key.clone())
+                                    .or_insert((None, None));
                                 entry.1 = Some(expression.to_string());
                                 found_context_rules = true;
-                                
-                                debug!("Found context expression rule via FixedValue: {} = {} (index_key: {})", path_str, expression, index_key);
+
+                                debug!(
+                                    "Found context expression rule via FixedValue: {} = {} (index_key: {})",
+                                    path_str, expression, index_key
+                                );
                             }
                         }
-                        
                         // Handle direct context expression rules: ^context = "Patient"
                         else if clean_path == "context" {
                             if let Some(expression) = fixed_rule.value() {
                                 let clean_expression = expression.trim_matches('"');
-                                
+
                                 // Determine context type based on expression
                                 let context = if clean_expression.starts_with("http://") {
                                     StructureDefinitionContext::extension(clean_expression)
@@ -462,11 +488,14 @@ impl ExtensionExporter {
                                     // Assume it's a resource type
                                     StructureDefinitionContext::element(clean_expression)
                                 };
-                                
+
                                 contexts.push(context);
                                 found_context_rules = true;
-                                
-                                debug!("Found direct context rule via FixedValue: {} = {}", path_str, clean_expression);
+
+                                debug!(
+                                    "Found direct context rule via FixedValue: {} = {}",
+                                    path_str, clean_expression
+                                );
                             }
                         }
                     }
@@ -488,16 +517,25 @@ impl ExtensionExporter {
                         }
                     };
                     contexts.push(context);
-                    debug!("Created context for index {}: type={}, expression={}", index, context_type, expression);
+                    debug!(
+                        "Created context for index {}: type={}, expression={}",
+                        index, context_type, expression
+                    );
                 }
                 (Some(context_type), None) => {
-                    warn!("Context type '{}' found for index '{}' but no expression", context_type, index);
+                    warn!(
+                        "Context type '{}' found for index '{}' but no expression",
+                        context_type, index
+                    );
                 }
                 (None, Some(expression)) => {
                     // Default to element type if only expression is provided
                     let context = StructureDefinitionContext::element(&expression);
                     contexts.push(context);
-                    debug!("Created default element context for index {}: expression={}", index, expression);
+                    debug!(
+                        "Created default element context for index {}: expression={}",
+                        index, expression
+                    );
                 }
                 (None, None) => {
                     // This shouldn't happen, but skip if it does
@@ -524,7 +562,7 @@ impl ExtensionExporter {
     }
 
     /// Extract context index from path string for grouping context rules
-    /// 
+    ///
     /// Examples:
     /// - "context[0].type" -> "0"
     /// - "context[+].type" -> "+"  
@@ -538,7 +576,7 @@ impl ExtensionExporter {
                 }
             }
         }
-        
+
         // If no brackets found, use "default" as key
         "default".to_string()
     }
@@ -551,7 +589,7 @@ impl ExtensionExporter {
     ) -> Result<String, ExportError> {
         // Extract the index from the type path (e.g., "context[0].type" -> "context[0].expression")
         let expression_path = type_path.replace(".type", ".expression");
-        
+
         for rule in extension.rules() {
             if let Rule::CaretValue(caret_rule) = rule {
                 if let Some(path) = caret_rule.caret_path() {
@@ -564,7 +602,7 @@ impl ExtensionExporter {
                 }
             }
         }
-        
+
         // Default to Element if no expression found
         Ok("Element".to_string())
     }
@@ -588,7 +626,10 @@ impl ExtensionExporter {
             "extension" => {
                 // Extension context should be a canonical URL
                 if !expression.starts_with("http://") && !expression.starts_with("https://") {
-                    warn!("Extension context expression should be a canonical URL: {}", expression);
+                    warn!(
+                        "Extension context expression should be a canonical URL: {}",
+                        expression
+                    );
                 }
             }
             "fhirpath" => {
@@ -604,7 +645,7 @@ impl ExtensionExporter {
                 warn!("Unknown context type for validation: {}", context_type);
             }
         }
-        
+
         Ok(())
     }
 
@@ -627,7 +668,7 @@ impl ExtensionExporter {
                 Rule::Card(card_rule) => {
                     if let Some(path) = card_rule.path() {
                         let path_str = path.as_string();
-                        
+
                         // Root extension cardinality
                         if path_str == "." || path_str.is_empty() {
                             if let Some(cardinality) = card_rule.cardinality() {
@@ -664,9 +705,10 @@ impl ExtensionExporter {
                         let path_str = path.as_string();
                         if path_str.starts_with("value[x]") || path_str == "value" {
                             has_value_constraints = true;
-                            
+
                             // Create ElementDefinition for value[x] with type constraints
-                            self.create_value_constraint_element(structure_def, &only_rule).await?;
+                            self.create_value_constraint_element(structure_def, &only_rule)
+                                .await?;
                         }
                     }
                 }
@@ -674,34 +716,38 @@ impl ExtensionExporter {
                     // Contains rules indicate nested extensions
                     has_nested_extensions = true;
                     debug!("Found ContainsRule, processing nested extensions");
-                    debug!("ContainsRule syntax text: '{}'", contains_rule.syntax().text());
+                    debug!(
+                        "ContainsRule syntax text: '{}'",
+                        contains_rule.syntax().text()
+                    );
                     debug!("ContainsRule items: {:?}", contains_rule.items());
-                    
+
                     // Try multiple approaches to extract extension names
                     let mut items = contains_rule.items();
-                    
+
                     // If the standard parser fails, try manual parsing
                     if items.is_empty() {
                         debug!("Standard parser returned empty items, trying manual parsing");
                         items = self.parse_contains_rule_manually(&contains_rule);
                     }
-                    
+
                     // If manual parsing also fails, try parsing from full document
                     if items.is_empty() {
                         debug!("Manual parsing failed, trying full document parsing");
                         items = self.extract_from_full_document(extension);
                     }
-                    
+
                     // If document parsing also fails, extract from other rules
                     if items.is_empty() {
                         debug!("Document parsing failed, extracting from other rules");
                         items = self.extract_nested_extension_names_from_rules(extension);
                     }
-                    
+
                     debug!("Final items to process: {:?}", items);
-                    
+
                     if !items.is_empty() {
-                        self.process_nested_extensions_with_items(structure_def, &items).await?;
+                        self.process_nested_extensions_with_items(structure_def, &items)
+                            .await?;
                     } else {
                         warn!("No nested extension names found in contains rule");
                     }
@@ -713,7 +759,9 @@ impl ExtensionExporter {
         // Apply root extension cardinality if specified
         if let Some((min, max)) = extension_cardinality {
             if let Some(snapshot) = &mut structure_def.snapshot {
-                if let Some(root_element) = snapshot.element.iter_mut().find(|e| e.path == "Extension") {
+                if let Some(root_element) =
+                    snapshot.element.iter_mut().find(|e| e.path == "Extension")
+                {
                     root_element.min = Some(min);
                     root_element.max = Some(max);
                 }
@@ -730,9 +778,15 @@ impl ExtensionExporter {
         }
 
         if has_value_constraints {
-            debug!("Extension {} is a simple extension with value[x] constraints", structure_def.name);
+            debug!(
+                "Extension {} is a simple extension with value[x] constraints",
+                structure_def.name
+            );
         } else if has_nested_extensions {
-            debug!("Extension {} is a complex extension with nested extensions", structure_def.name);
+            debug!(
+                "Extension {} is a complex extension with nested extensions",
+                structure_def.name
+            );
         }
 
         Ok(())
@@ -746,7 +800,9 @@ impl ExtensionExporter {
     ) -> Result<(), ExportError> {
         if let Some(snapshot) = &mut structure_def.snapshot {
             // Find or create Extension.value[x] element
-            let value_element = snapshot.element.iter_mut()
+            let value_element = snapshot
+                .element
+                .iter_mut()
                 .find(|e| e.path == "Extension.value[x]")
                 .ok_or_else(|| ExportError::ElementNotFound {
                     path: "Extension.value[x]".to_string(),
@@ -757,16 +813,24 @@ impl ExtensionExporter {
             let types = only_rule.types();
             if !types.is_empty() {
                 let mut element_types = Vec::new();
-                
+
                 for type_name in types {
                     let element_type = ElementDefinitionType::new(type_name);
                     element_types.push(element_type);
                 }
-                
+
                 if !element_types.is_empty() {
                     value_element.type_ = Some(element_types);
-                    debug!("Applied type constraints to Extension.value[x]: {:?}", 
-                           value_element.type_.as_ref().unwrap().iter().map(|t| &t.code).collect::<Vec<_>>());
+                    debug!(
+                        "Applied type constraints to Extension.value[x]: {:?}",
+                        value_element
+                            .type_
+                            .as_ref()
+                            .unwrap()
+                            .iter()
+                            .map(|t| &t.code)
+                            .collect::<Vec<_>>()
+                    );
                 }
             }
         }
@@ -797,72 +861,79 @@ impl ExtensionExporter {
             } else {
                 contains_rule.items()
             };
-            
+
             for name in items {
                 if !name.is_empty() {
                     // Create ElementDefinition for the nested extension
                     let extension_path = format!("{}:{}", base_path, name);
-                    
+
                     let mut nested_element = ElementDefinition::new(extension_path.clone());
-                    
+
                     // Set default cardinality (will be overridden by specific rules)
                     nested_element.min = Some(0);
                     nested_element.max = Some("1".to_string());
-                    
+
                     // Set type to Extension
                     nested_element.type_ = Some(vec![ElementDefinitionType::new("Extension")]);
-                    
+
                     // Generate nested extension URL
                     let nested_url = format!("{}/Extension/{}", self.base_url, name);
-                    
+
                     // Set slicing discriminator for the nested extension
                     nested_element.short = Some(format!("Extension: {}", name));
                     nested_element.definition = Some(format!("Nested extension: {}", name));
-                    
+
                     // Add the nested extension element to snapshot
                     snapshot.element.push(nested_element);
-                    
+
                     // Create the nested extension's url element
                     let url_path = format!("{}.url", extension_path);
                     let mut url_element = ElementDefinition::new(url_path);
                     url_element.min = Some(1);
                     url_element.max = Some("1".to_string());
                     url_element.type_ = Some(vec![ElementDefinitionType::new("uri")]);
-                    
+
                     // Fix the URL value
                     let mut fixed_value = std::collections::HashMap::new();
-                    fixed_value.insert("fixedUri".to_string(), serde_json::Value::String(nested_url.clone()));
+                    fixed_value.insert(
+                        "fixedUri".to_string(),
+                        serde_json::Value::String(nested_url.clone()),
+                    );
                     url_element.fixed = Some(fixed_value);
-                    
+
                     snapshot.element.push(url_element);
-                    
+
                     // Create the nested extension's value[x] element
                     let value_path = format!("{}.value[x]", extension_path);
                     let mut value_element = ElementDefinition::new(value_path);
                     value_element.min = Some(0);
                     value_element.max = Some("1".to_string());
-                    
+
                     // The specific type will be set by subsequent rules
                     snapshot.element.push(value_element);
-                    
+
                     // Validate the nested extension URL
                     self.validate_nested_extension_url(&nested_url, &name)?;
-                    
-                    debug!("Created nested extension: {} with URL: {}", name, nested_url);
+
+                    debug!(
+                        "Created nested extension: {} with URL: {}",
+                        name, nested_url
+                    );
                 }
             }
-            
+
             // Ensure the base extension.extension element exists and has proper slicing
             if !snapshot.element.iter().any(|e| e.path == base_path) {
                 let mut base_extension_element = ElementDefinition::new(base_path.clone());
                 base_extension_element.min = Some(0);
                 base_extension_element.max = Some("*".to_string());
                 base_extension_element.type_ = Some(vec![ElementDefinitionType::new("Extension")]);
-                
+
                 // Add slicing information
-                base_extension_element.short = Some("Additional content defined by implementations".to_string());
+                base_extension_element.short =
+                    Some("Additional content defined by implementations".to_string());
                 base_extension_element.definition = Some("May be used to represent additional information that is not part of the basic definition of the element.".to_string());
-                
+
                 snapshot.element.push(base_extension_element);
             }
         }
@@ -874,7 +945,7 @@ impl ExtensionExporter {
     /// This is used when the ContainsRule parser fails to extract the names
     fn extract_nested_extension_names_from_rules(&self, extension: &Extension) -> Vec<String> {
         let mut extension_names = std::collections::HashSet::new();
-        
+
         // Look through all rules for patterns like "extension[subExt1].value[x]"
         for rule in extension.rules() {
             debug!("Checking rule for nested extension names: {:?}", rule);
@@ -883,7 +954,7 @@ impl ExtensionExporter {
                     if let Some(path) = only_rule.path() {
                         let path_str = path.as_string();
                         debug!("Checking OnlyRule path: '{}'", path_str);
-                        
+
                         // Look for patterns like "extension[subExt1].value[x]"
                         if let Some(ext_name) = self.extract_extension_name_from_path(&path_str) {
                             extension_names.insert(ext_name);
@@ -894,7 +965,7 @@ impl ExtensionExporter {
                     if let Some(path) = card_rule.path() {
                         let path_str = path.as_string();
                         debug!("Checking CardRule path: '{}'", path_str);
-                        
+
                         // Look for patterns like "extension[subExt1]" or "extension[subExt1].value[x]"
                         if let Some(ext_name) = self.extract_extension_name_from_path(&path_str) {
                             extension_names.insert(ext_name);
@@ -905,7 +976,7 @@ impl ExtensionExporter {
                     if let Some(path) = flag_rule.path() {
                         let path_str = path.as_string();
                         debug!("Checking FlagRule path: '{}'", path_str);
-                        
+
                         if let Some(ext_name) = self.extract_extension_name_from_path(&path_str) {
                             extension_names.insert(ext_name);
                         }
@@ -915,7 +986,7 @@ impl ExtensionExporter {
                     if let Some(path) = fixed_rule.path() {
                         let path_str = path.as_string();
                         debug!("Checking FixedValueRule path: '{}'", path_str);
-                        
+
                         if let Some(ext_name) = self.extract_extension_name_from_path(&path_str) {
                             extension_names.insert(ext_name);
                         }
@@ -924,7 +995,7 @@ impl ExtensionExporter {
                 _ => {}
             }
         }
-        
+
         let mut result: Vec<String> = extension_names.into_iter().collect();
         result.sort(); // Sort for consistent ordering
         debug!("Extracted nested extension names: {:?}", result);
@@ -934,24 +1005,24 @@ impl ExtensionExporter {
     /// Extract extension names from the full document text
     fn extract_from_full_document(&self, extension: &Extension) -> Vec<String> {
         let mut items = Vec::new();
-        
+
         // Get the full document text by traversing up to the root
         let mut current_node = extension.syntax().clone();
         while let Some(parent) = current_node.parent() {
             current_node = parent;
         }
-        
+
         let full_text = current_node.text().to_string();
         debug!("Full document text for parsing: '{}'", full_text);
-        
+
         // Find the contains block in the full text
         if let Some(contains_pos) = full_text.find("contains") {
             let after_contains = &full_text[contains_pos + "contains".len()..];
-            
+
             // Find the end of the contains block (next rule starting with *)
             let lines: Vec<&str> = after_contains.lines().collect();
             let mut contains_block = String::new();
-            
+
             for line in lines {
                 let trimmed = line.trim();
                 if trimmed.starts_with('*') && !trimmed.starts_with("* extension contains") {
@@ -961,13 +1032,13 @@ impl ExtensionExporter {
                 contains_block.push_str(line);
                 contains_block.push('\n');
             }
-            
+
             debug!("Extracted contains block: '{}'", contains_block);
-            
+
             // Parse the contains block
             self.parse_contains_block_advanced(&contains_block, &mut items);
         }
-        
+
         items
     }
 
@@ -979,7 +1050,10 @@ impl ExtensionExporter {
                     if end > start {
                         let ext_name = &path[start + 1..end];
                         if !ext_name.is_empty() && ext_name != "+" && ext_name != "=" {
-                            debug!("Found nested extension name from path '{}': '{}'", path, ext_name);
+                            debug!(
+                                "Found nested extension name from path '{}': '{}'",
+                                path, ext_name
+                            );
                             return Some(ext_name.to_string());
                         }
                     }
@@ -992,72 +1066,72 @@ impl ExtensionExporter {
     /// Parse contains rule manually by examining the full text and child nodes
     fn parse_contains_rule_manually(&self, contains_rule: &ContainsRule) -> Vec<String> {
         let mut items = Vec::new();
-        
+
         // Get the full text including child nodes
         let full_text = contains_rule.syntax().text().to_string();
         debug!("Full contains rule text: '{}'", full_text);
-        
+
         // Try to get the parent node and look for the full rule text
         if let Some(parent) = contains_rule.syntax().parent() {
             let parent_text = parent.text().to_string();
             debug!("Parent node text: '{}'", parent_text);
-            
+
             // Look for the contains pattern in the parent text
             if let Some(contains_start) = parent_text.find("contains") {
                 let after_contains = &parent_text[contains_start + "contains".len()..];
                 debug!("After contains in parent: '{}'", after_contains);
-                
+
                 // Extract extension names from the contains block
                 self.extract_extension_names_from_text(after_contains, &mut items);
             }
         }
-        
+
         // If we still don't have items, try a more sophisticated approach
         if items.is_empty() {
             debug!("No items found in parent, trying advanced parsing...");
-            
+
             // Look for the pattern in the parent's full text more carefully
             if let Some(parent) = contains_rule.syntax().parent() {
                 let parent_text = parent.text().to_string();
-                
+
                 // Find the contains rule and extract everything after it until the next rule
                 if let Some(contains_pos) = parent_text.find("contains") {
                     let after_contains = &parent_text[contains_pos + "contains".len()..];
-                    
+
                     // Look for the next rule marker (starts with *)
                     let next_rule_pos = after_contains.find("\n*").unwrap_or(after_contains.len());
                     let contains_block = &after_contains[..next_rule_pos];
-                    
+
                     debug!("Contains block: '{}'", contains_block);
-                    
+
                     // Parse the contains block more carefully
                     self.parse_contains_block_advanced(contains_block, &mut items);
                 }
             }
         }
-        
+
         // If we still don't have items, try looking at sibling nodes
         if items.is_empty() {
             debug!("No items found with advanced parsing, checking siblings...");
-            
+
             // Look at next siblings for the extension definitions
             let mut current = contains_rule.syntax().clone();
             while let Some(sibling) = current.next_sibling() {
                 let sibling_text = sibling.text().to_string();
                 println!("Sibling text: '{}'", sibling_text);
-                
+
                 // Look for extension names in sibling text
                 self.extract_extension_names_from_text(&sibling_text, &mut items);
-                
+
                 current = sibling;
-                
+
                 // Stop if we find "and" or reach the end of the contains block
                 if sibling_text.trim().is_empty() || sibling_text.contains("*") {
                     break;
                 }
             }
         }
-        
+
         println!("Final extracted items: {:?}", items);
         items
     }
@@ -1065,63 +1139,68 @@ impl ExtensionExporter {
     /// Parse contains block with advanced logic to handle multiline rules
     fn parse_contains_block_advanced(&self, contains_block: &str, items: &mut Vec<String>) {
         debug!("Parsing contains block: '{}'", contains_block);
-        
+
         // Clean up the text - remove extra whitespace and newlines
         let cleaned = contains_block.replace('\n', " ").replace('\r', " ");
         let cleaned = cleaned.trim();
-        
+
         // Split by "and" to get individual extension definitions
         for part in cleaned.split("and") {
             let part = part.trim();
             if part.is_empty() {
                 continue;
             }
-            
+
             debug!("Processing contains part: '{}'", part);
-            
+
             // Extract the extension name (first word before any cardinality or flags)
             let words: Vec<&str> = part.split_whitespace().collect();
             if let Some(first_word) = words.first() {
                 let first_word = first_word.trim();
-                
+
                 // Skip empty words, cardinality patterns, and flags
-                if !first_word.is_empty() 
+                if !first_word.is_empty()
                     && !first_word.contains("..")  // Skip cardinality like "0..1"
                     && first_word != "MS"          // Skip MustSupport flag
                     && !first_word.starts_with("//") // Skip comments
-                    && first_word != "contains"    // Skip the contains keyword itself
+                    && first_word != "contains"
+                // Skip the contains keyword itself
                 {
                     items.push(first_word.to_string());
-                    debug!("Extracted extension name from contains block: '{}'", first_word);
+                    debug!(
+                        "Extracted extension name from contains block: '{}'",
+                        first_word
+                    );
                 }
             }
         }
     }
-    
+
     /// Extract extension names from text containing extension definitions
     fn extract_extension_names_from_text(&self, text: &str, items: &mut Vec<String>) {
         debug!("Extracting extension names from text: '{}'", text);
-        
+
         // Clean up the text - remove newlines and extra whitespace
         let cleaned_text = text.replace('\n', " ").replace('\r', " ");
         let cleaned_text = cleaned_text.trim();
-        
+
         // Split by "and" and extract extension names
         for part in cleaned_text.split("and") {
             let part = part.trim();
             if !part.is_empty() {
                 debug!("Processing part: '{}'", part);
-                
+
                 // Extract the first word (extension name) before any cardinality or flags
                 let words: Vec<&str> = part.split_whitespace().collect();
                 if let Some(first_word) = words.first() {
                     let first_word = first_word.trim();
-                    if !first_word.is_empty() 
-                        && !first_word.starts_with('*') 
+                    if !first_word.is_empty()
+                        && !first_word.starts_with('*')
                         && first_word != "contains"
                         && !first_word.contains("..")  // Skip cardinality
                         && first_word != "MS"         // Skip flags
-                        && !first_word.starts_with("//") // Skip comments
+                        && !first_word.starts_with("//")
+                    // Skip comments
                     {
                         items.push(first_word.to_string());
                         debug!("Extracted extension name: '{}'", first_word);
@@ -1144,67 +1223,74 @@ impl ExtensionExporter {
                 if !name.is_empty() {
                     // Create ElementDefinition for the nested extension
                     let extension_path = format!("{}:{}", base_path, name);
-                    
+
                     let mut nested_element = ElementDefinition::new(extension_path.clone());
-                    
+
                     // Set default cardinality (will be overridden by specific rules)
                     nested_element.min = Some(0);
                     nested_element.max = Some("1".to_string());
-                    
+
                     // Set type to Extension
                     nested_element.type_ = Some(vec![ElementDefinitionType::new("Extension")]);
-                    
+
                     // Generate nested extension URL
                     let nested_url = format!("{}/Extension/{}", self.base_url, name);
-                    
+
                     // Set slicing discriminator for the nested extension
                     nested_element.short = Some(format!("Extension: {}", name));
                     nested_element.definition = Some(format!("Nested extension: {}", name));
-                    
+
                     // Add the nested extension element to snapshot
                     snapshot.element.push(nested_element);
-                    
+
                     // Create the nested extension's url element
                     let url_path = format!("{}.url", extension_path);
                     let mut url_element = ElementDefinition::new(url_path);
                     url_element.min = Some(1);
                     url_element.max = Some("1".to_string());
                     url_element.type_ = Some(vec![ElementDefinitionType::new("uri")]);
-                    
+
                     // Fix the URL value
                     let mut fixed_value = std::collections::HashMap::new();
-                    fixed_value.insert("fixedUri".to_string(), serde_json::Value::String(nested_url.clone()));
+                    fixed_value.insert(
+                        "fixedUri".to_string(),
+                        serde_json::Value::String(nested_url.clone()),
+                    );
                     url_element.fixed = Some(fixed_value);
-                    
+
                     snapshot.element.push(url_element);
-                    
+
                     // Create the nested extension's value[x] element
                     let value_path = format!("{}.value[x]", extension_path);
                     let mut value_element = ElementDefinition::new(value_path);
                     value_element.min = Some(0);
                     value_element.max = Some("1".to_string());
-                    
+
                     // The specific type will be set by subsequent rules
                     snapshot.element.push(value_element);
-                    
+
                     // Validate the nested extension URL
                     self.validate_nested_extension_url(&nested_url, name)?;
-                    
-                    debug!("Created nested extension: {} with URL: {}", name, nested_url);
+
+                    debug!(
+                        "Created nested extension: {} with URL: {}",
+                        name, nested_url
+                    );
                 }
             }
-            
+
             // Ensure the base extension.extension element exists and has proper slicing
             if !snapshot.element.iter().any(|e| e.path == base_path) {
                 let mut base_extension_element = ElementDefinition::new(base_path.clone());
                 base_extension_element.min = Some(0);
                 base_extension_element.max = Some("*".to_string());
                 base_extension_element.type_ = Some(vec![ElementDefinitionType::new("Extension")]);
-                
+
                 // Add slicing information
-                base_extension_element.short = Some("Additional content defined by implementations".to_string());
+                base_extension_element.short =
+                    Some("Additional content defined by implementations".to_string());
                 base_extension_element.definition = Some("May be used to represent additional information that is not part of the basic definition of the element.".to_string());
-                
+
                 snapshot.element.push(base_extension_element);
             }
         }
@@ -1215,15 +1301,19 @@ impl ExtensionExporter {
     /// Validate nested extension URL resolution
     fn validate_nested_extension_url(&self, url: &str, name: &str) -> Result<(), ExportError> {
         if url.is_empty() {
-            return Err(ExportError::InvalidValue(
-                format!("Nested extension URL cannot be empty for extension: {}", name)
-            ));
+            return Err(ExportError::InvalidValue(format!(
+                "Nested extension URL cannot be empty for extension: {}",
+                name
+            )));
         }
-        
+
         if !url.starts_with("http://") && !url.starts_with("https://") {
-            warn!("Nested extension URL should be a valid URI: {} for extension: {}", url, name);
+            warn!(
+                "Nested extension URL should be a valid URI: {} for extension: {}",
+                url, name
+            );
         }
-        
+
         Ok(())
     }
 
@@ -1314,7 +1404,9 @@ impl ExtensionExporter {
             | Rule::Only(_)
             | Rule::Obeys(_)
             | Rule::Mapping(_)
-            | Rule::CaretValue(_) => {
+            | Rule::CaretValue(_)
+            | Rule::CodeCaretValue(_)
+            | Rule::CodeInsert(_) => {
                 // TODO: Implement these rule types for extensions
                 Ok(())
             }

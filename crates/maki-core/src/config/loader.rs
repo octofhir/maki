@@ -186,7 +186,7 @@ mod tests {
         );
 
         let config_path = temp_dir.path().join("maki.json");
-        let config = ConfigLoader::load_with_extends(&config_path).unwrap();
+        let config = ConfigLoader::load_from_file(&config_path).unwrap();
 
         assert!(config.linter.is_some());
         let linter = config.linter.unwrap();

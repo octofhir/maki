@@ -739,7 +739,7 @@ impl ValueSetInclude {
 }
 
 /// A concept from a code system
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ValueSetConcept {
     /// Code or expression from system
@@ -751,7 +751,59 @@ pub struct ValueSetConcept {
 
     /// Additional representations for this concept
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub designation: Option<Vec<serde_json::Value>>,
+    pub designation: Option<Vec<ValueSetConceptDesignation>>,
+
+    /// Additional properties for this concept
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub property: Option<Vec<ValueSetConceptProperty>>,
+}
+
+/// Additional representation for a concept
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ValueSetConceptDesignation {
+    /// Human language of the designation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+
+    /// Types of uses of designations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub use_: Option<serde_json::Value>,
+
+    /// The text value for this designation
+    pub value: String,
+}
+
+/// Property value for a concept
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ValueSetConceptProperty {
+    /// Reference to CodeSystem.property.code
+    pub code: String,
+
+    /// Value of the property for this concept
+    #[serde(flatten)]
+    pub value: ValueSetConceptPropertyValue,
+}
+
+/// Value types for concept properties
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum ValueSetConceptPropertyValue {
+    #[serde(rename = "valueCode")]
+    Code(String),
+    #[serde(rename = "valueCoding")]
+    Coding(serde_json::Value),
+    #[serde(rename = "valueString")]
+    String(String),
+    #[serde(rename = "valueInteger")]
+    Integer(i32),
+    #[serde(rename = "valueBoolean")]
+    Boolean(bool),
+    #[serde(rename = "valueDateTime")]
+    DateTime(String),
+    #[serde(rename = "valueDecimal")]
+    Decimal(f64),
 }
 
 impl ValueSetConcept {
@@ -761,6 +813,7 @@ impl ValueSetConcept {
             code: code.into(),
             display: None,
             designation: None,
+            property: None,
         }
     }
 
@@ -770,6 +823,79 @@ impl ValueSetConcept {
             code: code.into(),
             display: Some(display.into()),
             designation: None,
+            property: None,
+        }
+    }
+
+    /// Add a designation to this concept
+    pub fn add_designation(&mut self, designation: ValueSetConceptDesignation) {
+        if let Some(ref mut designations) = self.designation {
+            designations.push(designation);
+        } else {
+            self.designation = Some(vec![designation]);
+        }
+    }
+
+    /// Add a property to this concept
+    pub fn add_property(&mut self, property: ValueSetConceptProperty) {
+        if let Some(ref mut properties) = self.property {
+            properties.push(property);
+        } else {
+            self.property = Some(vec![property]);
+        }
+    }
+}
+
+impl ValueSetConceptDesignation {
+    /// Create a new designation
+    pub fn new(value: impl Into<String>) -> Self {
+        Self {
+            language: None,
+            use_: None,
+            value: value.into(),
+        }
+    }
+
+    /// Create a new designation with language
+    pub fn with_language(value: impl Into<String>, language: impl Into<String>) -> Self {
+        Self {
+            language: Some(language.into()),
+            use_: None,
+            value: value.into(),
+        }
+    }
+}
+
+impl ValueSetConceptProperty {
+    /// Create a new string property
+    pub fn string(code: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            value: ValueSetConceptPropertyValue::String(value.into()),
+        }
+    }
+
+    /// Create a new code property
+    pub fn code(code: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            value: ValueSetConceptPropertyValue::Code(value.into()),
+        }
+    }
+
+    /// Create a new boolean property
+    pub fn boolean(code: impl Into<String>, value: bool) -> Self {
+        Self {
+            code: code.into(),
+            value: ValueSetConceptPropertyValue::Boolean(value),
+        }
+    }
+
+    /// Create a new integer property
+    pub fn integer(code: impl Into<String>, value: i32) -> Self {
+        Self {
+            code: code.into(),
+            value: ValueSetConceptPropertyValue::Integer(value),
         }
     }
 }

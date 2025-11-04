@@ -83,6 +83,185 @@ fn parser_config_controls_cache() {
     assert!(!Arc::ptr_eq(&first, &second));
 }
 
+#[test]
+fn path_allows_keyword_and_numeric_segments() {
+    let source = r#"
+Profile: KeywordPath
+Parent: Observation
+* true.and = false
+* 123 = "value"
+"#;
+
+    let mut parser = FshParser::new();
+    let result = parser.parse(source).expect("parse succeeds");
+    assert!(result.is_valid());
+
+    let document = Document::cast(result.cst().clone()).expect("valid document");
+    let profile = document.profiles().next().expect("profile present");
+    let mut rules = profile.rules();
+
+    let first_rule = rules.next().expect("first rule");
+    if let Rule::FixedValue(rule) = first_rule {
+        let path = rule.path().expect("path present");
+        assert_eq!(path.segments(), vec!["true", "and"]);
+    } else {
+        panic!("expected fixed value rule");
+    }
+
+    let second_rule = rules.next().expect("second rule");
+    if let Rule::FixedValue(rule) = second_rule {
+        let path = rule.path().expect("path present");
+        assert_eq!(path.segments(), vec!["123"]);
+    } else {
+        panic!("expected fixed value rule");
+    }
+}
+
+#[test]
+fn parses_code_caret_and_insert_rules() {
+    let source = r#"
+CodeSystem: ExampleCS
+* #alpha "Alpha"
+* #alpha ^designation[0].value = "Alpha Display"
+* #alpha insert CommonConcepts
+
+RuleSet: CommonConcepts
+* ^status = #active
+"#;
+
+    let mut parser = FshParser::new();
+    let result = parser.parse(source).expect("parse succeeds");
+    assert!(result.is_valid());
+
+    let document = Document::cast(result.cst().clone()).expect("valid document");
+    let codesystem = document.codesystems().next().expect("codesystem present");
+
+    let mut caret_rule = None;
+    let mut insert_rule = None;
+
+    for rule in codesystem.rules() {
+        match rule {
+            Rule::CodeCaretValue(rule) => caret_rule = Some(rule),
+            Rule::CodeInsert(rule) => insert_rule = Some(rule),
+            _ => {}
+        }
+    }
+
+    let caret_rule = caret_rule.expect("code caret value rule present");
+    assert_eq!(caret_rule.codes(), vec!["alpha"]); // hash stripped
+    let caret_path = caret_rule.caret_path().expect("caret path present");
+    assert_eq!(caret_path.as_string(), "^designation[0].value");
+    assert_eq!(caret_rule.value().as_deref(), Some("Alpha Display"));
+
+    let insert_rule = insert_rule.expect("code insert rule present");
+    assert_eq!(insert_rule.codes(), vec!["alpha"]);
+    assert_eq!(insert_rule.rule_set().as_deref(), Some("CommonConcepts"));
+    assert!(insert_rule.arguments().is_empty());
+}
+
+#[test]
+fn parses_valueset_components() {
+    let source = r#"
+Alias: LOINC = http://loinc.org
+
+ValueSet: ExampleVS
+* include LOINC#12345-6 "Example concept"
+* exclude codes from system LOINC where concept is-a #7890
+"#;
+
+    let mut parser = FshParser::new();
+    let result = parser.parse(source).expect("parse succeeds");
+    assert!(result.is_valid());
+
+    let document = Document::cast(result.cst().clone()).expect("valid document");
+    let valueset = document.valuesets().next().expect("valueset present");
+
+    let mut components: Vec<_> = valueset.components().collect();
+    assert_eq!(components.len(), 2);
+
+    let include_component = components.remove(0);
+    assert!(include_component.is_include());
+    let concept = include_component
+        .concept()
+        .expect("concept component available");
+    let code_ref = concept.code().expect("code reference available");
+    assert_eq!(code_ref.system().as_deref(), Some("LOINC"));
+    assert_eq!(code_ref.code().as_deref(), Some("12345-6"));
+    assert_eq!(concept.display().as_deref(), Some("Example concept"));
+
+    let exclude_component = components.remove(0);
+    assert!(exclude_component.is_exclude());
+    let filter_component = exclude_component
+        .filter()
+        .expect("filter component available");
+    let from_clause = filter_component.from_clause().expect("from clause present");
+    assert_eq!(from_clause.systems(), vec!["LOINC".to_string()]);
+    let mut filters = filter_component.filters();
+    assert_eq!(filters.len(), 1);
+    let filter = filters.remove(0);
+    assert_eq!(filter.property().as_deref(), Some("concept"));
+    let operator = filter.operator().expect("operator present");
+    assert_eq!(operator.text(), "is-a");
+    let value = filter.value().expect("filter value present");
+    assert_eq!(value.text(), "#7890");
+}
+
+#[test]
+fn parse_value_expression_variants() {
+    let source = r#"
+Profile: MixedExpressions
+Parent: Observation
+* valueQuantity = 5 'mg'
+* regexExample = /abc|def/
+* canonicalExample = Canonical(http://example.org/StructureDefinition/Test)
+* canonicalVersion = Canonical(http://example.org|2024-03)
+* canonicalInline = http://example.org|"v2"
+* referenceSingle = Reference(Patient)
+* referenceMultiple = Reference(Patient or Practitioner or Organization)
+* codeableRef = CodeableReference(Patient or Practitioner)
+"#;
+
+    let mut parser = FshParser::new();
+    let result = parser.parse(source).expect("parse succeeds");
+    assert!(result.is_valid());
+
+    let document = Document::cast(result.cst().clone()).expect("valid document");
+    let profile = document.profiles().next().expect("profile present");
+
+    // Ensure we parsed all rules
+    let rules: Vec<_> = profile.rules().collect();
+    assert_eq!(rules.len(), 8);
+}
+
+#[test]
+fn parse_context_and_characteristics_variants() {
+    let source = r#"
+Extension: ExampleExtension
+Context: Observation, "MyProfile", #element
+
+Logical: ExampleLogical
+Characteristics: #can-modify, "custom"
+"#;
+
+    let mut parser = FshParser::new();
+    let result = parser.parse(source).expect("parse succeeds");
+    assert!(result.is_valid());
+
+    let document = Document::cast(result.cst().clone()).expect("valid document");
+
+    let extension = document.extensions().next().expect("extension present");
+    assert!(
+        extension.rules().next().is_none(),
+        "context clause should not produce rules"
+    );
+
+    let logical = document.logicals().next().expect("logical present");
+    assert!(
+        logical.rules().next().is_none(),
+        "characteristics clause should not produce rules"
+    );
+}
+
 trait ParseErrorKindExt {
     fn check_is_parser(self) -> bool;
 }

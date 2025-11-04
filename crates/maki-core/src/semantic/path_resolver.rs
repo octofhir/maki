@@ -410,7 +410,10 @@ impl SliceRegistry {
 
     /// Find a specific slice by name
     pub fn find_slice(&self, element_path: &str, slice_name: &str) -> Option<&SliceDefinition> {
-        self.slices.get(element_path)?.iter().find(|s| s.name == slice_name)
+        self.slices
+            .get(element_path)?
+            .iter()
+            .find(|s| s.name == slice_name)
     }
 
     /// Register a slice with discriminator
@@ -536,7 +539,10 @@ impl ExtensionRegistry {
     }
 
     /// Find extensions by context
-    pub fn find_extensions_by_context(&self, context_expression: &str) -> Vec<&ExtensionDefinition> {
+    pub fn find_extensions_by_context(
+        &self,
+        context_expression: &str,
+    ) -> Vec<&ExtensionDefinition> {
         self.extensions
             .values()
             .filter(|ext| {
@@ -690,13 +696,17 @@ impl PathResolver {
             if parts.len() == 2 {
                 let base_path = parts[0];
                 let slice_part = parts[1];
-                return self.resolve_slice_path(base_path, slice_part, context).await;
+                return self
+                    .resolve_slice_path(base_path, slice_part, context)
+                    .await;
             }
         }
 
         // Check if this is an extension path
         if fsh_path.starts_with("extension[") {
-            return self.resolve_extension_path_internal(fsh_path, context).await;
+            return self
+                .resolve_extension_path_internal(fsh_path, context)
+                .await;
         }
 
         // Check if this is a choice type with specific type (e.g., "valueString")
@@ -1076,9 +1086,10 @@ impl PathResolver {
         debug!("Resolving choice type for path: {}", target_path);
 
         // First, try to find the exact [x] element
-        if let Some(choice_element) = matches.iter().find(|e| {
-            e.path().map(|p| p.ends_with("[x]")).unwrap_or(false)
-        }) {
+        if let Some(choice_element) = matches
+            .iter()
+            .find(|e| e.path().map(|p| p.ends_with("[x]")).unwrap_or(false))
+        {
             debug!("Found choice type element: {:?}", choice_element.path());
             return Ok(choice_element.clone());
         }
@@ -1089,17 +1100,17 @@ impl PathResolver {
             .iter()
             .filter(|e| {
                 if let Some(path) = e.path() {
-                    path.starts_with(base_path) && 
-                    path != format!("{}[x]", base_path) &&
-                    (path.starts_with(&format!("{}Boolean", base_path)) ||
-                     path.starts_with(&format!("{}Integer", base_path)) ||
-                     path.starts_with(&format!("{}String", base_path)) ||
-                     path.starts_with(&format!("{}DateTime", base_path)) ||
-                     path.starts_with(&format!("{}Code", base_path)) ||
-                     path.starts_with(&format!("{}Coding", base_path)) ||
-                     path.starts_with(&format!("{}CodeableConcept", base_path)) ||
-                     path.starts_with(&format!("{}Quantity", base_path)) ||
-                     path.starts_with(&format!("{}Reference", base_path)))
+                    path.starts_with(base_path)
+                        && path != format!("{}[x]", base_path)
+                        && (path.starts_with(&format!("{}Boolean", base_path))
+                            || path.starts_with(&format!("{}Integer", base_path))
+                            || path.starts_with(&format!("{}String", base_path))
+                            || path.starts_with(&format!("{}DateTime", base_path))
+                            || path.starts_with(&format!("{}Code", base_path))
+                            || path.starts_with(&format!("{}Coding", base_path))
+                            || path.starts_with(&format!("{}CodeableConcept", base_path))
+                            || path.starts_with(&format!("{}Quantity", base_path))
+                            || path.starts_with(&format!("{}Reference", base_path)))
                 } else {
                     false
                 }
@@ -1107,7 +1118,10 @@ impl PathResolver {
             .collect();
 
         if !typed_matches.is_empty() {
-            debug!("Found {} typed variants for choice type", typed_matches.len());
+            debug!(
+                "Found {} typed variants for choice type",
+                typed_matches.len()
+            );
             // Return the first typed variant as a representative
             return Ok(typed_matches[0].clone());
         }
@@ -1117,7 +1131,8 @@ impl PathResolver {
             path: format!("{}[x]", base_path),
             base_type: format!(
                 "choice type (no variants found). Available elements: {}",
-                matches.iter()
+                matches
+                    .iter()
                     .filter_map(|e| e.path())
                     .collect::<Vec<_>>()
                     .join(", ")
@@ -1142,7 +1157,10 @@ impl PathResolver {
         type_name: &str,
         context: &ResolutionContext,
     ) -> Result<ResolvedPath, PathError> {
-        debug!("Resolving choice type: {} with type: {}", base_path, type_name);
+        debug!(
+            "Resolving choice type: {} with type: {}",
+            base_path, type_name
+        );
 
         // Construct the typed path
         let typed_path = format!("{}{}", base_path, type_name);
@@ -1165,8 +1183,8 @@ impl PathResolver {
             // Validate that the requested type is allowed
             let allowed_types = choice_elem.types();
             let type_allowed = allowed_types.iter().any(|t| {
-                t.code.eq_ignore_ascii_case(type_name) ||
-                format!("{}{}", base_path, t.code) == typed_path
+                t.code.eq_ignore_ascii_case(type_name)
+                    || format!("{}{}", base_path, t.code) == typed_path
             });
 
             if type_allowed {
@@ -1183,7 +1201,7 @@ impl PathResolver {
                     .iter()
                     .map(|t| format!("{}{}", base_path, t.code))
                     .collect();
-                
+
                 return Err(PathError::InvalidSyntax(format!(
                     "Type '{}' not allowed for choice element '{}'. Allowed types: {}",
                     type_name,
@@ -1229,7 +1247,10 @@ impl PathResolver {
 
         // Validate slice name if registry has slices for this path
         if self.slice_registry.has_slices(base_path) {
-            if let Err(validation_error) = self.slice_registry.validate_slice_name(base_path, slice_name) {
+            if let Err(validation_error) = self
+                .slice_registry
+                .validate_slice_name(base_path, slice_name)
+            {
                 return Err(PathError::NotFound {
                     path: format!("{}:{}", base_path, slice_part),
                     base_type: validation_error,
@@ -1239,9 +1260,11 @@ impl PathResolver {
 
         // Look for the slice in the registry
         if let Some(slice_def) = self.slice_registry.find_slice(base_path, slice_name) {
-            debug!("Found slice definition: {} with discriminator: {:?}", 
-                   slice_def.name, slice_def.discriminator);
-            
+            debug!(
+                "Found slice definition: {} with discriminator: {:?}",
+                slice_def.name, slice_def.discriminator
+            );
+
             // Construct the slice path
             let slice_path = format!("{}:{}", base_path, slice_name);
             let full_path = if let Some(sub) = sub_path {
@@ -1264,19 +1287,24 @@ impl PathResolver {
 
             // If not found directly, try to resolve using discriminator information
             if let Some(discriminator) = &slice_def.discriminator {
-                debug!("Using discriminator {} at path {}", 
-                       discriminator.discriminator_type, discriminator.path);
-                
+                debug!(
+                    "Using discriminator {} at path {}",
+                    discriminator.discriminator_type, discriminator.path
+                );
+
                 // Try to find elements that match the discriminator pattern
                 let discriminator_path = format!("{}.{}", base_path, discriminator.path);
-                if let Some(elem) = context.base_definition.find_element_by_path(&discriminator_path) {
+                if let Some(elem) = context
+                    .base_definition
+                    .find_element_by_path(&discriminator_path)
+                {
                     // Create a synthetic slice element based on the discriminator
                     let slice_element_path = if let Some(sub) = sub_path {
                         format!("{}.{}", slice_path, sub)
                     } else {
                         slice_path
                     };
-                    
+
                     return Ok(ResolvedPath {
                         fhir_path: slice_element_path,
                         element_definition: elem,
@@ -1292,7 +1320,7 @@ impl PathResolver {
         // Fallback: try to resolve as regular path and mark as slice
         let full_fsh_path = format!("{}:{}", base_path, slice_part);
         let segments = self.parse_path(&full_fsh_path)?;
-        
+
         // Handle colon in path segments for slicing
         let mut modified_segments = Vec::new();
         for segment in segments {
@@ -1303,7 +1331,7 @@ impl PathResolver {
                     let base_segment = PathSegment::new(parts[0].to_string());
                     let slice_segment = PathSegment::with_bracket(
                         parts[1].to_string(),
-                        Bracket::Slice(parts[1].to_string())
+                        Bracket::Slice(parts[1].to_string()),
                     );
                     modified_segments.push(base_segment);
                     modified_segments.push(slice_segment);
@@ -1315,7 +1343,9 @@ impl PathResolver {
             }
         }
 
-        let element = self.resolve_segments(&context.base_definition, &modified_segments, &full_fsh_path).await?;
+        let element = self
+            .resolve_segments(&context.base_definition, &modified_segments, &full_fsh_path)
+            .await?;
 
         Ok(ResolvedPath {
             fhir_path: element.path().unwrap_or(&full_fsh_path).to_string(),
@@ -1344,11 +1374,17 @@ impl PathResolver {
         value_path: &str,
         context: &ResolutionContext,
     ) -> Result<ResolvedPath, PathError> {
-        debug!("Resolving extension path: {} -> {}", extension_url, value_path);
+        debug!(
+            "Resolving extension path: {} -> {}",
+            extension_url, value_path
+        );
 
         // Validate extension URL if registry has extensions
         if !self.extension_registry.get_extension_urls().is_empty() {
-            if let Err(validation_error) = self.extension_registry.validate_extension_url(extension_url) {
+            if let Err(validation_error) = self
+                .extension_registry
+                .validate_extension_url(extension_url)
+            {
                 return Err(PathError::NotFound {
                     path: format!("extension[{}]", extension_url),
                     base_type: validation_error,
@@ -1358,31 +1394,41 @@ impl PathResolver {
 
         // Look for the extension in the registry
         if let Some(ext_def) = self.extension_registry.find_extension(extension_url) {
-            debug!("Found extension definition: {} (complex: {})", 
-                   ext_def.url, ext_def.is_complex);
+            debug!(
+                "Found extension definition: {} (complex: {})",
+                ext_def.url, ext_def.is_complex
+            );
 
             // Handle complex extensions with sub-extensions
             if ext_def.is_complex && !value_path.is_empty() {
                 // Check if the value_path refers to a sub-extension
-                if let Some(sub_ext) = ext_def.sub_extensions.iter().find(|sub| {
-                    value_path.starts_with(&format!("extension[{}]", sub.url))
-                }) {
+                if let Some(sub_ext) = ext_def
+                    .sub_extensions
+                    .iter()
+                    .find(|sub| value_path.starts_with(&format!("extension[{}]", sub.url)))
+                {
                     debug!("Found sub-extension: {}", sub_ext.url);
                     // Recursively resolve the sub-extension path
-                    let remaining_path = value_path.strip_prefix(&format!("extension[{}]", sub_ext.url))
+                    let remaining_path = value_path
+                        .strip_prefix(&format!("extension[{}]", sub_ext.url))
                         .unwrap_or("")
                         .trim_start_matches('.');
-                    
-                    return Box::pin(self.resolve_extension_path(&sub_ext.url, remaining_path, context)).await;
+
+                    return Box::pin(self.resolve_extension_path(
+                        &sub_ext.url,
+                        remaining_path,
+                        context,
+                    ))
+                    .await;
                 }
             }
 
             // Validate value type if specified
             if !ext_def.value_types.is_empty() && !value_path.is_empty() {
                 let value_type_valid = ext_def.value_types.iter().any(|vt| {
-                    value_path.starts_with(&format!("value{}", vt)) ||
-                    value_path == format!("value[x]") ||
-                    value_path.starts_with("value[x]")
+                    value_path.starts_with(&format!("value{}", vt))
+                        || value_path == format!("value[x]")
+                        || value_path.starts_with("value[x]")
                 });
 
                 if !value_type_valid {
@@ -1405,7 +1451,9 @@ impl PathResolver {
 
         // Try to resolve the extension element
         let segments = self.parse_path(&extension_path)?;
-        let element = self.resolve_segments(&context.base_definition, &segments, &extension_path).await?;
+        let element = self
+            .resolve_segments(&context.base_definition, &segments, &extension_path)
+            .await?;
 
         Ok(ResolvedPath {
             fhir_path: element.path().unwrap_or(&extension_path).to_string(),
@@ -1430,22 +1478,27 @@ impl PathResolver {
             if let Some(bracket_end) = fsh_path.find(']') {
                 let extension_url = &fsh_path[bracket_start + 1..bracket_end];
                 let remaining = &fsh_path[bracket_end + 1..];
-                
+
                 // Handle nested extension paths like extension[url1].extension[url2].valueString
                 if remaining.starts_with('.') {
                     let value_path = &remaining[1..];
-                    
+
                     // Check if this is a nested extension
                     if value_path.starts_with("extension[") {
                         // This is a nested extension - handle recursively
-                        return Box::pin(self.resolve_extension_path_internal(value_path, context)).await;
+                        return Box::pin(self.resolve_extension_path_internal(value_path, context))
+                            .await;
                     } else {
                         // Regular value path
-                        return self.resolve_extension_path(extension_url, value_path, context).await;
+                        return self
+                            .resolve_extension_path(extension_url, value_path, context)
+                            .await;
                     }
                 } else if remaining.is_empty() {
                     // Just the extension itself
-                    return self.resolve_extension_path(extension_url, "", context).await;
+                    return self
+                        .resolve_extension_path(extension_url, "", context)
+                        .await;
                 } else {
                     // Invalid syntax - should have a dot after the bracket
                     return Err(PathError::InvalidSyntax(format!(
@@ -1484,26 +1537,49 @@ impl PathResolver {
     ) -> Result<Option<ResolvedPath>, PathError> {
         // Common FHIR choice type patterns
         let choice_patterns = [
-            "value", "deceased", "onset", "abatement", "effective", "occurrence",
-            "performed", "recorded", "issued", "applies", "timing", "multipleBirth",
+            "value",
+            "deceased",
+            "onset",
+            "abatement",
+            "effective",
+            "occurrence",
+            "performed",
+            "recorded",
+            "issued",
+            "applies",
+            "timing",
+            "multipleBirth",
         ];
 
         for pattern in &choice_patterns {
             if fsh_path.starts_with(pattern) && fsh_path.len() > pattern.len() {
                 let remaining = &fsh_path[pattern.len()..];
-                
+
                 // Check if the remaining part looks like a type name
-                if remaining.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                if remaining
+                    .chars()
+                    .next()
+                    .map(|c| c.is_uppercase())
+                    .unwrap_or(false)
+                {
                     // This looks like a typed choice (e.g., "valueString")
                     let type_name = remaining;
-                    
+
                     // Check if there's a choice type element for this pattern
                     let choice_path = format!("{}[x]", pattern);
-                    if context.base_definition.find_element_by_path(&choice_path).is_some() {
-                        debug!("Detected typed choice: {} -> {}[x] with type {}", 
-                               fsh_path, pattern, type_name);
-                        
-                        let resolved = self.resolve_choice_type_with_type(pattern, type_name, context).await?;
+                    if context
+                        .base_definition
+                        .find_element_by_path(&choice_path)
+                        .is_some()
+                    {
+                        debug!(
+                            "Detected typed choice: {} -> {}[x] with type {}",
+                            fsh_path, pattern, type_name
+                        );
+
+                        let resolved = self
+                            .resolve_choice_type_with_type(pattern, type_name, context)
+                            .await?;
                         return Ok(Some(resolved));
                     }
                 }
@@ -1514,21 +1590,38 @@ impl PathResolver {
         if let Some(dot_pos) = fsh_path.rfind('.') {
             let base_path = &fsh_path[..dot_pos];
             let last_segment = &fsh_path[dot_pos + 1..];
-            
+
             for pattern in &choice_patterns {
                 if last_segment.starts_with(pattern) && last_segment.len() > pattern.len() {
                     let remaining = &last_segment[pattern.len()..];
-                    
-                    if remaining.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+
+                    if remaining
+                        .chars()
+                        .next()
+                        .map(|c| c.is_uppercase())
+                        .unwrap_or(false)
+                    {
                         // This is a nested typed choice
                         let choice_base_path = format!("{}.{}", base_path, pattern);
                         let choice_path = format!("{}[x]", choice_base_path);
-                        
-                        if context.base_definition.find_element_by_path(&choice_path).is_some() {
-                            debug!("Detected nested typed choice: {} -> {}[x] with type {}", 
-                                   fsh_path, choice_base_path, remaining);
-                            
-                            let resolved = self.resolve_choice_type_with_type(&choice_base_path, remaining, context).await?;
+
+                        if context
+                            .base_definition
+                            .find_element_by_path(&choice_path)
+                            .is_some()
+                        {
+                            debug!(
+                                "Detected nested typed choice: {} -> {}[x] with type {}",
+                                fsh_path, choice_base_path, remaining
+                            );
+
+                            let resolved = self
+                                .resolve_choice_type_with_type(
+                                    &choice_base_path,
+                                    remaining,
+                                    context,
+                                )
+                                .await?;
                             return Ok(Some(resolved));
                         }
                     }
@@ -1577,7 +1670,10 @@ impl PathResolver {
         }
 
         // Check for invalid characters
-        if fsh_path.chars().any(|c| !c.is_alphanumeric() && !".:[]+-=x".contains(c)) {
+        if fsh_path
+            .chars()
+            .any(|c| !c.is_alphanumeric() && !".:[]+-=x".contains(c))
+        {
             errors.push("Path contains invalid characters".to_string());
         }
 
@@ -1733,7 +1829,7 @@ mod tests {
     #[test]
     fn test_slice_registry() {
         let mut registry = SliceRegistry::new();
-        
+
         // Test registering a slice
         let slice = SliceDefinition {
             name: "mrn".to_string(),
@@ -1745,41 +1841,45 @@ mod tests {
             ordering: Some(SliceOrdering::Ordered),
             rules: Some(SliceRules::Closed),
         };
-        
+
         registry.register_slice(slice);
-        
+
         // Test finding slices
         assert!(registry.has_slices("identifier"));
         assert!(!registry.has_slices("name"));
-        
+
         let found_slice = registry.find_slice("identifier", "mrn");
         assert!(found_slice.is_some());
         assert_eq!(found_slice.unwrap().name, "mrn");
-        
+
         // Test slice names
         let slice_names = registry.get_slice_names("identifier");
         assert_eq!(slice_names, vec!["mrn"]);
-        
+
         // Test validation
         assert!(registry.validate_slice_name("identifier", "mrn").is_ok());
-        assert!(registry.validate_slice_name("identifier", "invalid").is_err());
+        assert!(
+            registry
+                .validate_slice_name("identifier", "invalid")
+                .is_err()
+        );
     }
 
     #[test]
     fn test_slice_registry_with_discriminator() {
         let mut registry = SliceRegistry::new();
-        
+
         registry.register_slice_with_discriminator(
             "telecom".to_string(),
             "phone".to_string(),
             "value".to_string(),
             "system".to_string(),
         );
-        
+
         let slice = registry.find_slice("telecom", "phone").unwrap();
         assert_eq!(slice.name, "phone");
         assert!(slice.discriminator.is_some());
-        
+
         let discriminator = slice.discriminator.as_ref().unwrap();
         assert_eq!(discriminator.discriminator_type, "value");
         assert_eq!(discriminator.path, "system");
@@ -1788,7 +1888,7 @@ mod tests {
     #[test]
     fn test_extension_registry() {
         let mut registry = ExtensionRegistry::new();
-        
+
         // Test simple extension
         registry.register_simple_extension(
             "http://example.org/fhir/StructureDefinition/patient-birthPlace".to_string(),
@@ -1796,42 +1896,58 @@ mod tests {
             "Patient".to_string(),
             "Address".to_string(),
         );
-        
-        assert!(registry.has_extension("http://example.org/fhir/StructureDefinition/patient-birthPlace"));
+
+        assert!(
+            registry
+                .has_extension("http://example.org/fhir/StructureDefinition/patient-birthPlace")
+        );
         assert!(!registry.has_extension("http://example.org/invalid"));
-        
-        let extension = registry.find_extension("http://example.org/fhir/StructureDefinition/patient-birthPlace");
+
+        let extension = registry
+            .find_extension("http://example.org/fhir/StructureDefinition/patient-birthPlace");
         assert!(extension.is_some());
         assert!(!extension.unwrap().is_complex);
-        
+
         // Test validation
-        assert!(registry.validate_extension_url("http://example.org/fhir/StructureDefinition/patient-birthPlace").is_ok());
-        assert!(registry.validate_extension_url("http://example.org/invalid").is_err());
+        assert!(
+            registry
+                .validate_extension_url(
+                    "http://example.org/fhir/StructureDefinition/patient-birthPlace"
+                )
+                .is_ok()
+        );
+        assert!(
+            registry
+                .validate_extension_url("http://example.org/invalid")
+                .is_err()
+        );
     }
 
     #[test]
     fn test_extension_registry_complex() {
         let mut registry = ExtensionRegistry::new();
-        
+
         let sub_extension = ExtensionDefinition {
             url: "http://example.org/fhir/StructureDefinition/sub-extension".to_string(),
             context: vec![ExtensionContext {
                 context_type: "extension".to_string(),
-                expression: "http://example.org/fhir/StructureDefinition/complex-extension".to_string(),
+                expression: "http://example.org/fhir/StructureDefinition/complex-extension"
+                    .to_string(),
             }],
             value_types: vec!["string".to_string()],
             is_complex: false,
             sub_extensions: Vec::new(),
         };
-        
+
         registry.register_complex_extension(
             "http://example.org/fhir/StructureDefinition/complex-extension".to_string(),
             "element".to_string(),
             "Patient".to_string(),
             vec![sub_extension],
         );
-        
-        let extension = registry.find_extension("http://example.org/fhir/StructureDefinition/complex-extension");
+
+        let extension = registry
+            .find_extension("http://example.org/fhir/StructureDefinition/complex-extension");
         assert!(extension.is_some());
         assert!(extension.unwrap().is_complex);
         assert_eq!(extension.unwrap().sub_extensions.len(), 1);
@@ -1839,13 +1955,13 @@ mod tests {
 
     #[test]
     fn test_path_validation() {
-        use std::sync::Arc;
         use crate::canonical::DefinitionSession;
-        
+        use std::sync::Arc;
+
         // Create a mock session (this won't be used in validation)
         let session = Arc::new(DefinitionSession::for_testing());
         let resolver = PathResolver::new(session);
-        
+
         let context = ResolutionContext {
             base_definition: StructureDefinition {
                 content: Arc::new(serde_json::json!({
@@ -1855,31 +1971,61 @@ mod tests {
             },
             profile_name: "TestProfile".to_string(),
         };
-        
+
         // Test valid paths
-        assert!(resolver.validate_path_with_suggestions("name.given", &context).is_ok());
-        assert!(resolver.validate_path_with_suggestions("identifier[0].system", &context).is_ok());
-        
+        assert!(
+            resolver
+                .validate_path_with_suggestions("name.given", &context)
+                .is_ok()
+        );
+        assert!(
+            resolver
+                .validate_path_with_suggestions("identifier[0].system", &context)
+                .is_ok()
+        );
+
         // Test invalid paths
-        assert!(resolver.validate_path_with_suggestions("", &context).is_err());
-        assert!(resolver.validate_path_with_suggestions(".name", &context).is_err());
-        assert!(resolver.validate_path_with_suggestions("name.", &context).is_err());
-        assert!(resolver.validate_path_with_suggestions("name..given", &context).is_err());
-        assert!(resolver.validate_path_with_suggestions("name[unclosed", &context).is_err());
-        
+        assert!(
+            resolver
+                .validate_path_with_suggestions("", &context)
+                .is_err()
+        );
+        assert!(
+            resolver
+                .validate_path_with_suggestions(".name", &context)
+                .is_err()
+        );
+        assert!(
+            resolver
+                .validate_path_with_suggestions("name.", &context)
+                .is_err()
+        );
+        assert!(
+            resolver
+                .validate_path_with_suggestions("name..given", &context)
+                .is_err()
+        );
+        assert!(
+            resolver
+                .validate_path_with_suggestions("name[unclosed", &context)
+                .is_err()
+        );
+
         // Test suggestions
-        let errors = resolver.validate_path_with_suggestions("extension", &context).unwrap_err();
+        let errors = resolver
+            .validate_path_with_suggestions("extension", &context)
+            .unwrap_err();
         assert!(errors.iter().any(|e| e.contains("extension[url]")));
     }
 
     #[test]
     fn test_choice_type_resolution() {
-        use std::sync::Arc;
         use crate::canonical::DefinitionSession;
-        
+        use std::sync::Arc;
+
         let session = Arc::new(DefinitionSession::for_testing());
         let resolver = PathResolver::new(session);
-        
+
         // Test choice type element detection
         let choice_json = serde_json::json!({
             "id": "Patient.deceased[x]",
@@ -1889,10 +2035,10 @@ mod tests {
                 {"code": "dateTime"}
             ]
         });
-        
+
         let choice_elem = ElementDefinition::new(choice_json);
         assert!(choice_elem.is_choice_type());
-        
+
         // Test choice type matching
         let matches = vec![choice_elem];
         let result = resolver.resolve_choice_type(&matches, "Patient.deceased[x]");
@@ -1901,12 +2047,12 @@ mod tests {
 
     #[test]
     fn test_parse_path_with_slices() {
-        use std::sync::Arc;
         use crate::canonical::DefinitionSession;
-        
+        use std::sync::Arc;
+
         let session = Arc::new(DefinitionSession::for_testing());
         let resolver = PathResolver::new(session);
-        
+
         // Test parsing slice notation
         let segments = resolver.parse_path("identifier:mrn.system").unwrap();
         assert_eq!(segments.len(), 2);
@@ -1916,14 +2062,16 @@ mod tests {
 
     #[test]
     fn test_parse_path_with_extensions() {
-        use std::sync::Arc;
         use crate::canonical::DefinitionSession;
-        
+        use std::sync::Arc;
+
         let session = Arc::new(DefinitionSession::for_testing());
         let resolver = PathResolver::new(session);
-        
+
         // Test parsing extension notation
-        let segments = resolver.parse_path("extension[http://example.org/ext].valueString").unwrap();
+        let segments = resolver
+            .parse_path("extension[http://example.org/ext].valueString")
+            .unwrap();
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].base, "extension");
         assert!(matches!(segments[0].bracket, Some(Bracket::Slice(_))));
@@ -1932,12 +2080,12 @@ mod tests {
 
     #[test]
     fn test_parse_path_with_choice_types() {
-        use std::sync::Arc;
         use crate::canonical::DefinitionSession;
-        
+        use std::sync::Arc;
+
         let session = Arc::new(DefinitionSession::for_testing());
         let resolver = PathResolver::new(session);
-        
+
         // Test parsing choice type notation
         let segments = resolver.parse_path("deceased[x]").unwrap();
         assert_eq!(segments.len(), 1);
@@ -1947,53 +2095,71 @@ mod tests {
 
     #[test]
     fn test_parse_path_complex() {
-        use std::sync::Arc;
         use crate::canonical::DefinitionSession;
-        
+        use std::sync::Arc;
+
         let session = Arc::new(DefinitionSession::for_testing());
         let resolver = PathResolver::new(session);
-        
+
         // Test complex path with multiple bracket types
         let segments = resolver.parse_path("component[systolic].value[x]").unwrap();
         assert_eq!(segments.len(), 2);
-        
+
         assert_eq!(segments[0].base, "component");
         assert!(matches!(segments[0].bracket, Some(Bracket::Slice(_))));
-        
+
         assert_eq!(segments[1].base, "value");
         assert!(matches!(segments[1].bracket, Some(Bracket::ChoiceType)));
     }
 
     #[test]
     fn test_parse_bracket_content() {
-        use std::sync::Arc;
         use crate::canonical::DefinitionSession;
-        
+        use std::sync::Arc;
+
         let session = Arc::new(DefinitionSession::for_testing());
         let resolver = PathResolver::new(session);
-        
+
         // Test different bracket types
-        assert!(matches!(resolver.parse_bracket("+").unwrap(), Bracket::Soft(SoftIndexOp::Increment)));
-        assert!(matches!(resolver.parse_bracket("=").unwrap(), Bracket::Soft(SoftIndexOp::Repeat)));
-        assert!(matches!(resolver.parse_bracket("x").unwrap(), Bracket::ChoiceType));
-        assert!(matches!(resolver.parse_bracket("0").unwrap(), Bracket::Index(0)));
-        assert!(matches!(resolver.parse_bracket("42").unwrap(), Bracket::Index(42)));
-        assert!(matches!(resolver.parse_bracket("sliceName").unwrap(), Bracket::Slice(_)));
+        assert!(matches!(
+            resolver.parse_bracket("+").unwrap(),
+            Bracket::Soft(SoftIndexOp::Increment)
+        ));
+        assert!(matches!(
+            resolver.parse_bracket("=").unwrap(),
+            Bracket::Soft(SoftIndexOp::Repeat)
+        ));
+        assert!(matches!(
+            resolver.parse_bracket("x").unwrap(),
+            Bracket::ChoiceType
+        ));
+        assert!(matches!(
+            resolver.parse_bracket("0").unwrap(),
+            Bracket::Index(0)
+        ));
+        assert!(matches!(
+            resolver.parse_bracket("42").unwrap(),
+            Bracket::Index(42)
+        ));
+        assert!(matches!(
+            resolver.parse_bracket("sliceName").unwrap(),
+            Bracket::Slice(_)
+        ));
     }
 
     #[test]
     fn test_cache_functionality() {
-        use std::sync::Arc;
         use crate::canonical::DefinitionSession;
-        
+        use std::sync::Arc;
+
         let session = Arc::new(DefinitionSession::for_testing());
         let resolver = PathResolver::new(session);
-        
+
         // Test cache stats
         let (size, capacity) = resolver.cache_stats();
         assert_eq!(size, 0);
         assert!(capacity >= 0);
-        
+
         // Test cache clearing
         resolver.clear_cache();
         let (size_after_clear, _) = resolver.cache_stats();

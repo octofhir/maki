@@ -62,6 +62,7 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
     let bytes = input.as_bytes();
     let len = bytes.len();
     let mut i = 0usize;
+    let mut param_stack: Vec<bool> = Vec::new();
 
     while i < len {
         let ch = match next_char(input, i) {
@@ -71,6 +72,41 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
 
         let (current, size) = ch;
         let start = i;
+
+        // Parameter context handling (RuleSet/insert arguments)
+        if param_stack.last().copied().unwrap_or(false) {
+            if current == '[' {
+                if let Some((next_bracket, _)) = next_char(input, i + size) {
+                    if next_bracket == '[' {
+                        let (end, param_error) = lex_bracketed_param(input, start);
+                        if let Some(err) = param_error {
+                            errors.push(err);
+                        }
+                        tokens.push(CstToken::new(
+                            FshSyntaxKind::BracketedParamToken,
+                            &input[start..end],
+                            span(start, end),
+                        ));
+                        i = end;
+                        continue;
+                    }
+                }
+            }
+
+            if current != ',' && current != ')' && !current.is_whitespace() {
+                let (end, param_error) = lex_plain_param(input, start);
+                if let Some(err) = param_error {
+                    errors.push(err);
+                }
+                tokens.push(CstToken::new(
+                    FshSyntaxKind::PlainParamToken,
+                    &input[start..end],
+                    span(start, end),
+                ));
+                i = end;
+                continue;
+            }
+        }
 
         match current {
             // Newlines (separate from whitespace for formatting purposes)
@@ -184,14 +220,26 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
                         continue;
                     }
                 }
-                // Not a comment, fall through to handle as regular token
-                let (token_kind, end) = lex_regular_token(input, start);
-                tokens.push(CstToken::new(
-                    token_kind,
-                    &input[start..end],
-                    span(start, end),
-                ));
-                i = end;
+                // Not a comment, try regex literal (e.g., /pattern/)
+                if let Some((end, regex_error)) = lex_regex_literal(input, start) {
+                    if let Some(err) = regex_error {
+                        errors.push(err);
+                    }
+                    tokens.push(CstToken::new(
+                        FshSyntaxKind::Regex,
+                        &input[start..end],
+                        span(start, end),
+                    ));
+                    i = end;
+                } else {
+                    // Fallback to regular slash token
+                    tokens.push(CstToken::new(
+                        FshSyntaxKind::Slash,
+                        "/",
+                        span(start, i + size),
+                    ));
+                    i += size;
+                }
             }
 
             // Punctuation and operators
@@ -265,12 +313,16 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
                 }
             }
             '#' => {
+                let (end, code_error) = lex_code_literal(input, start);
+                if let Some(err) = code_error {
+                    errors.push(err);
+                }
                 tokens.push(CstToken::new(
-                    FshSyntaxKind::Hash,
-                    "#",
-                    span(start, i + size),
+                    FshSyntaxKind::Code,
+                    &input[start..end],
+                    span(start, end),
                 ));
-                i += size;
+                i = end;
             }
             '-' => {
                 // Check for arrow ->
@@ -344,11 +396,13 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
                 i += size;
             }
             '(' => {
+                let is_param_context = should_enter_param_context(&tokens);
                 tokens.push(CstToken::new(
                     FshSyntaxKind::LParen,
                     "(",
                     span(start, i + size),
                 ));
+                param_stack.push(is_param_context);
                 i += size;
             }
             ')' => {
@@ -357,6 +411,7 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
                     ")",
                     span(start, i + size),
                 ));
+                param_stack.pop();
                 i += size;
             }
             '[' => {
@@ -422,9 +477,17 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
             }
 
             _ if current.is_alphabetic() || current == '_' => {
-                let (kind, end) = lex_word(input, start);
-                tokens.push(CstToken::new(kind, &input[start..end], span(start, end)));
-                i = end;
+                if let Some((kind, end, literal_error)) = lex_special_literal(input, start) {
+                    if let Some(err) = literal_error {
+                        errors.push(err);
+                    }
+                    tokens.push(CstToken::new(kind, &input[start..end], span(start, end)));
+                    i = end;
+                } else {
+                    let (kind, end) = lex_word(input, start);
+                    tokens.push(CstToken::new(kind, &input[start..end], span(start, end)));
+                    i = end;
+                }
             }
 
             // Unknown character - create error token
@@ -497,7 +560,7 @@ fn lex_word(input: &str, start: usize) -> (FshSyntaxKind, usize) {
         "where" => FshSyntaxKind::WhereKw,
         "system" => FshSyntaxKind::SystemKw,
         "valueset" => FshSyntaxKind::ValuesetRefKw,
-        "contentreference" => FshSyntaxKind::ContentreferenceKw,
+        "contentreference" | "contentReference" => FshSyntaxKind::ContentreferenceKw,
 
         // Binding strength
         "required" => FshSyntaxKind::RequiredKw,
@@ -525,6 +588,274 @@ fn lex_word(input: &str, start: usize) -> (FshSyntaxKind, usize) {
 }
 
 /// Lex a number
+fn lex_special_literal(
+    input: &str,
+    start: usize,
+) -> Option<(FshSyntaxKind, usize, Option<LexerError>)> {
+    const KEYWORDS: [(&str, FshSyntaxKind); 3] = [
+        ("Reference", FshSyntaxKind::Reference),
+        ("Canonical", FshSyntaxKind::Canonical),
+        ("CodeableReference", FshSyntaxKind::CodeableReference),
+    ];
+
+    for (keyword, kind) in KEYWORDS {
+        if input[start..].starts_with(keyword) {
+            let mut idx = start + keyword.len();
+            let len = input.len();
+
+            // Consume optional whitespace between keyword and '('
+            while idx < len {
+                if let Some((ch, size)) = next_char(input, idx) {
+                    if ch.is_whitespace() {
+                        idx += size;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            // Must have opening parenthesis immediately after keyword/whitespace
+            if idx < len {
+                if let Some(('(', _)) = next_char(input, idx) {
+                    let (end, error) = consume_parenthesized(input, idx, keyword);
+                    return Some((kind, end, error));
+                }
+            }
+
+            // Keyword without parentheses is not treated as literal
+            return None;
+        }
+    }
+
+    None
+}
+
+fn consume_parenthesized(
+    input: &str,
+    open_index: usize,
+    keyword: &str,
+) -> (usize, Option<LexerError>) {
+    let len = input.len();
+    let (first_char, open_size) = match next_char(input, open_index) {
+        Some(pair) => pair,
+        None => {
+            return (
+                len,
+                Some(LexerError::new(
+                    format!("Unterminated {keyword} literal"),
+                    span(open_index, len),
+                )),
+            );
+        }
+    };
+
+    debug_assert_eq!(first_char, '(');
+
+    let mut i = open_index + open_size;
+    let mut depth = 1usize;
+
+    while i < len {
+        let (ch, size) = match next_char(input, i) {
+            Some(pair) => pair,
+            None => break,
+        };
+
+        match ch {
+            '\\' => {
+                // Skip escaped character
+                i += size;
+                if i < len {
+                    if let Some((_, escape_size)) = next_char(input, i) {
+                        i += escape_size;
+                    }
+                }
+                continue;
+            }
+            '(' => {
+                depth += 1;
+            }
+            ')' => {
+                depth -= 1;
+                i += size;
+                if depth == 0 {
+                    return (i, None);
+                }
+                continue;
+            }
+            _ => {}
+        }
+
+        i += size;
+    }
+
+    let span_end = len.min(i);
+    (
+        span_end,
+        Some(LexerError::new(
+            format!("Unterminated {keyword} literal"),
+            span(open_index, span_end),
+        )),
+    )
+}
+
+fn lex_code_literal(input: &str, start: usize) -> (usize, Option<LexerError>) {
+    let len = input.len();
+    let mut i = start + 1; // skip '#'
+
+    if i >= len {
+        return (
+            i,
+            Some(LexerError::new("Expected code after '#'", span(start, len))),
+        );
+    }
+
+    if let Some((ch, _)) = next_char(input, i) {
+        if ch == '"' {
+            let (_, end, error) = lex_string(input, i);
+            return (end, error);
+        }
+    }
+
+    let mut consumed = false;
+    while i < len {
+        let (ch, size) = match next_char(input, i) {
+            Some(pair) => pair,
+            None => break,
+        };
+
+        if ch.is_whitespace() || matches!(ch, ',' | ')' | '(' | '[' | ']' | '{' | '}' | ';') {
+            break;
+        }
+
+        consumed = true;
+        i += size;
+    }
+
+    if !consumed {
+        return (
+            i,
+            Some(LexerError::new("Expected code after '#'", span(start, i))),
+        );
+    }
+
+    (i, None)
+}
+
+fn lex_regex_literal(input: &str, start: usize) -> Option<(usize, Option<LexerError>)> {
+    let len = input.len();
+    let mut i = start + 1; // Skip initial '/'
+    let mut is_escaped = false;
+
+    while i < len {
+        let (ch, size) = next_char(input, i)?;
+
+        if ch == '\n' || ch == '\r' {
+            return Some((
+                i,
+                Some(LexerError::new(
+                    "Unterminated regex literal",
+                    span(start, i),
+                )),
+            ));
+        }
+
+        if ch == '/' && !is_escaped {
+            return Some((i + size, None));
+        }
+
+        is_escaped = !is_escaped && ch == '\\';
+        i += size;
+    }
+
+    Some((
+        len,
+        Some(LexerError::new(
+            "Unterminated regex literal",
+            span(start, len),
+        )),
+    ))
+}
+
+fn lex_bracketed_param(input: &str, start: usize) -> (usize, Option<LexerError>) {
+    let len = input.len();
+    let mut i = start + 2; // Skip opening [[
+
+    while i < len {
+        let (ch, size) = match next_char(input, i) {
+            Some(pair) => pair,
+            None => break,
+        };
+
+        if ch == ']' {
+            if let Some((next, next_size)) = next_char(input, i + size) {
+                if next == ']' {
+                    return (i + size + next_size, None);
+                }
+            }
+        }
+
+        i += size;
+    }
+
+    (
+        len,
+        Some(LexerError::new(
+            "Unterminated bracketed parameter",
+            span(start, len),
+        )),
+    )
+}
+
+fn lex_plain_param(input: &str, start: usize) -> (usize, Option<LexerError>) {
+    let len = input.len();
+    let mut i = start;
+    let mut consumed = false;
+
+    while i < len {
+        let (ch, size) = match next_char(input, i) {
+            Some(pair) => pair,
+            None => break,
+        };
+
+        match ch {
+            '\\' => {
+                consumed = true;
+                i += size;
+                if i < len {
+                    if let Some((_, escape_size)) = next_char(input, i) {
+                        i += escape_size;
+                    }
+                }
+            }
+            ',' | ')' => break,
+            '\n' | '\r' => {
+                return (
+                    i,
+                    Some(LexerError::new(
+                        "Unterminated parameter (line break)",
+                        span(start, i),
+                    )),
+                );
+            }
+            _ => {
+                consumed = true;
+                i += size;
+            }
+        }
+    }
+
+    if !consumed {
+        (
+            i,
+            Some(LexerError::new("Expected parameter value", span(start, i))),
+        )
+    } else {
+        (i, None)
+    }
+}
+
 fn lex_number(input: &str, start: usize) -> (FshSyntaxKind, usize) {
     let bytes = input.as_bytes();
     let len = bytes.len();
@@ -646,28 +977,66 @@ fn lex_unit(input: &str, start: usize) -> (FshSyntaxKind, usize, Option<LexerErr
 }
 
 /// Lex a regular token (non-trivia, non-special)
+#[allow(dead_code)]
 fn lex_regular_token(input: &str, start: usize) -> (FshSyntaxKind, usize) {
     // Fallback for anything else - treat as identifier
     let (_, end) = read_word(input, start);
     (FshSyntaxKind::Ident, end)
 }
 
+fn should_enter_param_context(tokens: &[CstToken]) -> bool {
+    let mut seen_colon = false;
+    let mut inspected = 0usize;
+
+    for token in tokens.iter().rev() {
+        let kind = token.kind;
+        if kind.is_trivia() {
+            continue;
+        }
+
+        inspected += 1;
+
+        match kind {
+            FshSyntaxKind::InsertKw => return true,
+            FshSyntaxKind::RulesetKw => {
+                if seen_colon {
+                    return true;
+                }
+            }
+            FshSyntaxKind::Colon => {
+                seen_colon = true;
+            }
+            FshSyntaxKind::LParen | FshSyntaxKind::RParen | FshSyntaxKind::Newline => break,
+            FshSyntaxKind::Asterisk => break,
+            _ => {}
+        }
+
+        if inspected >= 8 {
+            break;
+        }
+    }
+
+    false
+}
+
 /// Read a word (sequence of alphanumeric/underscore chars)
 fn read_word(input: &str, start: usize) -> (String, usize) {
-    let bytes = input.as_bytes();
-    let len = bytes.len();
-    let mut i = start;
+    fn is_word_char(ch: char) -> bool {
+        matches!(ch, '_' | '-' | '/' | '.')
+            || ch.is_ascii_alphanumeric()
+            || (!ch.is_ascii() && ch.is_alphanumeric())
+    }
 
-    while i < len {
-        let ch = bytes[i] as char;
-        if ch.is_alphanumeric() || ch == '_' || ch == '-' || ch == '/' || ch == '.' {
-            i += 1;
+    let mut end = start;
+    for (offset, ch) in input[start..].char_indices() {
+        if is_word_char(ch) {
+            end = start + offset + ch.len_utf8();
         } else {
             break;
         }
     }
 
-    (input[start..i].to_string(), i)
+    (input[start..end].to_string(), end)
 }
 
 /// Get next character and its UTF-8 size
@@ -746,5 +1115,108 @@ mod tests {
             .find(|t| t.kind == FshSyntaxKind::CommentBlock);
         assert!(block.is_some());
         assert!(block.unwrap().text.contains("block\ncomment"));
+    }
+
+    #[test]
+    fn test_content_reference_keyword_case() {
+        let (tokens, errors) = lex_with_trivia("contentReference");
+        assert!(errors.is_empty());
+        assert_eq!(tokens.len(), 2); // keyword + EOF
+        assert_eq!(tokens[0].kind, FshSyntaxKind::ContentreferenceKw);
+    }
+
+    #[test]
+    fn test_code_literal_tokenization() {
+        let (tokens, errors) = lex_with_trivia("#test-code");
+        assert!(errors.is_empty());
+        assert_eq!(tokens[0].kind, FshSyntaxKind::Code);
+        assert_eq!(tokens[0].text, "#test-code");
+    }
+
+    #[test]
+    fn test_reference_literal_tokenization() {
+        let input = "Reference(Patient or Observation)";
+        let (tokens, errors) = lex_with_trivia(input);
+        assert!(errors.is_empty());
+        assert_eq!(tokens[0].kind, FshSyntaxKind::Reference);
+        assert_eq!(tokens[0].text, input);
+    }
+
+    #[test]
+    fn test_regex_literal_tokenization() {
+        let input = "/^[A-Z]{2,4}$/";
+        let (tokens, errors) = lex_with_trivia(input);
+        assert!(errors.is_empty());
+        assert_eq!(tokens[0].kind, FshSyntaxKind::Regex);
+        assert_eq!(tokens[0].text, input);
+    }
+
+    #[test]
+    fn test_ruleset_parameter_tokens() {
+        let input = "RuleSet: MyRule([[First Param]], plain\\,value, second param)";
+        let (tokens, errors) = lex_with_trivia(input);
+        assert!(errors.is_empty());
+
+        let bracket = tokens
+            .iter()
+            .find(|t| t.kind == FshSyntaxKind::BracketedParamToken)
+            .expect("bracketed parameter token");
+        assert_eq!(bracket.text, "[[First Param]]");
+
+        let plain_params: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == FshSyntaxKind::PlainParamToken)
+            .collect();
+        assert_eq!(plain_params.len(), 2);
+        assert_eq!(plain_params[0].text, "plain\\,value");
+        assert_eq!(plain_params[1].text, "second param");
+    }
+
+    #[test]
+    fn test_insert_parameter_tokens() {
+        let input = "* insert Some.Rule([[test]], another)";
+        let (tokens, errors) = lex_with_trivia(input);
+        assert!(errors.is_empty());
+
+        let bracket = tokens
+            .iter()
+            .find(|t| t.kind == FshSyntaxKind::BracketedParamToken)
+            .expect("bracketed parameter token");
+        assert_eq!(bracket.text, "[[test]]");
+
+        let plain = tokens
+            .iter()
+            .find(|t| t.kind == FshSyntaxKind::PlainParamToken)
+            .expect("plain parameter token");
+        assert_eq!(plain.text, "another");
+    }
+
+    #[test]
+    fn test_canonical_literal_with_version() {
+        let input = "Canonical(MyProfile|1.0.0 or OtherProfile|2.0)";
+        let (tokens, errors) = lex_with_trivia(input);
+        assert!(errors.is_empty());
+        assert_eq!(tokens[0].kind, FshSyntaxKind::Canonical);
+        assert_eq!(tokens[0].text, input);
+    }
+
+    #[test]
+    fn test_codeable_reference_literal_tokenization() {
+        let input = "CodeableReference(Observation or Procedure)";
+        let (tokens, errors) = lex_with_trivia(input);
+        assert!(errors.is_empty());
+        assert_eq!(tokens[0].kind, FshSyntaxKind::CodeableReference);
+        assert_eq!(tokens[0].text, input);
+    }
+
+    #[test]
+    fn test_code_with_display_spaces() {
+        let input = "#collection \"Display With Spaces\"";
+        let (tokens, errors) = lex_with_trivia(input);
+        assert!(errors.is_empty());
+        assert_eq!(tokens[0].kind, FshSyntaxKind::Code);
+        assert_eq!(tokens[0].text, "#collection");
+        assert_eq!(tokens[2].kind, FshSyntaxKind::String);
+        assert_eq!(tokens[2].text, "\"Display With Spaces\"");
     }
 }

@@ -10,7 +10,7 @@ use std::sync::Arc;
 /// Helper to create a test session with FHIR R4 core
 async fn create_test_session() -> Arc<maki_core::canonical::DefinitionSession> {
     let options = CanonicalOptions {
-        auto_install_core: false,  // Disable auto-install to avoid network issues
+        auto_install_core: false, // Disable auto-install to avoid network issues
         quick_init: true,
         ..Default::default()
     };
@@ -24,9 +24,10 @@ async fn create_test_session() -> Arc<maki_core::canonical::DefinitionSession> {
 #[tokio::test]
 async fn test_export_simple_extension() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Parse FSH extension
     let fsh = r#"
@@ -104,9 +105,10 @@ Description: "An extension for patients"
 #[tokio::test]
 async fn test_export_extension_with_cardinality() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Parse FSH extension with cardinality rules
     let fsh = r#"
@@ -202,9 +204,10 @@ Description: "A test extension with metadata"
 #[tokio::test]
 async fn test_export_extension_without_id() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Parse FSH extension without Id
     let fsh = r#"
@@ -238,9 +241,10 @@ Title: "Minimal Extension"
 #[tokio::test]
 async fn test_extension_structure_validation() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     let fsh = r#"
 Extension: ValidExtension
@@ -269,9 +273,10 @@ Id: valid-ext
 #[tokio::test]
 async fn test_extension_context_definition_generation() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Test extension with explicit context rules
     let fsh = r#"
@@ -288,7 +293,10 @@ Id: patient-only-ext
     let extension = doc.extensions().next().expect("No extension found");
 
     let result = exporter.export(&extension).await;
-    assert!(result.is_ok(), "Extension with context should export successfully");
+    assert!(
+        result.is_ok(),
+        "Extension with context should export successfully"
+    );
 
     let structure_def = result.unwrap();
 
@@ -303,9 +311,10 @@ Id: patient-only-ext
 #[tokio::test]
 async fn test_extension_context_multiple_types() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Test extension with multiple context types
     let fsh = r#"
@@ -323,7 +332,10 @@ Id: multi-context-ext
     let extension = doc.extensions().next().expect("No extension found");
 
     let result = exporter.export(&extension).await;
-    assert!(result.is_ok(), "Extension with multiple contexts should export successfully");
+    assert!(
+        result.is_ok(),
+        "Extension with multiple contexts should export successfully"
+    );
 
     let structure_def = result.unwrap();
 
@@ -331,11 +343,11 @@ Id: multi-context-ext
     assert!(structure_def.context.is_some());
     let context = structure_def.context.as_ref().unwrap();
     assert_eq!(context.len(), 2);
-    
+
     // Check first context
     assert_eq!(context[0].type_, "element");
     assert_eq!(context[0].expression, "Patient");
-    
+
     // Check second context
     assert_eq!(context[1].type_, "element");
     assert_eq!(context[1].expression, "Observation");
@@ -344,9 +356,10 @@ Id: multi-context-ext
 #[tokio::test]
 async fn test_extension_value_constraint_processing() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Test simple extension with value[x] type constraint
     let fsh = r#"
@@ -362,17 +375,22 @@ Id: string-ext
     let extension = doc.extensions().next().expect("No extension found");
 
     let result = exporter.export(&extension).await;
-    assert!(result.is_ok(), "Extension with value constraint should export successfully");
+    assert!(
+        result.is_ok(),
+        "Extension with value constraint should export successfully"
+    );
 
     let structure_def = result.unwrap();
 
     // Check that differential contains value[x] constraint
     assert!(structure_def.differential.is_some());
     let differential = structure_def.differential.as_ref().unwrap();
-    
-    let value_element = differential.element.iter()
+
+    let value_element = differential
+        .element
+        .iter()
         .find(|e| e.path == "Extension.value[x]");
-    
+
     if let Some(elem) = value_element {
         assert!(elem.type_.is_some());
         let types = elem.type_.as_ref().unwrap();
@@ -384,9 +402,10 @@ Id: string-ext
 #[tokio::test]
 async fn test_extension_cardinality_constraints() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Test extension with cardinality constraints
     let fsh = r#"
@@ -404,15 +423,17 @@ Id: cardinality-ext
     let extension = doc.extensions().next().expect("No extension found");
 
     let result = exporter.export(&extension).await;
-    assert!(result.is_ok(), "Extension with cardinality should export successfully");
+    assert!(
+        result.is_ok(),
+        "Extension with cardinality should export successfully"
+    );
 
     let structure_def = result.unwrap();
 
     // Check root extension cardinality in snapshot
     if let Some(snapshot) = &structure_def.snapshot {
-        let root_element = snapshot.element.iter()
-            .find(|e| e.path == "Extension");
-        
+        let root_element = snapshot.element.iter().find(|e| e.path == "Extension");
+
         if let Some(elem) = root_element {
             assert_eq!(elem.min, Some(1));
             assert_eq!(elem.max.as_deref(), Some("1"));
@@ -423,9 +444,10 @@ Id: cardinality-ext
 #[tokio::test]
 async fn test_nested_extension_support() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Test complex extension with nested extensions (single line syntax)
     let fsh = r#"
@@ -446,36 +468,47 @@ Id: complex-ext
     let extension = doc.extensions().next().expect("No extension found");
 
     let result = exporter.export(&extension).await;
-    assert!(result.is_ok(), "Complex extension should export successfully");
+    assert!(
+        result.is_ok(),
+        "Complex extension should export successfully"
+    );
 
     let structure_def = result.unwrap();
 
     // Check that this is recognized as a complex extension
     if let Some(differential) = &structure_def.differential {
         // Should have value[x] prohibited (0..0)
-        let value_element = differential.element.iter()
+        let value_element = differential
+            .element
+            .iter()
             .find(|e| e.path == "Extension.value[x]");
-        
+
         if let Some(elem) = value_element {
             assert_eq!(elem.min, Some(0));
             assert_eq!(elem.max.as_deref(), Some("0"));
         }
 
         // Should have nested extension elements
-        let nested_elements: Vec<_> = differential.element.iter()
+        let nested_elements: Vec<_> = differential
+            .element
+            .iter()
             .filter(|e| e.path.starts_with("Extension.extension:"))
             .collect();
-        
-        assert!(!nested_elements.is_empty(), "Should have nested extension elements");
+
+        assert!(
+            !nested_elements.is_empty(),
+            "Should have nested extension elements"
+        );
     }
 }
 
 #[tokio::test]
 async fn test_extension_fhir_version_from_session() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     let fsh = r#"
 Extension: VersionTestExtension
@@ -504,9 +537,13 @@ Id: version-test-ext
 async fn test_extension_with_version_config() {
     let session = create_test_session().await;
     let version = Some("2.1.0".to_string());
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), version.clone())
-        .await
-        .expect("Failed to create exporter");
+    let exporter = ExtensionExporter::new(
+        session.clone(),
+        "http://example.org/fhir".to_string(),
+        version.clone(),
+    )
+    .await
+    .expect("Failed to create exporter");
 
     let fsh = r#"
 Extension: VersionedExtension
@@ -532,9 +569,10 @@ Id: versioned-ext
 #[tokio::test]
 async fn test_multiline_contains_rule_parsing() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Test multiline contains rule with proper FSH syntax
     let fsh = r#"
@@ -557,24 +595,33 @@ Id: multiline-ext
     let extension = doc.extensions().next().expect("No extension found");
 
     let result = exporter.export(&extension).await;
-    assert!(result.is_ok(), "Multiline extension should export successfully: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Multiline extension should export successfully: {:?}",
+        result.err()
+    );
 
     let structure_def = result.unwrap();
 
     // Check that nested extensions were created
     if let Some(differential) = &structure_def.differential {
-        let nested_elements: Vec<_> = differential.element.iter()
+        let nested_elements: Vec<_> = differential
+            .element
+            .iter()
             .filter(|e| e.path.starts_with("Extension.extension:"))
             .collect();
-        
+
         // Should have at least the nested extension elements
-        assert!(!nested_elements.is_empty(), "Should have nested extension elements");
-        
+        assert!(
+            !nested_elements.is_empty(),
+            "Should have nested extension elements"
+        );
+
         // Check for specific nested extensions
         let has_subext1 = nested_elements.iter().any(|e| e.path.contains("subExt1"));
         let has_subext2 = nested_elements.iter().any(|e| e.path.contains("subExt2"));
         let has_subext3 = nested_elements.iter().any(|e| e.path.contains("subExt3"));
-        
+
         assert!(has_subext1, "Should have subExt1 nested extension");
         assert!(has_subext2, "Should have subExt2 nested extension");
         assert!(has_subext3, "Should have subExt3 nested extension");
@@ -584,9 +631,10 @@ Id: multiline-ext
 #[tokio::test]
 async fn test_complex_context_rules() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Test complex context rules with [+] and [=] syntax
     let fsh = r#"
@@ -608,7 +656,11 @@ Id: complex-context-ext
     let extension = doc.extensions().next().expect("No extension found");
 
     let result = exporter.export(&extension).await;
-    assert!(result.is_ok(), "Complex context extension should export successfully: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Complex context extension should export successfully: {:?}",
+        result.err()
+    );
 
     let structure_def = result.unwrap();
 
@@ -616,17 +668,22 @@ Id: complex-context-ext
     assert!(structure_def.context.is_some());
     let context = structure_def.context.as_ref().unwrap();
     assert_eq!(context.len(), 3, "Should have 3 context entries");
-    
+
     // Check context types and expressions
     let patient_context = context.iter().find(|c| c.expression == "Patient");
     assert!(patient_context.is_some(), "Should have Patient context");
     assert_eq!(patient_context.unwrap().type_, "element");
-    
+
     let observation_context = context.iter().find(|c| c.expression == "Observation");
-    assert!(observation_context.is_some(), "Should have Observation context");
+    assert!(
+        observation_context.is_some(),
+        "Should have Observation context"
+    );
     assert_eq!(observation_context.unwrap().type_, "element");
-    
-    let extension_context = context.iter().find(|c| c.expression == "http://example.org/Extension/BaseExt");
+
+    let extension_context = context
+        .iter()
+        .find(|c| c.expression == "http://example.org/Extension/BaseExt");
     assert!(extension_context.is_some(), "Should have extension context");
     assert_eq!(extension_context.unwrap().type_, "extension");
 }
@@ -634,9 +691,10 @@ Id: complex-context-ext
 #[tokio::test]
 async fn test_extension_multiline_context_with_plus_syntax() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Test extension with SUSHI [+] and [=] syntax for multiple contexts
     let fsh = r#"
@@ -658,7 +716,10 @@ Id: multi-context-plus-ext
     let extension = doc.extensions().next().expect("No extension found");
 
     let result = exporter.export(&extension).await;
-    assert!(result.is_ok(), "Extension with [+]/[=] context should export successfully");
+    assert!(
+        result.is_ok(),
+        "Extension with [+]/[=] context should export successfully"
+    );
 
     let structure_def = result.unwrap();
 
@@ -666,13 +727,13 @@ Id: multi-context-plus-ext
     assert!(structure_def.context.is_some());
     let context = structure_def.context.as_ref().unwrap();
     assert_eq!(context.len(), 3);
-    
+
     // Check all contexts
     let expressions: Vec<&str> = context.iter().map(|c| c.expression.as_str()).collect();
     assert!(expressions.contains(&"Patient"));
     assert!(expressions.contains(&"Observation"));
     assert!(expressions.contains(&"Condition"));
-    
+
     // All should be element type
     for ctx in context {
         assert_eq!(ctx.type_, "element");
@@ -682,9 +743,10 @@ Id: multi-context-plus-ext
 #[tokio::test]
 async fn test_extension_multiline_context_with_numeric_indices() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Test extension with numeric indices
     let fsh = r#"
@@ -706,7 +768,10 @@ Id: multi-context-numeric-ext
     let extension = doc.extensions().next().expect("No extension found");
 
     let result = exporter.export(&extension).await;
-    assert!(result.is_ok(), "Extension with numeric context indices should export successfully");
+    assert!(
+        result.is_ok(),
+        "Extension with numeric context indices should export successfully"
+    );
 
     let structure_def = result.unwrap();
 
@@ -714,17 +779,19 @@ Id: multi-context-numeric-ext
     assert!(structure_def.context.is_some());
     let context = structure_def.context.as_ref().unwrap();
     assert_eq!(context.len(), 3);
-    
+
     // Check specific contexts
     let patient_ctx = context.iter().find(|c| c.expression == "Patient");
     assert!(patient_ctx.is_some());
     assert_eq!(patient_ctx.unwrap().type_, "element");
-    
+
     let obs_ctx = context.iter().find(|c| c.expression == "Observation");
     assert!(obs_ctx.is_some());
     assert_eq!(obs_ctx.unwrap().type_, "element");
-    
-    let ext_ctx = context.iter().find(|c| c.expression == "http://example.org/Extension/BaseExtension");
+
+    let ext_ctx = context
+        .iter()
+        .find(|c| c.expression == "http://example.org/Extension/BaseExtension");
     assert!(ext_ctx.is_some());
     assert_eq!(ext_ctx.unwrap().type_, "extension");
 }
@@ -732,9 +799,10 @@ Id: multi-context-numeric-ext
 #[tokio::test]
 async fn test_extension_mixed_context_syntax() {
     let session = create_test_session().await;
-    let exporter = ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
-        .await
-        .expect("Failed to create exporter");
+    let exporter =
+        ExtensionExporter::new(session.clone(), "http://example.org/fhir".to_string(), None)
+            .await
+            .expect("Failed to create exporter");
 
     // Test extension with mixed syntax (some numeric, some [+]/[=])
     let fsh = r#"
@@ -754,7 +822,10 @@ Id: mixed-context-ext
     let extension = doc.extensions().next().expect("No extension found");
 
     let result = exporter.export(&extension).await;
-    assert!(result.is_ok(), "Extension with mixed context syntax should export successfully");
+    assert!(
+        result.is_ok(),
+        "Extension with mixed context syntax should export successfully"
+    );
 
     let structure_def = result.unwrap();
 
@@ -762,7 +833,7 @@ Id: mixed-context-ext
     assert!(structure_def.context.is_some());
     let context = structure_def.context.as_ref().unwrap();
     assert_eq!(context.len(), 2);
-    
+
     // Check that both Patient and Observation are present
     let expressions: Vec<&str> = context.iter().map(|c| c.expression.as_str()).collect();
     assert!(expressions.contains(&"Patient"));

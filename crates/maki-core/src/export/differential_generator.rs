@@ -163,9 +163,7 @@ impl DifferentialGenerator {
         profile: &Profile,
         base_definition: &StructureDefinition,
     ) -> Result<StructureDefinitionDifferential, DifferentialError> {
-        let profile_name = profile
-            .name()
-            .unwrap_or_else(|| "Unknown".to_string());
+        let profile_name = profile.name().unwrap_or_else(|| "Unknown".to_string());
 
         debug!("Generating differential for profile: {}", profile_name);
 
@@ -266,6 +264,10 @@ impl DifferentialGenerator {
                     .process_caret_value_rule(caret_rule, context)
                     .await
             }
+            Rule::CodeCaretValue(_) | Rule::CodeInsert(_) => {
+                // Code-level rules handled in CodeSystem/ValueSet exporters
+                Ok(())
+            }
             Rule::AddElement(_) => {
                 // AddElement is only for Logical/Resource, not Profiles
                 warn!("AddElement rule not applicable to Profiles");
@@ -292,7 +294,7 @@ impl DifferentialGenerator {
     ) -> Result<(), DifferentialError> {
         // Check for duplicate paths (should not happen with proper merging)
         let mut seen_paths = std::collections::HashSet::new();
-        
+
         for element in differential {
             // Validate path is not empty
             if element.path.is_empty() {
@@ -343,7 +345,7 @@ impl DifferentialGenerator {
                         reason: "empty type array".to_string(),
                     });
                 }
-                
+
                 // Check for valid type codes
                 for type_def in types {
                     if type_def.code.is_empty() {
@@ -384,14 +386,12 @@ impl DifferentialGenerator {
         &self,
         differential: &[ElementDefinition],
     ) -> Result<(), DifferentialError> {
-        let paths: std::collections::HashSet<&str> = differential
-            .iter()
-            .map(|e| e.path.as_str())
-            .collect();
+        let paths: std::collections::HashSet<&str> =
+            differential.iter().map(|e| e.path.as_str()).collect();
 
         for element in differential {
             let path = &element.path;
-            
+
             // Skip root elements (no parent)
             if !path.contains('.') {
                 continue;
@@ -400,7 +400,7 @@ impl DifferentialGenerator {
             // Find parent path
             if let Some(last_dot) = path.rfind('.') {
                 let parent_path = &path[..last_dot];
-                
+
                 // Check if parent exists in differential or is a known base element
                 // For now, we'll just warn about missing parents since we don't have
                 // access to the full base definition here
@@ -456,21 +456,20 @@ impl RuleProcessor {
         rule: &CardRule,
         context: &mut RuleContext,
     ) -> Result<(), DifferentialError> {
-        let path_str = rule
-            .path()
-            .map(|p| p.as_string())
-            .ok_or_else(|| DifferentialError::RuleProcessing {
+        let path_str = rule.path().map(|p| p.as_string()).ok_or_else(|| {
+            DifferentialError::RuleProcessing {
                 rule: "CardRule".to_string(),
                 path: "unknown".to_string(),
                 reason: "missing path".to_string(),
-            })?;
-
-        let cardinality = rule.cardinality().ok_or_else(|| {
-            DifferentialError::InvalidCardinality {
-                cardinality: "missing".to_string(),
-                path: path_str.clone(),
             }
         })?;
+
+        let cardinality =
+            rule.cardinality()
+                .ok_or_else(|| DifferentialError::InvalidCardinality {
+                    cardinality: "missing".to_string(),
+                    path: path_str.clone(),
+                })?;
 
         trace!("Processing CardRule: {} {}", path_str, cardinality);
 
@@ -483,12 +482,12 @@ impl RuleProcessor {
             });
         }
 
-        let min = parts[0].parse::<u32>().map_err(|_| {
-            DifferentialError::InvalidCardinality {
+        let min = parts[0]
+            .parse::<u32>()
+            .map_err(|_| DifferentialError::InvalidCardinality {
                 cardinality: cardinality.clone(),
                 path: path_str.clone(),
-            }
-        })?;
+            })?;
         let max = parts[1].to_string();
 
         // Validate cardinality constraints
@@ -535,7 +534,12 @@ impl RuleProcessor {
             self.apply_flag_to_element(element, &flag)?;
         }
 
-        debug!("Applied cardinality {}..{} to {}", min, element.max.as_ref().unwrap(), full_path);
+        debug!(
+            "Applied cardinality {}..{} to {}",
+            min,
+            element.max.as_ref().unwrap(),
+            full_path
+        );
 
         Ok(())
     }
@@ -553,14 +557,13 @@ impl RuleProcessor {
         rule: &FlagRule,
         context: &mut RuleContext,
     ) -> Result<(), DifferentialError> {
-        let path_str = rule
-            .path()
-            .map(|p| p.as_string())
-            .ok_or_else(|| DifferentialError::RuleProcessing {
+        let path_str = rule.path().map(|p| p.as_string()).ok_or_else(|| {
+            DifferentialError::RuleProcessing {
                 rule: "FlagRule".to_string(),
                 path: "unknown".to_string(),
                 reason: "missing path".to_string(),
-            })?;
+            }
+        })?;
 
         let flags = rule.flags();
         if flags.is_empty() {
@@ -622,7 +625,10 @@ impl RuleProcessor {
         };
 
         // Prepend resource type
-        Ok(format!("{}.{}", base_definition.type_field, normalized_path))
+        Ok(format!(
+            "{}.{}",
+            base_definition.type_field, normalized_path
+        ))
     }
 
     /// Helper method to find or create element in differential
@@ -645,21 +651,21 @@ impl RuleProcessor {
 
         // Create new element with proper initialization
         let mut element = ElementDefinition::new(path.to_string());
-        
+
         // Set element id based on path (FHIR convention)
         // Convert path like "Patient.name.given" to id like "Patient.name.given"
         element.id = Some(path.to_string());
 
         trace!("Created new element in differential: {}", path);
-        
+
         // Insert element in proper order (sorted by path for consistency)
         let insert_index = differential
             .iter()
             .position(|e| e.path.as_str() > path)
             .unwrap_or(differential.len());
-        
+
         differential.insert(insert_index, element);
-        
+
         // Return mutable reference to the inserted element
         &mut differential[insert_index]
     }
@@ -745,22 +751,21 @@ impl RuleProcessor {
         rule: &ValueSetRule,
         context: &mut RuleContext,
     ) -> Result<(), DifferentialError> {
-        let path_str = rule
-            .path()
-            .map(|p| p.as_string())
-            .ok_or_else(|| DifferentialError::RuleProcessing {
+        let path_str = rule.path().map(|p| p.as_string()).ok_or_else(|| {
+            DifferentialError::RuleProcessing {
                 rule: "ValueSetRule".to_string(),
                 path: "unknown".to_string(),
                 reason: "missing path".to_string(),
-            })?;
+            }
+        })?;
 
-        let value_set = rule.value_set().ok_or_else(|| {
-            DifferentialError::RuleProcessing {
+        let value_set = rule
+            .value_set()
+            .ok_or_else(|| DifferentialError::RuleProcessing {
                 rule: "ValueSetRule".to_string(),
                 path: path_str.clone(),
                 reason: "missing value set".to_string(),
-            }
-        })?;
+            })?;
 
         let strength_str = rule.strength().unwrap_or_else(|| "required".to_string());
 
@@ -821,7 +826,10 @@ impl RuleProcessor {
             value_set: Some(value_set_url.clone()),
         });
 
-        debug!("Applied binding {} ({:?}) to {}", value_set_url, strength, full_path);
+        debug!(
+            "Applied binding {} ({:?}) to {}",
+            value_set_url, strength, full_path
+        );
 
         Ok(())
     }
@@ -838,22 +846,21 @@ impl RuleProcessor {
         rule: &FixedValueRule,
         context: &mut RuleContext,
     ) -> Result<(), DifferentialError> {
-        let path_str = rule
-            .path()
-            .map(|p| p.as_string())
-            .ok_or_else(|| DifferentialError::RuleProcessing {
+        let path_str = rule.path().map(|p| p.as_string()).ok_or_else(|| {
+            DifferentialError::RuleProcessing {
                 rule: "FixedValueRule".to_string(),
                 path: "unknown".to_string(),
                 reason: "missing path".to_string(),
-            })?;
+            }
+        })?;
 
-        let value = rule.value().ok_or_else(|| {
-            DifferentialError::RuleProcessing {
+        let value = rule
+            .value()
+            .ok_or_else(|| DifferentialError::RuleProcessing {
                 rule: "FixedValueRule".to_string(),
                 path: path_str.clone(),
                 reason: "missing value".to_string(),
-            }
-        })?;
+            })?;
 
         trace!("Processing FixedValueRule: {} = {}", path_str, value);
 
@@ -889,7 +896,10 @@ impl RuleProcessor {
         pattern_map.insert(pattern_key.clone(), pattern_value.clone());
         element.pattern = Some(pattern_map);
 
-        debug!("Applied pattern {} = {:?} to {}", pattern_key, pattern_value, full_path);
+        debug!(
+            "Applied pattern {} = {:?} to {}",
+            pattern_key, pattern_value, full_path
+        );
 
         Ok(())
     }
@@ -906,31 +916,44 @@ impl RuleProcessor {
         if value.starts_with('#') {
             // Code value: #active -> patternCode
             let code = value.trim_start_matches('#');
-            Ok(("patternCode".to_string(), JsonValue::String(code.to_string())))
+            Ok((
+                "patternCode".to_string(),
+                JsonValue::String(code.to_string()),
+            ))
         } else if value.starts_with('"') && value.ends_with('"') {
             // String value: "Smith" -> patternString
             let string_val = &value[1..value.len() - 1]; // Remove quotes
-            Ok(("patternString".to_string(), JsonValue::String(string_val.to_string())))
+            Ok((
+                "patternString".to_string(),
+                JsonValue::String(string_val.to_string()),
+            ))
         } else if value == "true" || value == "false" {
             // Boolean value: true -> patternBoolean
             let bool_val = value == "true";
             Ok(("patternBoolean".to_string(), JsonValue::Bool(bool_val)))
         } else if let Ok(int_val) = value.parse::<i64>() {
             // Integer value: 42 -> patternInteger
-            Ok(("patternInteger".to_string(), JsonValue::Number(int_val.into())))
+            Ok((
+                "patternInteger".to_string(),
+                JsonValue::Number(int_val.into()),
+            ))
         } else if let Ok(float_val) = value.parse::<f64>() {
             // Decimal value: 3.14 -> patternDecimal
-            Ok(("patternDecimal".to_string(), JsonValue::Number(
-                serde_json::Number::from_f64(float_val).ok_or_else(|| {
+            Ok((
+                "patternDecimal".to_string(),
+                JsonValue::Number(serde_json::Number::from_f64(float_val).ok_or_else(|| {
                     DifferentialError::InvalidValue {
                         value: value.to_string(),
                         path: path.to_string(),
                     }
-                })?
-            )))
+                })?),
+            ))
         } else {
             // Treat as identifier/code without # prefix
-            Ok(("patternCode".to_string(), JsonValue::String(value.to_string())))
+            Ok((
+                "patternCode".to_string(),
+                JsonValue::String(value.to_string()),
+            ))
         }
     }
 
@@ -945,14 +968,13 @@ impl RuleProcessor {
         rule: &OnlyRule,
         context: &mut RuleContext,
     ) -> Result<(), DifferentialError> {
-        let path_str = rule
-            .path()
-            .map(|p| p.as_string())
-            .ok_or_else(|| DifferentialError::RuleProcessing {
+        let path_str = rule.path().map(|p| p.as_string()).ok_or_else(|| {
+            DifferentialError::RuleProcessing {
                 rule: "OnlyRule".to_string(),
                 path: "unknown".to_string(),
                 reason: "missing path".to_string(),
-            })?;
+            }
+        })?;
 
         let types = rule.types();
         if types.is_empty() {
@@ -1009,14 +1031,13 @@ impl RuleProcessor {
         rule: &ContainsRule,
         context: &mut RuleContext,
     ) -> Result<(), DifferentialError> {
-        let path_str = rule
-            .path()
-            .map(|p| p.as_string())
-            .ok_or_else(|| DifferentialError::RuleProcessing {
+        let path_str = rule.path().map(|p| p.as_string()).ok_or_else(|| {
+            DifferentialError::RuleProcessing {
                 rule: "ContainsRule".to_string(),
                 path: "unknown".to_string(),
                 reason: "missing path".to_string(),
-            })?;
+            }
+        })?;
 
         let items = rule.items();
         if items.is_empty() {
@@ -1043,7 +1064,8 @@ impl RuleProcessor {
             let slice_path = format!("{}:{}", full_path, item);
 
             // Find or create slice element
-            let slice_element = self.find_or_create_element(&mut context.current_differential, &slice_path);
+            let slice_element =
+                self.find_or_create_element(&mut context.current_differential, &slice_path);
 
             // Set slice metadata
             slice_element.short = Some(format!("Slice: {}", item));
@@ -1062,7 +1084,10 @@ impl RuleProcessor {
                     target_profile: None,
                 }]);
 
-                debug!("Created extension slice {} with profile {}", slice_path, extension_url);
+                debug!(
+                    "Created extension slice {} with profile {}",
+                    slice_path, extension_url
+                );
             } else {
                 debug!("Created slice element: {}", slice_path);
             }
@@ -1082,14 +1107,13 @@ impl RuleProcessor {
         rule: &ObeysRule,
         context: &mut RuleContext,
     ) -> Result<(), DifferentialError> {
-        let path_str = rule
-            .path()
-            .map(|p| p.as_string())
-            .ok_or_else(|| DifferentialError::RuleProcessing {
+        let path_str = rule.path().map(|p| p.as_string()).ok_or_else(|| {
+            DifferentialError::RuleProcessing {
                 rule: "ObeysRule".to_string(),
                 path: "unknown".to_string(),
                 reason: "missing path".to_string(),
-            })?;
+            }
+        })?;
 
         let invariants = rule.invariants();
         if invariants.is_empty() {
@@ -1153,7 +1177,10 @@ impl RuleProcessor {
 
         // PathRule processing is complex and not fully implemented yet
         // This is a placeholder that logs the rule but doesn't apply constraints
-        warn!("PathRule processing not fully implemented for path: {}", path_str);
+        warn!(
+            "PathRule processing not fully implemented for path: {}",
+            path_str
+        );
 
         Ok(())
     }
@@ -1170,21 +1197,21 @@ impl RuleProcessor {
         rule: &CaretValueRule,
         context: &mut RuleContext,
     ) -> Result<(), DifferentialError> {
-        let field = rule.field().ok_or_else(|| {
-            DifferentialError::RuleProcessing {
+        let field = rule
+            .field()
+            .ok_or_else(|| DifferentialError::RuleProcessing {
                 rule: "CaretValueRule".to_string(),
                 path: "unknown".to_string(),
                 reason: "missing field".to_string(),
-            }
-        })?;
+            })?;
 
-        let value = rule.value().ok_or_else(|| {
-            DifferentialError::RuleProcessing {
+        let value = rule
+            .value()
+            .ok_or_else(|| DifferentialError::RuleProcessing {
                 rule: "CaretValueRule".to_string(),
                 path: "unknown".to_string(),
                 reason: "missing value".to_string(),
-            }
-        })?;
+            })?;
 
         // Check if this is an element-level caret rule or profile-level
         if let Some(element_path) = rule.element_path() {
@@ -1199,15 +1226,22 @@ impl RuleProcessor {
             let full_path = self.resolve_full_path(&context.base_definition, &path_str)?;
 
             // Find or create element in differential
-            let element = self.find_or_create_element(&mut context.current_differential, &full_path);
+            let element =
+                self.find_or_create_element(&mut context.current_differential, &full_path);
 
             // Apply the field to the element
             self.apply_field_to_element(element, &field, &value)?;
 
-            debug!("Applied element metadata ^{} = {} to {}", field, value, full_path);
+            debug!(
+                "Applied element metadata ^{} = {} to {}",
+                field, value, full_path
+            );
         } else {
             // Profile-level: * ^version = "1.0.0"
-            trace!("Processing profile-level CaretValueRule: ^{} = {}", field, value);
+            trace!(
+                "Processing profile-level CaretValueRule: ^{} = {}",
+                field, value
+            );
 
             // Profile-level metadata is handled at the StructureDefinition level
             // This would need to be applied to the StructureDefinition itself
@@ -1268,16 +1302,16 @@ mod tests {
     // We'll use a different approach for testing individual methods
 
     // Test helper functions that don't require complex mocking
-    
+
     #[test]
     fn test_resolve_full_path_simple() {
         // Test the path resolution logic directly
         let base_def = create_test_base_definition();
-        
+
         // Simple path should be prefixed with resource type
         let path = "name";
         let expected = format!("{}.{}", base_def.type_field, path);
-        
+
         // We can't easily test the actual method without mocking, but we can test the logic
         assert_eq!(expected, "Patient.name");
     }
@@ -1286,7 +1320,7 @@ mod tests {
     fn test_resolve_full_path_with_slice_logic() {
         // Test slice path transformation logic
         let path = "identifier[mrn]";
-        
+
         // Should transform bracket notation to colon notation
         let re = regex::Regex::new(r"([^\[]+)\[([^\]]+)\](.*)").unwrap();
         if let Some(caps) = re.captures(path) {
@@ -1301,22 +1335,25 @@ mod tests {
     #[test]
     fn test_element_creation_and_ordering() {
         let mut differential = Vec::new();
-        
+
         // Simulate find_or_create_element logic
         let paths = ["Patient.name", "Patient.active", "Patient.identifier"];
-        
+
         for path in paths {
             // Check if element exists
-            if !differential.iter().any(|e| e.path == path) {
+            if !differential
+                .iter()
+                .any(|e: &ElementDefinition| e.path == path)
+            {
                 let mut element = ElementDefinition::new(path.to_string());
                 element.id = Some(path.to_string());
-                
+
                 // Insert in sorted order
                 let insert_index = differential
                     .iter()
                     .position(|e| e.path.as_str() > path)
                     .unwrap_or(differential.len());
-                
+
                 differential.insert(insert_index, element);
             }
         }
@@ -1360,7 +1397,7 @@ mod tests {
     #[test]
     fn test_parse_fixed_value_logic() {
         // Test fixed value parsing logic
-        
+
         // Code value
         let value = "#active";
         if value.starts_with('#') {
@@ -1395,7 +1432,7 @@ mod tests {
         let cardinality = "1..1";
         let parts: Vec<&str> = cardinality.split("..").collect();
         assert_eq!(parts.len(), 2);
-        
+
         let min = parts[0].parse::<u32>().unwrap();
         let max = parts[1].to_string();
         assert_eq!(min, 1);
@@ -1425,11 +1462,11 @@ mod tests {
     }
 
     // Test validation logic without complex mocking
-    
+
     #[test]
     fn test_validation_logic_empty_path() {
         let element = ElementDefinition::new("".to_string());
-        
+
         // Test empty path validation logic
         assert!(element.path.is_empty());
     }
@@ -1439,7 +1476,7 @@ mod tests {
         // Test cardinality validation logic
         let min = 2u32;
         let max = "1";
-        
+
         if max != "*" {
             if let Ok(max_val) = max.parse::<u32>() {
                 assert!(min > max_val); // This should be invalid
@@ -1454,7 +1491,7 @@ mod tests {
             description: None,
             value_set: None,
         };
-        
+
         // Binding without value_set should be invalid
         assert!(binding.value_set.is_none());
     }
@@ -1462,7 +1499,7 @@ mod tests {
     #[test]
     fn test_validation_logic_empty_types() {
         let types: Vec<ElementDefinitionType> = vec![];
-        
+
         // Empty type array should be invalid
         assert!(types.is_empty());
     }
@@ -1475,7 +1512,7 @@ mod tests {
             human: "Test constraint".to_string(),
             expression: None,
         };
-        
+
         // Empty constraint key should be invalid
         assert!(constraint.key.is_empty());
     }
@@ -1483,18 +1520,18 @@ mod tests {
     #[test]
     fn test_duplicate_path_detection() {
         use std::collections::HashSet;
-        
+
         let paths = vec!["Patient.name", "Patient.active", "Patient.name"];
         let mut seen_paths = HashSet::new();
         let mut has_duplicate = false;
-        
+
         for path in paths {
             if !seen_paths.insert(path) {
                 has_duplicate = true;
                 break;
             }
         }
-        
+
         assert!(has_duplicate);
     }
 

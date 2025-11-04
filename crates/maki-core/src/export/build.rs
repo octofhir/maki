@@ -362,9 +362,15 @@ impl BuildOrchestrator {
         info!("Step 3: ✓ Session created successfully");
 
         // Install dependencies using the SAME session
-        eprintln!("[DEBUG BUILD.RS LINE 365] config.dependencies = {:?}", self.config.dependencies);
+        eprintln!(
+            "[DEBUG BUILD.RS LINE 365] config.dependencies = {:?}",
+            self.config.dependencies
+        );
         if let Some(ref dependencies) = self.config.dependencies {
-            eprintln!("[DEBUG BUILD.RS LINE 367] INSIDE if Some block! dependencies.len() = {}", dependencies.len());
+            eprintln!(
+                "[DEBUG BUILD.RS LINE 367] INSIDE if Some block! dependencies.len() = {}",
+                dependencies.len()
+            );
             info!(
                 "Step 4: Installing {} dependencies from config...",
                 dependencies.len()
@@ -394,7 +400,11 @@ impl BuildOrchestrator {
                 }
 
                 // Install all dependencies at once in the main session with timeout
-                eprintln!("[DEBUG BUILD.RS LINE 398] About to call ensure_packages with {} packages: {:?}", coords.len(), coords);
+                eprintln!(
+                    "[DEBUG BUILD.RS LINE 398] About to call ensure_packages with {} packages: {:?}",
+                    coords.len(),
+                    coords
+                );
                 info!(
                     "Step 4a: Calling ensure_packages with {} packages...",
                     coords.len()
@@ -481,7 +491,10 @@ impl BuildOrchestrator {
         eprintln!("[DEBUG MAKI BUILD] About to discover FSH files");
         info!("📂 Discovering FSH files...");
         let fsh_files = self.discover_fsh_files()?;
-        eprintln!("[DEBUG MAKI BUILD] Discovered {} FSH files", fsh_files.len());
+        eprintln!(
+            "[DEBUG MAKI BUILD] Discovered {} FSH files",
+            fsh_files.len()
+        );
         if fsh_files.is_empty() {
             return Err(BuildError::NoFshFiles);
         }
@@ -527,7 +540,10 @@ impl BuildOrchestrator {
         eprintln!("[DEBUG MAKI BUILD] About to parse FSH files");
         info!("📝 Parsing FSH files...");
         let parsed_files = self.parse_fsh_files(&fsh_files)?;
-        eprintln!("[DEBUG MAKI BUILD] Parsed {} FSH files successfully", parsed_files.len());
+        eprintln!(
+            "[DEBUG MAKI BUILD] Parsed {} FSH files successfully",
+            parsed_files.len()
+        );
         debug!("  Parsed {} FSH files", parsed_files.len());
 
         // Update cache with parsed files
@@ -554,7 +570,10 @@ impl BuildOrchestrator {
             + resources.valuesets.len()
             + resources.codesystems.len()
             + resources.instances.len();
-        eprintln!("[DEBUG MAKI BUILD] Counted {} total resources", total_resources);
+        eprintln!(
+            "[DEBUG MAKI BUILD] Counted {} total resources",
+            total_resources
+        );
         info!("  Extracted {} resources total", total_resources);
 
         // === POPULATE TANK ===
@@ -566,9 +585,16 @@ impl BuildOrchestrator {
         eprintln!("[DEBUG MAKI BUILD] Created semantic analyzer");
 
         // Add profiles to tank
-        eprintln!("[DEBUG MAKI BUILD] About to loop over {} profiles", resources.profiles.len());
+        eprintln!(
+            "[DEBUG MAKI BUILD] About to loop over {} profiles",
+            resources.profiles.len()
+        );
         for (idx, tracked) in resources.profiles.iter().enumerate() {
-            eprintln!("[DEBUG MAKI BUILD] Processing profile {} of {}", idx + 1, resources.profiles.len());
+            eprintln!(
+                "[DEBUG MAKI BUILD] Processing profile {} of {}",
+                idx + 1,
+                resources.profiles.len()
+            );
             let source_text = parsed_files
                 .iter()
                 .find(|(path, _)| path == &tracked.source_file)
@@ -588,7 +614,10 @@ impl BuildOrchestrator {
         eprintln!("[DEBUG MAKI BUILD] Finished adding profiles to tank");
 
         // Add extensions to tank
-        eprintln!("[DEBUG MAKI BUILD] Adding {} extensions to tank", resources.extensions.len());
+        eprintln!(
+            "[DEBUG MAKI BUILD] Adding {} extensions to tank",
+            resources.extensions.len()
+        );
         for tracked in &resources.extensions {
             let source_text = parsed_files
                 .iter()
@@ -605,7 +634,10 @@ impl BuildOrchestrator {
         }
 
         // Add valuesets to tank
-        eprintln!("[DEBUG MAKI BUILD] Adding {} valuesets to tank", resources.valuesets.len());
+        eprintln!(
+            "[DEBUG MAKI BUILD] Adding {} valuesets to tank",
+            resources.valuesets.len()
+        );
         for tracked in &resources.valuesets {
             let source_text = parsed_files
                 .iter()
@@ -622,7 +654,10 @@ impl BuildOrchestrator {
         }
 
         // Add codesystems to tank
-        eprintln!("[DEBUG MAKI BUILD] Adding {} codesystems to tank", resources.codesystems.len());
+        eprintln!(
+            "[DEBUG MAKI BUILD] Adding {} codesystems to tank",
+            resources.codesystems.len()
+        );
         for tracked in &resources.codesystems {
             let source_text = parsed_files
                 .iter()
@@ -758,13 +793,37 @@ impl BuildOrchestrator {
         info!("✅ Build completed successfully!");
         info!("");
         info!("📊 BUILD SUMMARY:");
-        info!("   📋 Profiles exported: {} / {}", stats.profiles, resources.profiles.len());
-        info!("   🔌 Extensions exported: {} / {}", stats.extensions, resources.extensions.len());
-        info!("   📚 ValueSets exported: {} / {}", stats.value_sets, resources.valuesets.len());
-        info!("   🏷️  CodeSystems exported: {} / {}", stats.code_systems, resources.codesystems.len());
-        info!("   📦 Instances exported: {} / {}", stats.instances, resources.instances.len());
+        info!(
+            "   📋 Profiles exported: {} / {}",
+            stats.profiles,
+            resources.profiles.len()
+        );
+        info!(
+            "   🔌 Extensions exported: {} / {}",
+            stats.extensions,
+            resources.extensions.len()
+        );
+        info!(
+            "   📚 ValueSets exported: {} / {}",
+            stats.value_sets,
+            resources.valuesets.len()
+        );
+        info!(
+            "   🏷️  CodeSystems exported: {} / {}",
+            stats.code_systems,
+            resources.codesystems.len()
+        );
+        info!(
+            "   📦 Instances exported: {} / {}",
+            stats.instances,
+            resources.instances.len()
+        );
         info!("");
-        info!("   ✅ Total exported: {} / {}", stats.total_resources(), total_resources);
+        info!(
+            "   ✅ Total exported: {} / {}",
+            stats.total_resources(),
+            total_resources
+        );
 
         let failed_count = total_resources - stats.total_resources();
         if failed_count > 0 {
@@ -823,11 +882,7 @@ impl BuildOrchestrator {
                             .and_then(|s| s.to_str())
                             .map(|s| s == "fsh")
                             .unwrap_or(false);
-                    if is_fsh {
-                        Some(path)
-                    } else {
-                        None
-                    }
+                    if is_fsh { Some(path) } else { None }
                 })
                 .collect()
         });
@@ -850,11 +905,18 @@ impl BuildOrchestrator {
                 .map_err(|e| {
                     BuildError::ParseError(format!("Failed to read file {:?}: {}", file, e))
                 })?;
-            eprintln!("[DEBUG MAKI BUILD] Read {} bytes from {:?}", content.len(), file);
+            eprintln!(
+                "[DEBUG MAKI BUILD] Read {} bytes from {:?}",
+                content.len(),
+                file
+            );
 
             eprintln!("[DEBUG MAKI BUILD] About to call parse_fsh");
             let (root, errors) = crate::cst::parse_fsh(&content);
-            eprintln!("[DEBUG MAKI BUILD] parse_fsh returned, got {} errors", errors.len());
+            eprintln!(
+                "[DEBUG MAKI BUILD] parse_fsh returned, got {} errors",
+                errors.len()
+            );
 
             // Check for parse errors
             if !errors.is_empty() {
@@ -949,11 +1011,16 @@ impl BuildOrchestrator {
             }
         }
 
-        let total_extracted = profiles.len() + extensions.len() + valuesets.len() + codesystems.len() + instances.len();
+        let total_extracted = profiles.len()
+            + extensions.len()
+            + valuesets.len()
+            + codesystems.len()
+            + instances.len();
 
         info!(
             "✅ EXTRACTED {} TOTAL RESOURCES from {} FSH files:",
-            total_extracted, parsed_files.len()
+            total_extracted,
+            parsed_files.len()
         );
         info!("   📋 Profiles: {}", profiles.len());
         info!("   🔌 Extensions: {}", extensions.len());
@@ -1009,9 +1076,7 @@ impl BuildOrchestrator {
             publisher_name.clone(),
         )
         .await
-        .map_err(|e| {
-            BuildError::ExportError(format!("Failed to create ProfileExporter: {}", e))
-        })?;
+        .map_err(|e| BuildError::ExportError(format!("Failed to create ProfileExporter: {}", e)))?;
         eprintln!("[DEBUG EXPORT] ProfileExporter created");
 
         // Configure snapshot generation
@@ -2093,8 +2158,9 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn create_test_config() -> SushiConfiguration {
-        SushiConfiguration {
+    fn create_test_config() -> crate::config::UnifiedConfig {
+        let mut config = crate::config::UnifiedConfig::default();
+        config.build = Some(SushiConfiguration {
             id: Some("test.ig".to_string()),
             canonical: "http://example.org/fhir/test".to_string(),
             name: Some("TestIG".to_string()),
@@ -2103,7 +2169,8 @@ mod tests {
             version: Some("1.0.0".to_string()),
             fhir_version: vec!["4.0.1".to_string()],
             ..Default::default()
-        }
+        });
+        config
     }
 
     #[tokio::test]
@@ -2137,7 +2204,8 @@ mod tests {
         let options = BuildOptions::default();
         let orchestrator = BuildOrchestrator::new(config.clone(), options);
 
-        assert_eq!(orchestrator.config.id, Some("test.ig".to_string()));
+        let build = orchestrator.build_config();
+        assert_eq!(build.id.as_deref(), Some("test.ig"));
     }
 
     #[tokio::test]
@@ -2222,9 +2290,13 @@ mod tests {
             .unwrap();
 
         // Check that ImplementationGuide was written
+        let build = config
+            .build
+            .as_ref()
+            .expect("test config should include build section");
         let ig_path = temp_dir.path().join("resources").join(format!(
             "ImplementationGuide-{}.json",
-            config.id.as_ref().unwrap()
+            build.id.as_ref().unwrap()
         ));
         assert!(ig_path.exists());
     }

@@ -324,6 +324,7 @@ fn calculate_caret_alignment(rules: &[Rule]) -> usize {
                 Rule::AddElement(r) => r.path().map(|p| p.as_string()),
                 Rule::Mapping(r) => r.path().map(|p| p.as_string()),
                 Rule::CaretValue(r) => r.element_path().map(|p| p.as_string()),
+                Rule::CodeCaretValue(_) | Rule::CodeInsert(_) => None,
             };
             path.map(|p| p.len())
         })
@@ -515,6 +516,62 @@ fn format_rule(ctx: &mut FormatContext, rule: &Rule, caret_column: usize) {
                 // Element-level caret rule: * identifier ^short = "Patient identifier"
                 ctx.writeln(&format!("* {} ^{} = {}", element_path, field, value));
             }
+        }
+        Rule::CodeCaretValue(code_rule) => {
+            let code_parts: Vec<String> = code_rule
+                .codes()
+                .into_iter()
+                .map(|code| format!("#{}", code))
+                .collect();
+
+            let mut line = String::from("*");
+            if !code_parts.is_empty() {
+                line.push(' ');
+                line.push_str(&code_parts.join(" "));
+            }
+
+            if let Some(path) = code_rule.caret_path() {
+                line.push(' ');
+                line.push_str(&path.as_string());
+            }
+
+            if let Some(value) = code_rule.value() {
+                line.push(' ');
+                line.push('=');
+                line.push(' ');
+                line.push_str(&value);
+            }
+
+            ctx.writeln(&line);
+        }
+        Rule::CodeInsert(insert_rule) => {
+            let code_parts: Vec<String> = insert_rule
+                .codes()
+                .into_iter()
+                .map(|code| format!("#{}", code))
+                .collect();
+
+            let mut line = String::from("*");
+            if !code_parts.is_empty() {
+                line.push(' ');
+                line.push_str(&code_parts.join(" "));
+            }
+
+            line.push_str(" insert");
+
+            if let Some(name) = insert_rule.rule_set() {
+                line.push(' ');
+                line.push_str(&name);
+            }
+
+            let arguments = insert_rule.arguments();
+            if !arguments.is_empty() {
+                line.push('(');
+                line.push_str(&arguments.join(", "));
+                line.push(')');
+            }
+
+            ctx.writeln(&line);
         }
     }
 }

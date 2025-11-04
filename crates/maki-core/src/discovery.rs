@@ -16,7 +16,7 @@ fn get_include_patterns(config: &UnifiedConfig) -> Vec<String> {
         .files
         .as_ref()
         .and_then(|f| f.include.as_ref())
-        .cloned()
+        .map(|v| v.clone())
         .unwrap_or_else(|| vec!["**/*.fsh".to_string()])
 }
 
@@ -25,7 +25,7 @@ fn get_exclude_patterns(config: &UnifiedConfig) -> Vec<String> {
         .files
         .as_ref()
         .and_then(|f| f.exclude.as_ref())
-        .cloned()
+        .map(|v| v.clone())
         .unwrap_or_default()
 }
 
@@ -34,7 +34,7 @@ fn get_ignore_files(config: &UnifiedConfig) -> Vec<String> {
         .files
         .as_ref()
         .and_then(|f| f.ignore_files.as_ref())
-        .cloned()
+        .map(|v| v.clone())
         .unwrap_or_else(|| vec![".fshlintignore".to_string()])
 }
 
@@ -527,9 +527,9 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    fn create_test_config() -> MakiConfiguration {
-        MakiConfiguration {
-            files: Some(crate::FilesConfiguration {
+    fn create_test_config() -> crate::config::UnifiedConfig {
+        crate::config::UnifiedConfig {
+            files: Some(crate::config::FilesConfiguration {
                 include: Some(vec!["**/*.fsh".to_string()]),
                 exclude: Some(vec!["**/target/**".to_string()]),
                 ignore_files: Some(vec![".fshlintignore".to_string()]),
@@ -694,8 +694,8 @@ mod tests {
         // Test specific glob patterns
 
         // Test matching all FSH files
-        let config = MakiConfiguration {
-            files: Some(crate::FilesConfiguration {
+        let config = crate::config::UnifiedConfig {
+            files: Some(crate::config::FilesConfiguration {
                 include: Some(vec!["**/*.fsh".to_string()]),
                 exclude: Some(vec![]),
                 ignore_files: None,
@@ -706,8 +706,8 @@ mod tests {
         assert_eq!(files.len(), 4);
 
         // Test matching only src directory
-        let config = MakiConfiguration {
-            files: Some(crate::FilesConfiguration {
+        let config = crate::config::UnifiedConfig {
+            files: Some(crate::config::FilesConfiguration {
                 include: Some(vec!["src/**/*.fsh".to_string()]),
                 exclude: None,
                 ignore_files: None,
@@ -719,8 +719,8 @@ mod tests {
         assert!(files.iter().all(|f| f.starts_with(root.join("src"))));
 
         // Test excluding build directory
-        let config = MakiConfiguration {
-            files: Some(crate::FilesConfiguration {
+        let config = crate::config::UnifiedConfig {
+            files: Some(crate::config::FilesConfiguration {
                 include: Some(vec!["**/*.fsh".to_string()]),
                 exclude: Some(vec!["build/**".to_string()]),
                 ignore_files: None,
@@ -732,8 +732,8 @@ mod tests {
         assert!(!files.iter().any(|f| f.starts_with(root.join("build"))));
 
         // Test multiple include patterns
-        let config = MakiConfiguration {
-            files: Some(crate::FilesConfiguration {
+        let config = crate::config::UnifiedConfig {
+            files: Some(crate::config::FilesConfiguration {
                 include: Some(vec![
                     "src/**/*.fsh".to_string(),
                     "test/**/*.fsh".to_string(),
@@ -770,8 +770,8 @@ mod tests {
         fs::write(root.join(".fshlintignore"), "*.backup\nold/\n").unwrap();
 
         let discovery = DefaultFileDiscovery::new(root);
-        let config = MakiConfiguration {
-            files: Some(crate::FilesConfiguration {
+        let config = crate::config::UnifiedConfig {
+            files: Some(crate::config::FilesConfiguration {
                 include: Some(vec!["**/*.fsh".to_string()]),
                 exclude: Some(vec![]),
                 ignore_files: Some(vec![".fshlintignore".to_string()]),
@@ -849,8 +849,8 @@ mod tests {
         let discovery = DefaultFileDiscovery::new(root);
 
         // Test discovering all FSH files
-        let config = MakiConfiguration {
-            files: Some(crate::FilesConfiguration {
+        let config = crate::config::UnifiedConfig {
+            files: Some(crate::config::FilesConfiguration {
                 include: Some(vec!["**/*.fsh".to_string()]),
                 exclude: Some(vec!["**/target/**".to_string()]),
                 ignore_files: None,
@@ -867,8 +867,8 @@ mod tests {
         );
 
         // Test project-specific discovery
-        let config = MakiConfiguration {
-            files: Some(crate::FilesConfiguration {
+        let config = crate::config::UnifiedConfig {
+            files: Some(crate::config::FilesConfiguration {
                 include: Some(vec!["project/**/*.fsh".to_string()]),
                 exclude: Some(vec!["**/target/**".to_string(), "**/docs/**".to_string()]),
                 ignore_files: None,
@@ -896,7 +896,7 @@ mod tests {
 
         // Test empty directory
         let discovery = DefaultFileDiscovery::new(root);
-        let config = MakiConfiguration::default();
+        let config = crate::config::UnifiedConfig::default();
         let files = discovery.discover_files(&config).unwrap();
         assert!(files.is_empty());
 

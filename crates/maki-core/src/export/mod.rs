@@ -47,7 +47,9 @@ pub mod valueset_exporter;
 pub use build::{BuildError, BuildOptions, BuildOrchestrator, BuildResult, BuildStats};
 pub use build_cache::{BuildCache, CacheStats, IncrementalBuildInfo};
 pub use codesystem_exporter::CodeSystemExporter;
-pub use differential_generator::{DifferentialError, DifferentialGenerator, RuleContext, RuleProcessor};
+pub use differential_generator::{
+    DifferentialError, DifferentialGenerator, RuleContext, RuleProcessor,
+};
 pub use extension_exporter::ExtensionExporter;
 pub use fhir_types::*;
 pub use file_structure::{

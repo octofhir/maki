@@ -338,6 +338,7 @@ mod tests {
             publisher: None,
             description: None,
             experimental: None,
+            extension: None,
             fhir_version: None,
             kind: crate::export::fhir_types::StructureDefinitionKind::Resource,
             is_abstract: false,

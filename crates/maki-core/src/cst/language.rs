@@ -121,6 +121,11 @@ impl Language for FshLanguage {
             157 => FshSyntaxKind::Url,
             158 => FshSyntaxKind::Regex,
             159 => FshSyntaxKind::Unit,
+            160 => FshSyntaxKind::Canonical,
+            161 => FshSyntaxKind::Reference,
+            162 => FshSyntaxKind::CodeableReference,
+            163 => FshSyntaxKind::BracketedParamToken,
+            164 => FshSyntaxKind::PlainParamToken,
 
             // Structure nodes (200-399)
             200 => FshSyntaxKind::Root,

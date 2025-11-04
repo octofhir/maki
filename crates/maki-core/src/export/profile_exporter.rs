@@ -35,8 +35,8 @@
 //! # }
 //! ```
 
-use super::fhir_types::*;
 use super::differential_generator::DifferentialGenerator;
+use super::fhir_types::*;
 use crate::canonical::{CanonicalLoaderError, DefinitionSession};
 use crate::cst::ast::{
     CardRule, CaretValueRule, ContainsRule, FixedValueRule, FlagRule, ObeysRule, OnlyRule, Profile,
@@ -203,11 +203,8 @@ impl ProfileExporter {
         publisher: Option<String>,
     ) -> Result<Self, ExportError> {
         let path_resolver = Arc::new(PathResolver::new(session.clone()));
-        let differential_generator = DifferentialGenerator::new(
-            session.clone(),
-            path_resolver.clone(),
-            base_url.clone(),
-        );
+        let differential_generator =
+            DifferentialGenerator::new(session.clone(), path_resolver.clone(), base_url.clone());
 
         Ok(Self {
             session,
@@ -247,7 +244,10 @@ impl ProfileExporter {
             .name()
             .ok_or_else(|| ExportError::MissingRequiredField("profile name".to_string()))?;
 
-        eprintln!("[PROFILE EXPORT] Step 1: Starting export for profile: {}", profile_name);
+        eprintln!(
+            "[PROFILE EXPORT] Step 1: Starting export for profile: {}",
+            profile_name
+        );
         debug!("Exporting profile: {}", profile_name);
 
         // 1. Get parent type
@@ -260,7 +260,10 @@ impl ProfileExporter {
         debug!("Parent type: {}", parent);
 
         // 2. Get base StructureDefinition
-        eprintln!("[PROFILE EXPORT] Step 3: About to call get_base_structure_definition for: {}", parent);
+        eprintln!(
+            "[PROFILE EXPORT] Step 3: About to call get_base_structure_definition for: {}",
+            parent
+        );
         let mut structure_def = self.get_base_structure_definition(&parent).await?;
         eprintln!("[PROFILE EXPORT] Step 4: Successfully got base structure definition");
 
@@ -299,7 +302,11 @@ impl ProfileExporter {
         }
 
         // 6. Generate differential using the new rule-based approach
-        match self.differential_generator.generate_from_rules(profile, &structure_def).await {
+        match self
+            .differential_generator
+            .generate_from_rules(profile, &structure_def)
+            .await
+        {
             Ok(differential) => {
                 structure_def.differential = Some(differential);
             }
@@ -390,7 +397,10 @@ impl ProfileExporter {
         &self,
         parent: &str,
     ) -> Result<StructureDefinition, ExportError> {
-        eprintln!("[GET_BASE_SD] Step 1: Starting resolution for parent: {}", parent);
+        eprintln!(
+            "[GET_BASE_SD] Step 1: Starting resolution for parent: {}",
+            parent
+        );
         debug!("Resolving parent: {}", parent);
 
         // 1. If canonical provided explicitly, resolve immediately
@@ -400,7 +410,10 @@ impl ProfileExporter {
                 .resolve_structure_definition_from_canonical(parent)
                 .await?
             {
-                eprintln!("[GET_BASE_SD] Step 3: Resolved parent via canonical URL {} → {}", parent, sd.url);
+                eprintln!(
+                    "[GET_BASE_SD] Step 3: Resolved parent via canonical URL {} → {}",
+                    parent, sd.url
+                );
                 debug!("Resolved parent via canonical URL {} → {}", parent, sd.url);
                 return Ok(sd);
             }
@@ -414,21 +427,36 @@ impl ProfileExporter {
         // 2. Try resolving as FHIR resource by name via canonical manager
         // This handles cases like "USCorePatient" which may be defined as an alias
         // or exists in a loaded package with that name
-        eprintln!("[GET_BASE_SD] Step 4: Trying to resolve parent '{}' via canonical manager by name", parent);
-        debug!("Trying to resolve parent '{}' via canonical manager by name", parent);
+        eprintln!(
+            "[GET_BASE_SD] Step 4: Trying to resolve parent '{}' via canonical manager by name",
+            parent
+        );
+        debug!(
+            "Trying to resolve parent '{}' via canonical manager by name",
+            parent
+        );
 
         eprintln!("[GET_BASE_SD] Step 5: About to call session.resolve()");
         if let Ok(resource) = self.session.resolve(parent).await {
-            eprintln!("[GET_BASE_SD] Step 6: Found parent '{}' in canonical packages by name", parent);
+            eprintln!(
+                "[GET_BASE_SD] Step 6: Found parent '{}' in canonical packages by name",
+                parent
+            );
             debug!("Found parent '{}' in canonical packages by name", parent);
             let sd_json = (*resource.content).clone();
             match serde_json::from_value::<StructureDefinition>(sd_json) {
                 Ok(sd) => {
-                    debug!("Successfully parsed StructureDefinition for parent: {}", parent);
+                    debug!(
+                        "Successfully parsed StructureDefinition for parent: {}",
+                        parent
+                    );
                     return Ok(sd);
                 }
                 Err(e) => {
-                    debug!("Failed to parse StructureDefinition for parent {}: {}", parent, e);
+                    debug!(
+                        "Failed to parse StructureDefinition for parent {}: {}",
+                        parent, e
+                    );
                 }
             }
         }
@@ -639,10 +667,7 @@ impl ProfileExporter {
         }
 
         // Set status from config (defaults to "draft" if not specified)
-        structure_def.status = self
-            .status
-            .clone()
-            .unwrap_or_else(|| "draft".to_string());
+        structure_def.status = self.status.clone().unwrap_or_else(|| "draft".to_string());
 
         // Set publisher from config if available
         structure_def.publisher = self.publisher.clone();
@@ -688,6 +713,14 @@ impl ProfileExporter {
             Rule::Obeys(obeys_rule) => self.apply_obeys_rule(structure_def, obeys_rule).await,
             Rule::CaretValue(caret_rule) => {
                 self.apply_caret_value_rule(structure_def, caret_rule).await
+            }
+            Rule::CodeCaretValue(_) => {
+                // Code caret rules are handled when exporting CodeSystems/ValueSets
+                Ok(())
+            }
+            Rule::CodeInsert(_) => {
+                // Code insert rules are not applicable for StructureDefinition export
+                Ok(())
             }
         }
     }

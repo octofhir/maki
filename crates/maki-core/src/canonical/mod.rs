@@ -608,29 +608,37 @@ impl DefinitionSession {
     /// be used in tests where async context is not available.
     #[cfg(test)]
     pub fn for_testing() -> Self {
-        use tokio::runtime::Runtime;
+        fn build_session() -> DefinitionSession {
+            use tokio::runtime::Runtime;
 
-        let test_config = octofhir_canonical_manager::FcmConfig::test_config(std::path::Path::new(
-            "/tmp/maki-test",
-        ));
+            let test_config = octofhir_canonical_manager::FcmConfig::test_config(
+                std::path::Path::new("/tmp/maki-test"),
+            );
 
-        let rt = Runtime::new().expect("Failed to create test runtime");
-        let manager = std::sync::Arc::new(
-            rt.block_on(octofhir_canonical_manager::CanonicalManager::new(
-                test_config,
-            ))
-            .expect("Failed to create test manager"),
-        );
+            let rt = Runtime::new().expect("Failed to create test runtime");
+            let manager = std::sync::Arc::new(
+                rt.block_on(octofhir_canonical_manager::CanonicalManager::new(
+                    test_config,
+                ))
+                .expect("Failed to create test manager"),
+            );
 
-        Self {
-            facade: std::sync::Arc::new(CanonicalFacade {
-                manager,
-                options: CanonicalOptions::default(),
-                global_cache: std::sync::Arc::new(dashmap::DashMap::new()),
-            }),
-            releases: vec![FhirRelease::R4],
-            local_cache: dashmap::DashMap::new(),
-            installed: dashmap::DashSet::new(),
+            DefinitionSession {
+                facade: std::sync::Arc::new(CanonicalFacade {
+                    manager,
+                    options: CanonicalOptions::default(),
+                    global_cache: std::sync::Arc::new(dashmap::DashMap::new()),
+                }),
+                releases: vec![FhirRelease::R4],
+                local_cache: dashmap::DashMap::new(),
+                installed: dashmap::DashSet::new(),
+            }
+        }
+
+        if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::task::block_in_place(build_session)
+        } else {
+            build_session()
         }
     }
 

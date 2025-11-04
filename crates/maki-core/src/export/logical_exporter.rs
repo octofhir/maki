@@ -346,7 +346,12 @@ impl LogicalExporter {
                 // PathRule is for type constraints
                 Ok(())
             }
-            Rule::Contains(_) | Rule::Only(_) | Rule::Obeys(_) | Rule::CaretValue(_) => {
+            Rule::Contains(_)
+            | Rule::Only(_)
+            | Rule::Obeys(_)
+            | Rule::CaretValue(_)
+            | Rule::CodeCaretValue(_)
+            | Rule::CodeInsert(_) => {
                 // TODO: Implement these rule types for logical models
                 Ok(())
             }

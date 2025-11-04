@@ -265,7 +265,9 @@ impl InstanceExporter {
             | Rule::Only(_)
             | Rule::Obeys(_)
             | Rule::Mapping(_)
-            | Rule::CaretValue(_) => {
+            | Rule::CaretValue(_)
+            | Rule::CodeCaretValue(_)
+            | Rule::CodeInsert(_) => {
                 // These rules don't apply to instances
                 trace!("Skipping contains/only/obeys rule in instance");
             }
@@ -878,6 +880,7 @@ impl InstanceExporter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::future::Future;
 
     fn create_test_exporter() -> InstanceExporter {
         InstanceExporter {
@@ -887,6 +890,12 @@ mod tests {
             current_indices: HashMap::new(),
             instance_registry: HashMap::new(),
         }
+    }
+
+    fn block_on<T>(future: impl Future<Output = T>) -> T {
+        tokio::runtime::Runtime::new()
+            .expect("create test runtime")
+            .block_on(future)
     }
 
     #[test]
@@ -974,36 +983,44 @@ mod tests {
 
     #[test]
     fn test_convert_string_value() {
-        let exporter = create_test_exporter();
-        let value = exporter.convert_value("\"Hello World\"").unwrap();
-        assert_eq!(value, JsonValue::String("Hello World".to_string()));
+        block_on(async {
+            let exporter = create_test_exporter();
+            let value = exporter.convert_value("\"Hello World\"").await.unwrap();
+            assert_eq!(value, JsonValue::String("Hello World".to_string()));
+        });
     }
 
     #[test]
     fn test_convert_boolean_value() {
-        let exporter = create_test_exporter();
-        assert_eq!(
-            exporter.convert_value("true").unwrap(),
-            JsonValue::Bool(true)
-        );
-        assert_eq!(
-            exporter.convert_value("false").unwrap(),
-            JsonValue::Bool(false)
-        );
+        block_on(async {
+            let exporter = create_test_exporter();
+            assert_eq!(
+                exporter.convert_value("true").await.unwrap(),
+                JsonValue::Bool(true)
+            );
+            assert_eq!(
+                exporter.convert_value("false").await.unwrap(),
+                JsonValue::Bool(false)
+            );
+        });
     }
 
     #[test]
     fn test_convert_integer_value() {
-        let exporter = create_test_exporter();
-        let value = exporter.convert_value("42").unwrap();
-        assert_eq!(value, JsonValue::Number(42.into()));
+        block_on(async {
+            let exporter = create_test_exporter();
+            let value = exporter.convert_value("42").await.unwrap();
+            assert_eq!(value, JsonValue::Number(42.into()));
+        });
     }
 
     #[test]
     fn test_convert_code_value() {
-        let exporter = create_test_exporter();
-        let value = exporter.convert_value("#male").unwrap();
-        assert_eq!(value, JsonValue::String("male".to_string()));
+        block_on(async {
+            let exporter = create_test_exporter();
+            let value = exporter.convert_value("#male").await.unwrap();
+            assert_eq!(value, JsonValue::String("male".to_string()));
+        });
     }
 
     #[test]
@@ -1113,137 +1130,138 @@ mod tests {
 
     #[test]
     fn test_validate_reference_inline_instance() {
-        let mut exporter = create_test_exporter();
+        block_on(async {
+            let mut exporter = create_test_exporter();
 
-        // Register an inline instance
-        exporter.register_instance(
-            "my-patient".to_string(),
-            serde_json::json!({
-                "resourceType": "Patient",
-                "id": "my-patient"
-            }),
-        );
+            exporter.register_instance(
+                "my-patient".to_string(),
+                serde_json::json!({
+                    "resourceType": "Patient",
+                    "id": "my-patient"
+                }),
+            );
 
-        // Should validate successfully
-        assert!(exporter.validate_reference("my-patient").is_ok());
+            assert!(exporter.validate_reference("my-patient").await.is_ok());
+        });
     }
 
     #[test]
     fn test_validate_reference_not_found() {
-        let exporter = create_test_exporter();
+        block_on(async {
+            let exporter = create_test_exporter();
 
-        // Should fail - no fishing context and not in registry
-        let result = exporter.validate_reference("nonexistent");
-        assert!(result.is_err());
-        if let Err(ExportError::InvalidReference { reference, reason }) = result {
-            assert_eq!(reference, "nonexistent");
-            assert!(reason.contains("not found"));
-        } else {
-            panic!("Expected InvalidReference error");
-        }
+            let result = exporter.validate_reference("nonexistent").await;
+            assert!(result.is_err());
+            if let Err(ExportError::InvalidReference { reference, reason }) = result {
+                assert_eq!(reference, "nonexistent");
+                assert!(reason.contains("not found"));
+            } else {
+                panic!("Expected InvalidReference error");
+            }
+        });
     }
 
     #[test]
     fn test_validate_reference_with_fishing_context() {
         use crate::Location;
         use crate::semantic::{FhirResource, FshTank, Package, ResourceType};
-        use std::sync::RwLock;
+        use tokio::sync::RwLock;
 
-        let mut exporter = create_test_exporter();
+        block_on(async {
+            let mut exporter = create_test_exporter();
 
-        // Create fishing context with a tank containing a resource
-        let tank = Arc::new(RwLock::new(FshTank::new()));
-        let package = Arc::new(RwLock::new(Package::new()));
-        let session = Arc::new(crate::canonical::DefinitionSession::for_testing());
+            let tank = Arc::new(RwLock::new(FshTank::new()));
+            let package = Arc::new(RwLock::new(Package::new()));
+            let session = Arc::new(crate::canonical::DefinitionSession::for_testing());
 
-        // Add a resource to the tank
-        {
-            let mut t = tank.write().unwrap();
-            t.add_resource(FhirResource {
-                resource_type: ResourceType::Profile,
-                id: "PatientProfile".to_string(),
-                name: Some("PatientProfile".to_string()),
-                title: None,
-                description: None,
-                parent: Some("Patient".to_string()),
-                elements: Vec::new(),
-                location: Location::default(),
-                metadata: crate::semantic::ResourceMetadata::default(),
-            });
-        }
+            {
+                let mut t = tank.write().await;
+                t.add_resource(FhirResource {
+                    resource_type: ResourceType::Profile,
+                    id: "PatientProfile".to_string(),
+                    name: Some("PatientProfile".to_string()),
+                    title: None,
+                    description: None,
+                    parent: Some("Patient".to_string()),
+                    elements: Vec::new(),
+                    location: Location::default(),
+                    metadata: crate::semantic::ResourceMetadata::default(),
+                });
+            }
 
-        let fishing_ctx = Arc::new(FishingContext::new(session, tank, package));
-        exporter.fishing_context = Some(fishing_ctx);
+            let fishing_ctx = Arc::new(FishingContext::new(session, tank, package));
+            exporter.fishing_context = Some(fishing_ctx);
 
-        // Should validate successfully - resource is in tank
-        assert!(exporter.validate_reference("PatientProfile").is_ok());
+            assert!(exporter.validate_reference("PatientProfile").await.is_ok());
+        });
     }
 
     #[test]
     fn test_validate_reference_fhir_style() {
-        let exporter = create_test_exporter();
+        block_on(async {
+            let exporter = create_test_exporter();
 
-        // FHIR-style references (ResourceType/id) are assumed valid
-        // even without fishing context
-        assert!(exporter.validate_reference("Patient/example").is_ok());
-        assert!(
-            exporter
-                .validate_reference("Observation/vital-signs")
-                .is_ok()
-        );
+            assert!(exporter.validate_reference("Patient/example").await.is_ok());
+            assert!(
+                exporter
+                    .validate_reference("Observation/vital-signs")
+                    .await
+                    .is_ok()
+            );
+        });
     }
 
     #[test]
     fn test_parse_reference_validates() {
-        let mut exporter = create_test_exporter();
+        block_on(async {
+            let mut exporter = create_test_exporter();
 
-        // Register an instance
-        exporter.register_instance(
-            "my-patient".to_string(),
-            serde_json::json!({
-                "resourceType": "Patient",
-                "id": "my-patient"
-            }),
-        );
+            exporter.register_instance(
+                "my-patient".to_string(),
+                serde_json::json!({
+                    "resourceType": "Patient",
+                    "id": "my-patient"
+                }),
+            );
 
-        // Parse should succeed and validate
-        let result = exporter.parse_reference("Reference(my-patient)");
-        assert!(result.is_ok());
-        let reference = result.unwrap();
-        assert_eq!(reference["reference"], "my-patient");
+            let result = exporter.parse_reference("Reference(my-patient)").await;
+            assert!(result.is_ok());
+            let reference = result.unwrap();
+            assert_eq!(reference["reference"], "my-patient");
+        });
     }
 
     #[test]
     fn test_parse_reference_warns_on_invalid() {
-        let exporter = create_test_exporter();
+        block_on(async {
+            let exporter = create_test_exporter();
 
-        // Parse should succeed but log warning (doesn't fail export)
-        let result = exporter.parse_reference("Reference(nonexistent)");
-        assert!(result.is_ok());
-        let reference = result.unwrap();
-        assert_eq!(reference["reference"], "nonexistent");
-        // Note: Warning is logged but doesn't fail the export
+            let result = exporter.parse_reference("Reference(nonexistent)").await;
+            assert!(result.is_ok());
+            let reference = result.unwrap();
+            assert_eq!(reference["reference"], "nonexistent");
+        });
     }
 
     #[test]
     fn test_inline_instance_resolution() {
-        let mut exporter = create_test_exporter();
+        block_on(async {
+            let mut exporter = create_test_exporter();
 
-        // Create a patient instance
-        let patient_json = serde_json::json!({
-            "resourceType": "Patient",
-            "id": "example-patient",
-            "name": [{
-                "family": "Doe",
-                "given": ["John"]
-            }]
+            let patient_json = serde_json::json!({
+                "resourceType": "Patient",
+                "id": "example-patient",
+                "name": [{
+                    "family": "Doe",
+                    "given": ["John"]
+                }]
+            });
+
+            exporter.register_instance("example-patient".to_string(), patient_json.clone());
+
+            let value = exporter.convert_value("example-patient").await.unwrap();
+            assert_eq!(value, patient_json);
         });
-
-        exporter.register_instance("example-patient".to_string(), patient_json.clone());
-
-        // Reference should resolve to the inline instance
-        let value = exporter.convert_value("example-patient").unwrap();
-        assert_eq!(value, patient_json);
     }
 
     #[test]

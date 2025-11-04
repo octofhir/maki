@@ -1,7 +1,47 @@
 //! Tests for CST construction and manipulation
 
 use super::*;
+use crate::cst::ast::{AstNode, Path};
 use rowan::GreenNodeBuilder;
+
+#[test]
+fn path_segments_handle_keywords() {
+    let mut builder = GreenNodeBuilder::new();
+    builder.start_node(FshSyntaxKind::Root.into());
+    builder.start_node(FshSyntaxKind::Path.into());
+    builder.token(FshSyntaxKind::True.into(), "true");
+    builder.token(FshSyntaxKind::Dot.into(), ".");
+    builder.token(FshSyntaxKind::AndKw.into(), "and");
+    builder.finish_node();
+    builder.finish_node();
+
+    let green = builder.finish();
+    let root = FshSyntaxNode::new_root(green);
+    let path_node = root.first_child().expect("path node");
+    let path = Path::cast(path_node).expect("cast to Path");
+
+    assert_eq!(path.segments(), vec!["true", "and"]);
+}
+
+#[test]
+fn path_segments_preserve_brackets() {
+    let mut builder = GreenNodeBuilder::new();
+    builder.start_node(FshSyntaxKind::Root.into());
+    builder.start_node(FshSyntaxKind::Path.into());
+    builder.token(FshSyntaxKind::Ident.into(), "extension");
+    builder.token(FshSyntaxKind::LBracket.into(), "[");
+    builder.token(FshSyntaxKind::Ident.into(), "slice");
+    builder.token(FshSyntaxKind::RBracket.into(), "]");
+    builder.finish_node();
+    builder.finish_node();
+
+    let green = builder.finish();
+    let root = FshSyntaxNode::new_root(green);
+    let path_node = root.first_child().expect("path node");
+    let path = Path::cast(path_node).expect("cast to Path");
+
+    assert_eq!(path.segments(), vec!["extension[slice]"]);
+}
 
 /// Test basic CST construction and lossless property
 #[test]

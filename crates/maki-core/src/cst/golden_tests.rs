@@ -80,4 +80,20 @@ mod tests {
         assert!(errors.is_empty());
         assert_eq!(cst.text().to_string(), source);
     }
+
+    #[test]
+    fn test_lexer_edge_cases_lossless() {
+        let source = include_str!("../../../../examples/lexer-edge-cases.fsh");
+        let (cst, errors) = parse_fsh(source);
+
+        assert!(
+            errors.is_empty(),
+            "Lexer errors detected in lexer-edge-cases.fsh: {errors:?}"
+        );
+        assert_eq!(
+            cst.text().to_string(),
+            source,
+            "Lossless property failed for lexer-edge-cases.fsh"
+        );
+    }
 }

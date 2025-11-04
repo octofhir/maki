@@ -1,6 +1,6 @@
 //! Debug tests for parser issues
 
-use maki_core::cst::{ast::*, parse_fsh, FshSyntaxKind};
+use maki_core::cst::{FshSyntaxKind, ast::*, parse_fsh};
 
 #[test]
 fn debug_contains_rule_parsing() {
@@ -14,17 +14,17 @@ Extension: TestExt
 
     println!("=== FULL DOCUMENT ===");
     println!("Text: '{}'", root.text());
-    
+
     // Walk the syntax tree and print all nodes
     fn walk_tree(node: &maki_core::cst::FshSyntaxNode, depth: usize) {
         let indent = "  ".repeat(depth);
         println!("{}Node: {:?} - '{}'", indent, node.kind(), node.text());
-        
+
         for child in node.children() {
             walk_tree(&child, depth + 1);
         }
     }
-    
+
     println!("\n=== SYNTAX TREE ===");
     walk_tree(&root, 0);
 
@@ -59,17 +59,17 @@ Extension: TestExt
 
     println!("=== MULTILINE FULL DOCUMENT ===");
     println!("Text: '{}'", root.text());
-    
+
     // Walk the syntax tree and print all nodes
     fn walk_tree(node: &maki_core::cst::FshSyntaxNode, depth: usize) {
         let indent = "  ".repeat(depth);
         println!("{}Node: {:?} - '{}'", indent, node.kind(), node.text());
-        
+
         for child in node.children() {
             walk_tree(&child, depth + 1);
         }
     }
-    
+
     println!("\n=== MULTILINE SYNTAX TREE ===");
     walk_tree(&root, 0);
 

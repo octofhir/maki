@@ -5,7 +5,7 @@
 use anyhow::Result;
 use maki_core::config::{
     BuildConfiguration, DependencyVersion, FilesConfiguration, FormatterConfiguration,
-    LinterConfiguration, RulesConfiguration, RuleSeverity, UnifiedConfig,
+    LinterConfiguration, RuleSeverity, RulesConfiguration, UnifiedConfig,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -81,7 +81,10 @@ impl ConfigGenerator {
     fn create_full_example_config() -> UnifiedConfig {
         // Create comprehensive rules configuration
         let mut blocking_rules = HashMap::new();
-        blocking_rules.insert("validate-critical-requirements".to_string(), RuleSeverity::Error);
+        blocking_rules.insert(
+            "validate-critical-requirements".to_string(),
+            RuleSeverity::Error,
+        );
 
         let mut correctness_rules = HashMap::new();
         correctness_rules.insert("duplicate-definition".to_string(), RuleSeverity::Error);

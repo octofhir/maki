@@ -189,6 +189,10 @@ impl Profile {
     pub fn rules(&self) -> impl Iterator<Item = Rule> {
         self.syntax.children().filter_map(Rule::cast)
     }
+
+    pub fn components(&self) -> impl Iterator<Item = VsComponent> {
+        self.syntax.children().filter_map(VsComponent::cast)
+    }
 }
 
 // ============================================================================
@@ -243,6 +247,10 @@ impl Extension {
     pub fn description(&self) -> Option<DescriptionClause> {
         child_of_kind(&self.syntax, FshSyntaxKind::DescriptionClause)
             .and_then(DescriptionClause::cast)
+    }
+
+    pub fn components(&self) -> impl Iterator<Item = VsComponent> {
+        self.syntax.children().filter_map(VsComponent::cast)
     }
 
     pub fn rules(&self) -> impl Iterator<Item = Rule> {
@@ -302,6 +310,460 @@ impl ValueSet {
 
     pub fn rules(&self) -> impl Iterator<Item = Rule> {
         self.syntax.children().filter_map(Rule::cast)
+    }
+}
+
+// ============================================================================
+// ValueSet components
+// ============================================================================
+
+/// ValueSet component wrapper: * include/exclude (concept|filter)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VsComponent {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for VsComponent {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::VsComponent
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl VsComponent {
+    pub fn is_exclude(&self) -> bool {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|c| c.into_token())
+            .any(|t| t.kind() == FshSyntaxKind::ExcludeKw)
+    }
+
+    pub fn is_include(&self) -> bool {
+        !self.is_exclude()
+    }
+
+    pub fn concept(&self) -> Option<VsConceptComponent> {
+        child_of_kind(&self.syntax, FshSyntaxKind::VsConceptComponent)
+            .and_then(VsConceptComponent::cast)
+    }
+
+    pub fn filter(&self) -> Option<VsFilterComponent> {
+        child_of_kind(&self.syntax, FshSyntaxKind::VsFilterComponent)
+            .and_then(VsFilterComponent::cast)
+    }
+}
+
+/// ValueSet concept component: code ["display"] [from ...]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VsConceptComponent {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for VsConceptComponent {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::VsConceptComponent
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl VsConceptComponent {
+    pub fn code(&self) -> Option<CodeRef> {
+        child_of_kind(&self.syntax, FshSyntaxKind::CodeRef).and_then(CodeRef::cast)
+    }
+
+    pub fn display(&self) -> Option<String> {
+        get_string_text(&self.syntax)
+    }
+
+    pub fn from_clause(&self) -> Option<VsComponentFrom> {
+        child_of_kind(&self.syntax, FshSyntaxKind::VsComponentFrom).and_then(VsComponentFrom::cast)
+    }
+}
+
+/// ValueSet filter component: codes from ... where ...
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VsFilterComponent {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for VsFilterComponent {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::VsFilterComponent
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl VsFilterComponent {
+    pub fn from_clause(&self) -> Option<VsComponentFrom> {
+        child_of_kind(&self.syntax, FshSyntaxKind::VsComponentFrom).and_then(VsComponentFrom::cast)
+    }
+
+    pub fn filters(&self) -> Vec<VsFilterDefinition> {
+        child_of_kind(&self.syntax, FshSyntaxKind::VsFilterList)
+            .and_then(VsFilterList::cast)
+            .map(|list| list.definitions())
+            .unwrap_or_default()
+    }
+}
+
+/// ValueSet "from" clause (system/valueset)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VsComponentFrom {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for VsComponentFrom {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::VsComponentFrom
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl VsComponentFrom {
+    pub fn systems(&self) -> Vec<String> {
+        self.syntax
+            .children()
+            .filter(|child| child.kind() == FshSyntaxKind::VsFromSystem)
+            .filter_map(VsFromSystem::cast)
+            .map(|system| system.system())
+            .collect()
+    }
+
+    pub fn value_sets(&self) -> Vec<String> {
+        self.syntax
+            .children()
+            .filter(|child| child.kind() == FshSyntaxKind::VsFromValueset)
+            .filter_map(VsFromValueset::cast)
+            .flat_map(|vs| vs.names())
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VsFromSystem {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for VsFromSystem {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::VsFromSystem
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl VsFromSystem {
+    pub fn system(&self) -> String {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|c| c.into_token())
+            .skip_while(|t| t.kind() == FshSyntaxKind::SystemKw)
+            .map(|t| t.text().to_string())
+            .collect::<String>()
+            .trim()
+            .to_string()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VsFromValueset {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for VsFromValueset {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::VsFromValueset
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl VsFromValueset {
+    pub fn names(&self) -> Vec<String> {
+        let mut parts = Vec::new();
+        let mut current = String::new();
+
+        for element in self.syntax.children_with_tokens() {
+            if let Some(token) = element.into_token() {
+                match token.kind() {
+                    FshSyntaxKind::ValuesetRefKw => {
+                        if !current.is_empty() {
+                            parts.push(current.trim().to_string());
+                            current.clear();
+                        }
+                    }
+                    FshSyntaxKind::AndKw => {
+                        if !current.trim().is_empty() {
+                            parts.push(current.trim().to_string());
+                            current.clear();
+                        }
+                    }
+                    _ => current.push_str(&token.text().to_string()),
+                }
+            }
+        }
+
+        if !current.trim().is_empty() {
+            parts.push(current.trim().to_string());
+        }
+
+        parts
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VsFilterList {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for VsFilterList {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::VsFilterList
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl VsFilterList {
+    pub fn definitions(&self) -> Vec<VsFilterDefinition> {
+        self.syntax
+            .children()
+            .filter(|child| child.kind() == FshSyntaxKind::VsFilterDefinition)
+            .filter_map(VsFilterDefinition::cast)
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VsFilterDefinition {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for VsFilterDefinition {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::VsFilterDefinition
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl VsFilterDefinition {
+    pub fn property(&self) -> Option<String> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|c| c.into_token())
+            .find(|t| t.kind() == FshSyntaxKind::Ident)
+            .map(|t| t.text().to_string())
+    }
+
+    pub fn operator(&self) -> Option<VsFilterOperator> {
+        child_of_kind(&self.syntax, FshSyntaxKind::VsFilterOperator)
+            .and_then(VsFilterOperator::cast)
+    }
+
+    pub fn value(&self) -> Option<VsFilterValue> {
+        child_of_kind(&self.syntax, FshSyntaxKind::VsFilterValue).and_then(VsFilterValue::cast)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VsFilterOperator {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for VsFilterOperator {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::VsFilterOperator
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl VsFilterOperator {
+    pub fn text(&self) -> String {
+        let text = self.syntax.text().to_string();
+        text.trim().to_string()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VsFilterValue {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for VsFilterValue {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::VsFilterValue
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl VsFilterValue {
+    pub fn text(&self) -> String {
+        let text = self.syntax.text().to_string();
+        text.trim().to_string()
+    }
+}
+
+/// Code reference node representing "system#code"
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeRef {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for CodeRef {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::CodeRef
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl CodeRef {
+    pub fn system(&self) -> Option<String> {
+        let mut text = String::new();
+        for element in self.syntax.children_with_tokens() {
+            if let Some(token) = element.into_token() {
+                if token.kind() == FshSyntaxKind::Code {
+                    break;
+                }
+                text.push_str(&token.text().to_string());
+            }
+        }
+
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }
+
+    pub fn code(&self) -> Option<String> {
+        token_of_kind(&self.syntax, FshSyntaxKind::Code).map(|token| {
+            let text = token.text().to_string();
+            text.trim_start_matches('#').trim().to_string()
+        })
+    }
+
+    pub fn raw(&self) -> String {
+        let text = self.syntax.text().to_string();
+        text.trim().to_string()
     }
 }
 
@@ -1218,6 +1680,8 @@ pub enum Rule {
     AddElement(AddElementRule),
     Mapping(MappingRule),
     CaretValue(CaretValueRule),
+    CodeCaretValue(CodeCaretValueRule),
+    CodeInsert(CodeInsertRule),
 }
 
 impl Rule {
@@ -1234,6 +1698,10 @@ impl Rule {
             FshSyntaxKind::AddElementRule => AddElementRule::cast(node).map(Rule::AddElement),
             FshSyntaxKind::MappingRule => MappingRule::cast(node).map(Rule::Mapping),
             FshSyntaxKind::CaretValueRule => CaretValueRule::cast(node).map(Rule::CaretValue),
+            FshSyntaxKind::CodeCaretValueRule => {
+                CodeCaretValueRule::cast(node).map(Rule::CodeCaretValue)
+            }
+            FshSyntaxKind::CodeInsertRule => CodeInsertRule::cast(node).map(Rule::CodeInsert),
             _ => None,
         }
     }
@@ -1251,6 +1719,8 @@ impl Rule {
             Rule::AddElement(r) => r.syntax(),
             Rule::Mapping(r) => r.syntax(),
             Rule::CaretValue(r) => r.syntax(),
+            Rule::CodeCaretValue(r) => r.syntax(),
+            Rule::CodeInsert(r) => r.syntax(),
         }
     }
 }
@@ -1305,7 +1775,17 @@ impl CardRule {
         self.syntax
             .children_with_tokens()
             .filter_map(|e| e.into_token())
-            .filter(|t| matches!(t.kind(), FshSyntaxKind::MsFlag | FshSyntaxKind::SuFlag))
+            .filter(|t| {
+                matches!(
+                    t.kind(),
+                    FshSyntaxKind::MsFlag
+                        | FshSyntaxKind::SuFlag
+                        | FshSyntaxKind::TuFlag
+                        | FshSyntaxKind::NFlag
+                        | FshSyntaxKind::DFlag
+                        | FshSyntaxKind::ModifierFlag
+                )
+            })
             .map(|t| t.text().to_string())
             .collect()
     }
@@ -1348,7 +1828,17 @@ impl FlagRule {
         self.syntax
             .children_with_tokens()
             .filter_map(|e| e.into_token())
-            .filter(|t| matches!(t.kind(), FshSyntaxKind::MsFlag | FshSyntaxKind::SuFlag))
+            .filter(|t| {
+                matches!(
+                    t.kind(),
+                    FshSyntaxKind::MsFlag
+                        | FshSyntaxKind::SuFlag
+                        | FshSyntaxKind::TuFlag
+                        | FshSyntaxKind::NFlag
+                        | FshSyntaxKind::DFlag
+                        | FshSyntaxKind::ModifierFlag
+                )
+            })
             .map(|t| t.text().to_string())
             .collect()
     }
@@ -1555,16 +2045,14 @@ impl ContainsRule {
             .trim();
 
         // Clean up the text - replace newlines with spaces and normalize whitespace
-        let cleaned_text = after_contains
-            .replace('\n', " ")
-            .replace('\r', " ");
-        
+        let cleaned_text = after_contains.replace('\n', " ").replace('\r', " ");
+
         // Split by "and" keyword and extract item names
         cleaned_text
             .split("and")
             .map(|item| {
                 let item = item.trim();
-                
+
                 // Handle "Item1 named slice1" format - extract the item name before "named"
                 if let Some(named_pos) = item.find("named") {
                     item[..named_pos].trim().to_string()
@@ -1574,11 +2062,12 @@ impl ContainsRule {
                     if let Some(first_word) = words.first() {
                         let first_word = first_word.trim();
                         // Skip cardinality patterns and flags
-                        if !first_word.is_empty() 
+                        if !first_word.is_empty()
                             && !first_word.contains("..")  // Skip cardinality like "0..1"
                             && first_word != "MS"          // Skip MustSupport flag
                             && first_word != "SU"          // Skip Summary flag
-                            && !first_word.starts_with("//") // Skip comments
+                            && !first_word.starts_with("//")
+                        // Skip comments
                         {
                             first_word.to_string()
                         } else {
@@ -2051,6 +2540,188 @@ impl CaretValueRule {
     }
 }
 
+/// Code caret value rule: * #code ^property = value
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeCaretValueRule {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for CodeCaretValueRule {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::CodeCaretValueRule
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl CodeCaretValueRule {
+    pub fn codes(&self) -> Vec<String> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|c| c.into_token())
+            .filter(|t| t.kind() == FshSyntaxKind::Code)
+            .map(|t| t.text().trim_start_matches('#').to_string())
+            .collect()
+    }
+
+    pub fn caret_path(&self) -> Option<Path> {
+        child_of_kind(&self.syntax, FshSyntaxKind::Path).and_then(Path::cast)
+    }
+
+    pub fn value(&self) -> Option<String> {
+        let mut after_equals = false;
+
+        for element in self.syntax.children_with_tokens() {
+            if let Some(token) = element.into_token() {
+                match token.kind() {
+                    FshSyntaxKind::Equals | FshSyntaxKind::PlusEquals => {
+                        after_equals = true;
+                        continue;
+                    }
+                    FshSyntaxKind::Whitespace | FshSyntaxKind::CommentLine => continue,
+                    _ if !after_equals => continue,
+                    FshSyntaxKind::String => {
+                        let text = token.text().to_string();
+                        let trimmed = text.trim();
+                        return Some(trimmed.trim_matches('"').to_string());
+                    }
+                    FshSyntaxKind::Code
+                    | FshSyntaxKind::Ident
+                    | FshSyntaxKind::Integer
+                    | FshSyntaxKind::Decimal
+                    | FshSyntaxKind::True
+                    | FshSyntaxKind::False
+                    | FshSyntaxKind::Reference
+                    | FshSyntaxKind::Canonical
+                    | FshSyntaxKind::CodeableReference => {
+                        return Some(token.text().to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        None
+    }
+}
+
+/// Code insert rule: * #code insert RuleSet(...)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeInsertRule {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for CodeInsertRule {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::CodeInsertRule
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl CodeInsertRule {
+    pub fn codes(&self) -> Vec<String> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|c| c.into_token())
+            .filter(|t| t.kind() == FshSyntaxKind::Code)
+            .map(|t| t.text().trim_start_matches('#').to_string())
+            .collect()
+    }
+
+    pub fn rule_set(&self) -> Option<String> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|c| c.into_token())
+            .find(|t| {
+                matches!(
+                    t.kind(),
+                    FshSyntaxKind::Ident
+                        | FshSyntaxKind::PlainParamToken
+                        | FshSyntaxKind::BracketedParamToken
+                )
+            })
+            .map(|t| t.text().to_string())
+    }
+
+    pub fn arguments(&self) -> Vec<String> {
+        child_of_kind(&self.syntax, FshSyntaxKind::InsertRuleArgs)
+            .and_then(InsertRuleArguments::cast)
+            .map(|args| args.items())
+            .unwrap_or_default()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InsertRuleArguments {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for InsertRuleArguments {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::InsertRuleArgs
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl InsertRuleArguments {
+    pub fn items(&self) -> Vec<String> {
+        let mut items = Vec::new();
+        let mut current = String::new();
+
+        for element in self.syntax.children_with_tokens() {
+            if let Some(token) = element.into_token() {
+                match token.kind() {
+                    FshSyntaxKind::Comma => {
+                        if !current.trim().is_empty() {
+                            items.push(current.trim().to_string());
+                            current.clear();
+                        }
+                    }
+                    _ => current.push_str(&token.text().to_string()),
+                }
+            }
+        }
+
+        if !current.trim().is_empty() {
+            items.push(current.trim().to_string());
+        }
+
+        items
+    }
+}
+
 // ============================================================================
 // Path
 // ============================================================================
@@ -2087,9 +2758,37 @@ impl Path {
 
     /// Get path segments (split by '.')
     pub fn segments(&self) -> Vec<String> {
-        self.as_string()
-            .split('.')
-            .map(|s| s.trim().to_string())
-            .collect()
+        let text = self.syntax.text().to_string().trim().to_string();
+        if text == "." {
+            return vec![".".to_string()];
+        }
+
+        let mut segments = Vec::new();
+        let mut current = String::new();
+
+        for element in self.syntax.children_with_tokens() {
+            if let Some(token) = element.into_token() {
+                match token.kind() {
+                    FshSyntaxKind::Whitespace | FshSyntaxKind::Newline => continue,
+                    FshSyntaxKind::Dot => {
+                        let trimmed = current.trim();
+                        if !trimmed.is_empty() {
+                            segments.push(trimmed.to_string());
+                            current.clear();
+                        }
+                    }
+                    _ => {
+                        current.push_str(token.text().as_ref());
+                    }
+                }
+            }
+        }
+
+        let trimmed = current.trim();
+        if !trimmed.is_empty() {
+            segments.push(trimmed.to_string());
+        }
+
+        segments
     }
 }

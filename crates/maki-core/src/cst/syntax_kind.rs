@@ -221,6 +221,16 @@ pub enum FshSyntaxKind {
     Regex = 158,
     /// UCUM unit 'unit'
     Unit = 159,
+    /// Canonical reference literal
+    Canonical = 160,
+    /// Reference literal (Reference(...))
+    Reference = 161,
+    /// CodeableReference literal
+    CodeableReference = 162,
+    /// Bracketed parameter token [[...]]
+    BracketedParamToken = 163,
+    /// Plain parameter token (with escapes)
+    PlainParamToken = 164,
 
     // ==================
     // Structure Nodes (200-399)
@@ -419,6 +429,11 @@ impl FshSyntaxKind {
                 | Self::False
                 | Self::Code
                 | Self::Url
+                | Self::Canonical
+                | Self::Reference
+                | Self::CodeableReference
+                | Self::BracketedParamToken
+                | Self::PlainParamToken
         )
     }
 
