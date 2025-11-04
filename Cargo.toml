@@ -23,7 +23,7 @@ edition = "2024"
 [workspace.dependencies]
 # Core parsing and AST - using Chumsky parser combinator
 chumsky = "0.11.1"
-ariadne = "0.5"
+ariadne = "0.6"
 
 # CST (Concrete Syntax Tree) - using Rowan for lossless syntax trees
 rowan = "0.16"

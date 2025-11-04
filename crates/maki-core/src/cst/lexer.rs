@@ -580,6 +580,10 @@ fn lex_word(input: &str, start: usize) -> (FshSyntaxKind, usize) {
         "true" => FshSyntaxKind::True,
         "false" => FshSyntaxKind::False,
 
+        // Date/Time types
+        "dateTime" => FshSyntaxKind::DateTime,
+        "time" => FshSyntaxKind::Time,
+
         // Otherwise, it's an identifier
         _ => FshSyntaxKind::Ident,
     };

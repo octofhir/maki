@@ -2792,3 +2792,281 @@ impl Path {
         segments
     }
 }
+// ============================================================================
+// Value Expression Nodes
+// ============================================================================
+
+/// Regex value: /pattern/
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegexValue {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for RegexValue {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::RegexValue
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl RegexValue {
+    /// Get the regex pattern (without the surrounding slashes)
+    pub fn pattern(&self) -> Option<String> {
+        token_of_kind(&self.syntax, FshSyntaxKind::Regex).map(|t| {
+            let text = t.text();
+            // Remove surrounding slashes if present
+            if text.len() >= 2 && text.starts_with('/') && text.ends_with('/') {
+                text[1..text.len() - 1].to_string()
+            } else {
+                text.to_string()
+            }
+        })
+    }
+}
+
+/// Canonical value: canonical|version or Canonical(Type)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalValue {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for CanonicalValue {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::CanonicalValue
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl CanonicalValue {
+    /// Get the canonical URL
+    pub fn url(&self) -> Option<String> {
+        // Look for Canonical token first
+        if let Some(token) = token_of_kind(&self.syntax, FshSyntaxKind::Canonical) {
+            let text = token.text();
+            // If it contains |, split and take the first part
+            if let Some(pipe_pos) = text.find('|') {
+                Some(text[..pipe_pos].to_string())
+            } else {
+                Some(text.to_string())
+            }
+        } else {
+            // Look for Ident token (Canonical keyword)
+            token_of_kind(&self.syntax, FshSyntaxKind::Ident).map(|t| t.text().to_string())
+        }
+    }
+
+    /// Get the version if present (after |)
+    pub fn version(&self) -> Option<String> {
+        // Look for version in Canonical token
+        if let Some(token) = token_of_kind(&self.syntax, FshSyntaxKind::Canonical) {
+            let text = token.text();
+            if let Some(pipe_pos) = text.find('|') {
+                Some(text[pipe_pos + 1..].to_string())
+            } else {
+                None
+            }
+        } else {
+            // Look for separate version token (if lexer splits it)
+            self.syntax
+                .children_with_tokens()
+                .filter_map(|e| e.into_token())
+                .find(|t| t.text().starts_with('|'))
+                .map(|t| t.text()[1..].to_string())
+        }
+    }
+
+    /// Get the type parameter if this is Canonical(Type) syntax
+    pub fn type_param(&self) -> Option<String> {
+        // Look for identifier between parentheses
+        let mut in_parens = false;
+        for element in self.syntax.children_with_tokens() {
+            if let Some(token) = element.as_token() {
+                match token.kind() {
+                    FshSyntaxKind::LParen => in_parens = true,
+                    FshSyntaxKind::RParen => in_parens = false,
+                    FshSyntaxKind::Ident if in_parens => {
+                        return Some(token.text().to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Reference value: Reference(Type1 or Type2)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferenceValue {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for ReferenceValue {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::ReferenceValue
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl ReferenceValue {
+    /// Get the reference types (split by 'or')
+    pub fn types(&self) -> Vec<String> {
+        let mut types = Vec::new();
+        let mut in_parens = false;
+        let mut current_type = String::new();
+
+        for element in self.syntax.children_with_tokens() {
+            if let Some(token) = element.as_token() {
+                match token.kind() {
+                    FshSyntaxKind::LParen => in_parens = true,
+                    FshSyntaxKind::RParen => {
+                        in_parens = false;
+                        if !current_type.trim().is_empty() {
+                            types.push(current_type.trim().to_string());
+                            current_type.clear();
+                        }
+                    }
+                    FshSyntaxKind::OrKw if in_parens => {
+                        if !current_type.trim().is_empty() {
+                            types.push(current_type.trim().to_string());
+                            current_type.clear();
+                        }
+                    }
+                    FshSyntaxKind::Ident if in_parens => {
+                        if !current_type.is_empty() {
+                            current_type.push(' ');
+                        }
+                        current_type.push_str(token.text());
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        types
+    }
+}
+
+/// CodeableReference value: CodeableReference(Type)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeableReferenceValue {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for CodeableReferenceValue {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::CodeableReferenceValue
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl CodeableReferenceValue {
+    /// Get the type parameter
+    pub fn type_param(&self) -> Option<String> {
+        // Look for identifier between parentheses
+        let mut in_parens = false;
+        for element in self.syntax.children_with_tokens() {
+            if let Some(token) = element.as_token() {
+                match token.kind() {
+                    FshSyntaxKind::LParen => in_parens = true,
+                    FshSyntaxKind::RParen => in_parens = false,
+                    FshSyntaxKind::Ident if in_parens => {
+                        return Some(token.text().to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Name value: Name "Display String" or System#code "Display"
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NameValue {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for NameValue {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::NameValue
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl NameValue {
+    /// Get the name/identifier part
+    pub fn name(&self) -> Option<String> {
+        token_of_kind(&self.syntax, FshSyntaxKind::Ident).map(|t| t.text().to_string())
+    }
+
+    /// Get the code part if this is System#code format
+    pub fn code(&self) -> Option<String> {
+        token_of_kind(&self.syntax, FshSyntaxKind::Code).map(|t| t.text().to_string())
+    }
+
+    /// Get the display string if present
+    pub fn display(&self) -> Option<String> {
+        get_string_text(&self.syntax)
+    }
+
+    /// Check if this is a system#code format
+    pub fn is_system_code(&self) -> bool {
+        self.code().is_some()
+    }
+}

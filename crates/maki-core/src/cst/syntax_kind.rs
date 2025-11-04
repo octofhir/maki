@@ -221,6 +221,10 @@ pub enum FshSyntaxKind {
     Regex = 158,
     /// UCUM unit 'unit'
     Unit = 159,
+    /// DateTime literal (ISO 8601 format)
+    DateTime = 165,
+    /// Time literal (ISO 8601 format)
+    Time = 166,
     /// Canonical reference literal
     Canonical = 160,
     /// Reference literal (Reference(...))
@@ -357,6 +361,8 @@ pub enum FshSyntaxKind {
     Cardinality = 331,
     /// Path expression (foo.bar[x].baz)
     Path = 332,
+    /// Individual path segment
+    PathSegment = 340,
     /// Code reference (#code or system#code)
     CodeRef = 333,
     /// Type reference
@@ -371,6 +377,20 @@ pub enum FshSyntaxKind {
     Parameter = 337,
     /// Insert rule arguments
     InsertRuleArgs = 338,
+
+    // ==================
+    // Value Expression Nodes (380-399)
+    // ==================
+    /// Regex value node
+    RegexValue = 380,
+    /// Canonical value node (with optional version)
+    CanonicalValue = 381,
+    /// Reference value node (with optional 'or' combinations)
+    ReferenceValue = 382,
+    /// CodeableReference value node
+    CodeableReferenceValue = 383,
+    /// Name value node (with optional display string)
+    NameValue = 384,
 
     // ==================
     // Special tokens (400+)
@@ -429,6 +449,8 @@ impl FshSyntaxKind {
                 | Self::False
                 | Self::Code
                 | Self::Url
+                | Self::DateTime
+                | Self::Time
                 | Self::Canonical
                 | Self::Reference
                 | Self::CodeableReference

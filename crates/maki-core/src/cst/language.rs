@@ -126,6 +126,8 @@ impl Language for FshLanguage {
             162 => FshSyntaxKind::CodeableReference,
             163 => FshSyntaxKind::BracketedParamToken,
             164 => FshSyntaxKind::PlainParamToken,
+            165 => FshSyntaxKind::DateTime,
+            166 => FshSyntaxKind::Time,
 
             // Structure nodes (200-399)
             200 => FshSyntaxKind::Root,
@@ -189,6 +191,7 @@ impl Language for FshLanguage {
             337 => FshSyntaxKind::Parameter,
             338 => FshSyntaxKind::InsertRuleArgs,
             339 => FshSyntaxKind::Ratio,
+            340 => FshSyntaxKind::PathSegment,
 
             // Special tokens (400+)
             400 => FshSyntaxKind::Error,
