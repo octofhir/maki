@@ -10,7 +10,7 @@ mod tests {
     #[test]
     fn test_patient_profile_lossless() {
         let source = include_str!("../../../../examples/patient-profile.fsh");
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
 
         // Should have no lexer errors
         assert!(errors.is_empty(), "Lexer errors: {errors:?}");
@@ -26,7 +26,7 @@ mod tests {
     #[test]
     fn test_comprehensive_test_lossless() {
         let source = include_str!("../../../../examples/comprehensive-test.fsh");
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
 
         assert!(errors.is_empty(), "Lexer errors: {errors:?}");
         assert_eq!(
@@ -39,7 +39,7 @@ mod tests {
     #[test]
     fn test_naming_issues_lossless() {
         let source = include_str!("../../../../examples/naming-issues.fsh");
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
 
         assert!(errors.is_empty());
         assert_eq!(cst.text().to_string(), source);
@@ -48,7 +48,7 @@ mod tests {
     #[test]
     fn test_missing_metadata_lossless() {
         let source = include_str!("../../../../examples/missing-metadata.fsh");
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
 
         assert!(errors.is_empty());
         assert_eq!(cst.text().to_string(), source);
@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn test_invalid_cardinality_lossless() {
         let source = include_str!("../../../../examples/invalid-cardinality.fsh");
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
 
         assert!(errors.is_empty());
         assert_eq!(cst.text().to_string(), source);
@@ -66,7 +66,7 @@ mod tests {
     #[test]
     fn test_extension_issues_lossless() {
         let source = include_str!("../../../../examples/extension-issues.fsh");
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
 
         assert!(errors.is_empty());
         assert_eq!(cst.text().to_string(), source);
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn test_valueset_examples_lossless() {
         let source = include_str!("../../../../examples/valueset-examples.fsh");
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
 
         assert!(errors.is_empty());
         assert_eq!(cst.text().to_string(), source);
@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn test_lexer_edge_cases_lossless() {
         let source = include_str!("../../../../examples/lexer-edge-cases.fsh");
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
 
         assert!(
             errors.is_empty(),

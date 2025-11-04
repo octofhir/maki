@@ -20,7 +20,7 @@ async fn create_test_session() -> Arc<DefinitionSession> {
 
 /// Parse ValueSets from FSH content
 fn parse_valuesets(fsh: &str) -> Vec<maki_core::cst::ast::ValueSet> {
-    let (cst, errors) = parse_fsh(fsh);
+    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(
         errors.is_empty(),
         "Lexer errors encountered while parsing test FSH: {errors:?}"

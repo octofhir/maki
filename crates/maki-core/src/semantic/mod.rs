@@ -65,7 +65,7 @@ impl Default for SemanticModel {
     fn default() -> Self {
         let source = String::new();
         let source_map = crate::SourceMap::new(&source);
-        let (cst, _) = crate::cst::parse_fsh(&source);
+        let (cst, _, _) = crate::cst::parse_fsh(&source);
         Self {
             cst,
             resources: Vec::new(),
@@ -85,7 +85,7 @@ impl SemanticModel {
     pub fn new(source_file: PathBuf) -> Self {
         let source = String::new();
         let source_map = crate::SourceMap::new(&source);
-        let (cst, _) = crate::cst::parse_fsh(&source);
+        let (cst, _, _) = crate::cst::parse_fsh(&source);
         Self {
             cst,
             resources: Vec::new(),

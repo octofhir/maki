@@ -21,7 +21,7 @@ fn test_simple_profile_hierarchy() {
         Parent: ParentProfile
     "#;
 
-    let (cst, _errors) = parse_fsh(source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(source);
     let analyzer = DefaultSemanticAnalyzer::new();
     let model = analyzer
         .analyze(&cst, source, PathBuf::from("test.fsh"))
@@ -55,7 +55,7 @@ fn test_circular_dependency_detection() {
         Parent: ProfileA
     "#;
 
-    let (cst, _errors) = parse_fsh(source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(source);
     let analyzer = DefaultSemanticAnalyzer::new();
     let model = analyzer
         .analyze(&cst, source, PathBuf::from("test.fsh"))
@@ -88,7 +88,7 @@ fn test_multiple_independent_profiles() {
         Parent: Practitioner
     "#;
 
-    let (cst, _errors) = parse_fsh(source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(source);
     let analyzer = DefaultSemanticAnalyzer::new();
     let model = analyzer
         .analyze(&cst, source, PathBuf::from("test.fsh"))
@@ -124,7 +124,7 @@ fn test_processing_batches_with_real_profiles() {
         Parent: DerivedProfile1
     "#;
 
-    let (cst, _errors) = parse_fsh(source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(source);
     let analyzer = DefaultSemanticAnalyzer::new();
     let model = analyzer
         .analyze(&cst, source, PathBuf::from("test.fsh"))
@@ -176,7 +176,7 @@ fn test_diamond_dependency_pattern() {
         Parent: Left
     "#;
 
-    let (cst, _errors) = parse_fsh(source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(source);
     let analyzer = DefaultSemanticAnalyzer::new();
     let model = analyzer
         .analyze(&cst, source, PathBuf::from("test.fsh"))
@@ -212,7 +212,7 @@ fn test_value_set_and_code_system() {
         Parent: Patient
     "#;
 
-    let (cst, _errors) = parse_fsh(source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(source);
     let analyzer = DefaultSemanticAnalyzer::new();
     let model = analyzer
         .analyze(&cst, source, PathBuf::from("test.fsh"))
@@ -246,7 +246,7 @@ fn test_has_path_queries() {
         Parent: Patient
     "#;
 
-    let (cst, _errors) = parse_fsh(source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(source);
     let analyzer = DefaultSemanticAnalyzer::new();
     let model = analyzer
         .analyze(&cst, source, PathBuf::from("test.fsh"))
@@ -277,7 +277,7 @@ fn test_get_dependencies_and_dependents() {
         Parent: Parent1
     "#;
 
-    let (cst, _errors) = parse_fsh(source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(source);
     let analyzer = DefaultSemanticAnalyzer::new();
     let model = analyzer
         .analyze(&cst, source, PathBuf::from("test.fsh"))
@@ -349,7 +349,7 @@ fn test_strongly_connected_components() {
         Parent: Patient
     "#;
 
-    let (cst, _errors) = parse_fsh(source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(source);
     let analyzer = DefaultSemanticAnalyzer::new();
     let model = analyzer
         .analyze(&cst, source, PathBuf::from("test.fsh"))

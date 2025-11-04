@@ -7,9 +7,49 @@
 use super::lexer::LexerError;
 use super::{CstBuilder, CstToken, FshSyntaxKind, FshSyntaxNode};
 
+/// Parse error with location information
+#[derive(Debug, Clone)]
+pub struct ParseError {
+    pub message: String,
+    pub line: u32,
+    pub col: u32,
+    pub kind: ParseErrorKind,
+}
+
+/// Categories of parse errors
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ParseErrorKind {
+    /// Unclosed parameter bracket
+    UnclosedParameterBracket,
+    /// Invalid grammar construct
+    InvalidGrammarConstruct,
+    /// Malformed escape sequence
+    MalformedEscapeSequence,
+    /// Recursive RuleSet insertion
+    RecursiveRuleSetInsertion,
+    /// Circular RuleSet dependency
+    CircularRuleSetDependency,
+    /// Generic syntax error
+    SyntaxError,
+}
+
+/// Recovery context for error handling
+#[derive(Debug, Clone, PartialEq)]
+enum RecoveryContext {
+    /// Recovering from definition-level error
+    Definition,
+    /// Recovering from rule-level error
+    Rule,
+    /// Recovering from metadata clause error
+    Metadata,
+    /// Recovering from expression-level error
+    Expression,
+}
+
 /// Parse FSH source into a hierarchical CST
 ///
 /// This creates proper structure with Profile, Extension, Rule nodes.
+/// Returns both lexer errors and parse errors separately for comprehensive error handling.
 ///
 /// # Example
 ///
@@ -22,21 +62,23 @@ use super::{CstBuilder, CstToken, FshSyntaxKind, FshSyntaxNode};
 /// * name 1..1 MS
 /// "#;
 ///
-/// let (cst, errors) = parse_fsh(source);
-/// assert!(errors.is_empty());
+/// let (cst, _lexer_errors, lexer_errors, parse_errors) = parse_fsh(source);
+/// assert!(lexer_errors.is_empty());
+/// assert!(parse_errors.is_empty());
 /// assert_eq!(cst.text().to_string(), source);
 /// ```
-pub fn parse_fsh(source: &str) -> (FshSyntaxNode, Vec<LexerError>) {
-    let (tokens, errors) = super::lex_with_trivia(source);
-    let cst = parse_tokens(&tokens);
-    (cst, errors)
+pub fn parse_fsh(source: &str) -> (FshSyntaxNode, Vec<LexerError>, Vec<ParseError>) {
+    let (tokens, lexer_errors) = super::lex_with_trivia(source);
+    let (cst, parse_errors) = parse_tokens(&tokens);
+    (cst, lexer_errors, parse_errors)
 }
 
 /// Parse a token stream into a hierarchical CST
-fn parse_tokens(tokens: &[CstToken]) -> FshSyntaxNode {
+fn parse_tokens(tokens: &[CstToken]) -> (FshSyntaxNode, Vec<ParseError>) {
     let mut parser = Parser::new(tokens);
     parser.parse_document();
-    parser.finish()
+    let (cst, errors) = parser.finish();
+    (cst, errors)
 }
 
 /// Token stream parser
@@ -44,6 +86,14 @@ struct Parser<'a> {
     tokens: &'a [CstToken],
     pos: usize,
     builder: CstBuilder,
+    /// Collection of parse errors encountered during parsing
+    errors: Vec<ParseError>,
+    /// Stack to track RuleSet insertion depth for recursion detection
+    ruleset_stack: Vec<String>,
+    /// Dependency graph for RuleSet references
+    ruleset_dependencies: std::collections::HashMap<String, Vec<String>>,
+    /// Current RuleSet being parsed (for dependency tracking)
+    current_ruleset: Option<String>,
 }
 
 impl<'a> Parser<'a> {
@@ -52,11 +102,15 @@ impl<'a> Parser<'a> {
             tokens,
             pos: 0,
             builder: CstBuilder::new(),
+            errors: Vec::new(),
+            ruleset_stack: Vec::new(),
+            ruleset_dependencies: std::collections::HashMap::new(),
+            current_ruleset: None,
         }
     }
 
-    fn finish(self) -> FshSyntaxNode {
-        self.builder.finish()
+    fn finish(self) -> (FshSyntaxNode, Vec<ParseError>) {
+        (self.builder.finish(), self.errors)
     }
 
     /// Parse the top-level document
@@ -105,8 +159,13 @@ impl<'a> Parser<'a> {
                 }
                 FshSyntaxKind::Eof => break,
                 _ => {
-                    // Unknown token - consume as error
+                    // Unknown token - consume as error and attempt recovery
                     self.error_and_recover();
+                    
+                    // Check if we can continue parsing
+                    if !self.attempt_continued_parsing() {
+                        break; // Stop parsing if state is too corrupted
+                    }
                 }
             }
         }
@@ -159,7 +218,11 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
 
-                _ => break,
+                _ => {
+                    // Unknown token in profile context - try to recover
+                    self.error_and_recover_with_message("Unexpected token in profile definition");
+                    self.recover_from_context(RecoveryContext::Metadata);
+                }
             }
         }
 
@@ -454,8 +517,16 @@ impl<'a> Parser<'a> {
         self.expect(FshSyntaxKind::Colon);
         self.consume_trivia();
 
-        // RuleSet name
-        self.expect(FshSyntaxKind::Ident);
+        // RuleSet name - track for dependency analysis
+        if self.at(FshSyntaxKind::Ident) {
+            let name = self.current().unwrap().text.to_string();
+            self.current_ruleset = Some(name.clone());
+            self.ruleset_dependencies.insert(name, Vec::new());
+            self.add_current_token();
+            self.advance();
+        } else {
+            self.expect(FshSyntaxKind::Ident);
+        }
         self.consume_trivia();
 
         // Optional parameters: (param1, param2)
@@ -524,6 +595,9 @@ impl<'a> Parser<'a> {
         }
 
         self.builder.finish_node(); // RULE_SET
+        
+        // Reset current RuleSet tracking
+        self.current_ruleset = None;
     }
 
     /// Parse parameter list for parameterized RuleSet: (param1, param2, ...)
@@ -538,6 +612,10 @@ impl<'a> Parser<'a> {
         while !self.at_end() && !self.at(FshSyntaxKind::RParen) {
             // Safety check for infinite loop
             if param_count > 100 {
+                self.report_error(
+                    ParseErrorKind::InvalidGrammarConstruct,
+                    "Too many parameters in parameter list"
+                );
                 break;
             }
 
@@ -552,11 +630,23 @@ impl<'a> Parser<'a> {
             } else if !self.at(FshSyntaxKind::RParen) {
                 // CRITICAL FIX: If no comma and not at ), we need to break
                 // Otherwise we'll loop infinitely trying to parse parameters
+                self.report_error(
+                    ParseErrorKind::InvalidGrammarConstruct,
+                    "Expected ',' or ')' in parameter list"
+                );
                 break;
             }
         }
 
-        self.expect(FshSyntaxKind::RParen);
+        if !self.at(FshSyntaxKind::RParen) {
+            self.report_error(
+                ParseErrorKind::UnclosedParameterBracket,
+                "Unclosed parameter bracket - expected ')'"
+            );
+        } else {
+            self.expect(FshSyntaxKind::RParen);
+        }
+        
         self.builder.finish_node(); // PARAMETER_LIST
     }
 
@@ -992,8 +1082,45 @@ impl<'a> Parser<'a> {
             self.advance();
             self.consume_trivia();
 
-            // RuleSet name
-            self.expect(FshSyntaxKind::Ident);
+            // RuleSet name - check for recursion and track dependencies
+            if self.at(FshSyntaxKind::Ident) {
+                let ruleset_name = self.current().unwrap().text.to_string();
+                
+                // Track dependency if we're inside a RuleSet
+                if let Some(ref current) = self.current_ruleset {
+                    if let Some(deps) = self.ruleset_dependencies.get_mut(current) {
+                        if !deps.contains(&ruleset_name) {
+                            deps.push(ruleset_name.clone());
+                        }
+                    }
+                    
+                    // Check for circular dependency
+                    if self.has_circular_dependency(current, &ruleset_name) {
+                        let cycle = self.find_dependency_cycle(current, &ruleset_name);
+                        self.report_error(
+                            ParseErrorKind::CircularRuleSetDependency,
+                            &format!("Circular dependency detected: {}", cycle)
+                        );
+                    }
+                }
+                
+                // Check for immediate recursive insertion
+                if self.ruleset_stack.contains(&ruleset_name) {
+                    let chain = self.ruleset_stack.join(" -> ");
+                    self.report_error(
+                        ParseErrorKind::RecursiveRuleSetInsertion,
+                        &format!("Recursive RuleSet insertion detected: {} -> {}", chain, ruleset_name)
+                    );
+                } else {
+                    // Track this RuleSet for recursion detection
+                    self.ruleset_stack.push(ruleset_name.clone());
+                }
+                
+                self.add_current_token();
+                self.advance();
+            } else {
+                self.expect(FshSyntaxKind::Ident);
+            }
             self.consume_trivia();
 
             // Optional arguments: (arg1, arg2)
@@ -1003,6 +1130,12 @@ impl<'a> Parser<'a> {
 
             self.consume_trivia_and_newlines();
             self.builder.finish_node();
+            
+            // Pop from recursion stack when done
+            if !self.ruleset_stack.is_empty() {
+                self.ruleset_stack.pop();
+            }
+            
             return;
         }
 
@@ -1176,7 +1309,11 @@ impl<'a> Parser<'a> {
         // - Name with display: Name "Display String"
 
         if self.at(FshSyntaxKind::String) {
-            // String value
+            // String value - validate escape sequences
+            if let Some(token) = self.current() {
+                let text = token.text.clone(); // Clone to avoid borrowing issues
+                self.validate_string_escape_sequences(&text);
+            }
             self.add_current_token();
             self.advance();
         } else if self.at(FshSyntaxKind::Code) {
@@ -1645,8 +1782,46 @@ impl<'a> Parser<'a> {
             self.add_current_token();
             self.advance();
         } else {
-            // Create error token
+            self.expect_with_recovery(kind, RecoveryContext::Expression);
+        }
+    }
+
+    fn expect_with_recovery(&mut self, kind: FshSyntaxKind, recovery_context: RecoveryContext) {
+        if self.at(kind) {
+            self.add_current_token();
+            self.advance();
+        } else {
+            // Report specific error based on expected token
+            let expected = match kind {
+                FshSyntaxKind::LParen => "Expected '('",
+                FshSyntaxKind::RParen => "Expected ')'",
+                FshSyntaxKind::LBracket => "Expected '['",
+                FshSyntaxKind::RBracket => "Expected ']'",
+                FshSyntaxKind::Colon => "Expected ':'",
+                FshSyntaxKind::Equals => "Expected '='",
+                FshSyntaxKind::Ident => "Expected identifier",
+                FshSyntaxKind::String => "Expected string literal",
+                _ => "Expected token",
+            };
+            
+            let current = if let Some(token) = self.current() {
+                format!("but found '{}'", token.text)
+            } else {
+                "but reached end of file".to_string()
+            };
+            
+            self.report_error(
+                ParseErrorKind::SyntaxError,
+                &format!("{} {}", expected, current)
+            );
+            
+            // Create error token and attempt recovery
             self.builder.token(FshSyntaxKind::Error, "");
+            
+            // Don't recover for critical structural tokens
+            if !matches!(kind, FshSyntaxKind::Colon | FshSyntaxKind::LParen | FshSyntaxKind::RParen) {
+                self.recover_from_context(recovery_context);
+            }
         }
     }
 
@@ -2719,16 +2894,389 @@ impl<'a> Parser<'a> {
     }
 
     fn error_and_recover(&mut self) {
+        self.error_and_recover_with_message("Unexpected token")
+    }
+
+    fn error_and_recover_with_message(&mut self, message: &str) {
+        // Record the error
+        let (line, col) = self.current_position();
+        self.errors.push(ParseError {
+            message: message.to_string(),
+            line,
+            col,
+            kind: ParseErrorKind::SyntaxError,
+        });
+
         // Consume the error token
         self.builder.start_node(FshSyntaxKind::Error);
-        self.add_current_token();
-        self.advance();
-        self.builder.finish_node();
-
-        // Skip to next line
-        while !self.at_end() && !self.at(FshSyntaxKind::Newline) {
+        if !self.at_end() {
             self.add_current_token();
             self.advance();
+        }
+        self.builder.finish_node();
+
+        // Advanced recovery: try to find a good synchronization point
+        self.recover_to_sync_point();
+    }
+
+    /// Advanced error recovery to synchronization points
+    fn recover_to_sync_point(&mut self) {
+        let mut recovery_attempts = 0;
+        const MAX_RECOVERY_ATTEMPTS: usize = 100;
+        
+        while !self.at_end() && recovery_attempts < MAX_RECOVERY_ATTEMPTS {
+            recovery_attempts += 1;
+            
+            // Good synchronization points for recovery
+            if self.at_definition_keyword() {
+                // Found a new definition - good place to restart
+                break;
+            }
+            
+            if self.at(FshSyntaxKind::Newline) {
+                // End of line - consume it and check next line
+                self.add_current_token();
+                self.advance();
+                
+                // Skip any following whitespace/comments
+                self.consume_trivia();
+                
+                // If we find a definition keyword or rule start, we can recover
+                if self.at_definition_keyword() || self.at(FshSyntaxKind::Asterisk) {
+                    break;
+                }
+                continue;
+            }
+            
+            if self.at(FshSyntaxKind::Asterisk) {
+                // Found a rule start - good recovery point
+                break;
+            }
+            
+            // Consume token and continue looking for sync point
+            self.add_current_token();
+            self.advance();
+        }
+        
+        if recovery_attempts >= MAX_RECOVERY_ATTEMPTS {
+            self.report_error(
+                ParseErrorKind::SyntaxError,
+                "Parser recovery failed - too many attempts"
+            );
+        }
+    }
+
+    /// Try to recover from a specific error context
+    fn recover_from_context(&mut self, context: RecoveryContext) {
+        match context {
+            RecoveryContext::Definition => {
+                // In definition context, skip to next definition or EOF
+                while !self.at_end() && !self.at_definition_keyword() {
+                    self.add_current_token();
+                    self.advance();
+                }
+            }
+            RecoveryContext::Rule => {
+                // In rule context, skip to next rule or definition
+                while !self.at_end() 
+                    && !self.at(FshSyntaxKind::Asterisk) 
+                    && !self.at_definition_keyword() {
+                    if self.at(FshSyntaxKind::Newline) {
+                        self.add_current_token();
+                        self.advance();
+                        break; // End of rule
+                    }
+                    self.add_current_token();
+                    self.advance();
+                }
+            }
+            RecoveryContext::Metadata => {
+                // In metadata context, skip to next metadata, rule, or definition
+                while !self.at_end() 
+                    && !self.at(FshSyntaxKind::Asterisk)
+                    && !self.at_definition_keyword()
+                    && !self.is_metadata_keyword() {
+                    if self.at(FshSyntaxKind::Newline) {
+                        self.add_current_token();
+                        self.advance();
+                        break;
+                    }
+                    self.add_current_token();
+                    self.advance();
+                }
+            }
+            RecoveryContext::Expression => {
+                // In expression context, skip to end of expression
+                while !self.at_end() 
+                    && !self.at(FshSyntaxKind::Newline)
+                    && !self.at(FshSyntaxKind::Comma) {
+                    self.add_current_token();
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    /// Check if current token is a metadata keyword
+    fn is_metadata_keyword(&self) -> bool {
+        matches!(
+            self.current_kind(),
+            FshSyntaxKind::ParentKw
+                | FshSyntaxKind::IdKw
+                | FshSyntaxKind::TitleKw
+                | FshSyntaxKind::DescriptionKw
+                | FshSyntaxKind::InstanceofKw
+                | FshSyntaxKind::UsageKw
+                | FshSyntaxKind::ContextKw
+                | FshSyntaxKind::CharacteristicsKw
+                | FshSyntaxKind::SourceKw
+                | FshSyntaxKind::TargetKw
+                | FshSyntaxKind::SeverityKw
+                | FshSyntaxKind::XpathKw
+                | FshSyntaxKind::ExpressionKw
+        )
+    }
+
+    /// Validate parser state consistency after error recovery
+    fn validate_parser_state(&mut self) -> bool {
+        // Check for basic consistency issues
+        
+        // 1. Position should not exceed token count
+        if self.pos > self.tokens.len() {
+            self.report_error(
+                ParseErrorKind::SyntaxError,
+                "Parser position exceeded token count - internal error"
+            );
+            self.pos = self.tokens.len();
+            return false;
+        }
+        
+        // 2. RuleSet stack should not be excessively deep
+        if self.ruleset_stack.len() > 50 {
+            self.report_error(
+                ParseErrorKind::RecursiveRuleSetInsertion,
+                "RuleSet insertion stack too deep - possible infinite recursion"
+            );
+            self.ruleset_stack.clear();
+            return false;
+        }
+        
+        // 3. Error count should not be excessive
+        if self.errors.len() > 1000 {
+            self.report_error(
+                ParseErrorKind::SyntaxError,
+                "Too many parse errors - stopping to prevent resource exhaustion"
+            );
+            return false;
+        }
+        
+        true
+    }
+
+    /// Attempt to continue parsing after multiple errors
+    fn attempt_continued_parsing(&mut self) -> bool {
+        // Validate state first
+        if !self.validate_parser_state() {
+            return false;
+        }
+        
+        // If we have too many consecutive errors, try a more aggressive recovery
+        let recent_errors = self.errors.iter()
+            .rev()
+            .take(10)
+            .filter(|err| matches!(err.kind, ParseErrorKind::SyntaxError))
+            .count();
+            
+        if recent_errors > 5 {
+            // Too many recent syntax errors - try to find a major sync point
+            self.recover_to_major_sync_point();
+        }
+        
+        true
+    }
+
+    /// Recover to a major synchronization point (definition boundary)
+    fn recover_to_major_sync_point(&mut self) {
+        let mut tokens_skipped = 0;
+        const MAX_SKIP: usize = 200;
+        
+        while !self.at_end() && tokens_skipped < MAX_SKIP {
+            if self.at_definition_keyword() {
+                // Found a definition - good major sync point
+                break;
+            }
+            
+            // Skip this token
+            self.add_current_token();
+            self.advance();
+            tokens_skipped += 1;
+        }
+        
+        if tokens_skipped >= MAX_SKIP {
+            self.report_error(
+                ParseErrorKind::SyntaxError,
+                "Could not find synchronization point - parser may be lost"
+            );
+        }
+    }
+
+    fn current_position(&self) -> (u32, u32) {
+        if let Some(token) = self.current() {
+            // For now, return placeholder values
+            // In a real implementation, tokens would carry position information
+            (1, 1)
+        } else {
+            (1, 1)
+        }
+    }
+
+    fn report_error(&mut self, kind: ParseErrorKind, message: &str) {
+        let (line, col) = self.current_position();
+        self.errors.push(ParseError {
+            message: message.to_string(),
+            line,
+            col,
+            kind,
+        });
+    }
+
+    /// Check if adding a dependency would create a circular dependency
+    fn has_circular_dependency(&self, from: &str, to: &str) -> bool {
+        if from == to {
+            return true;
+        }
+        
+        let mut visited = std::collections::HashSet::new();
+        self.has_circular_dependency_recursive(to, from, &mut visited)
+    }
+    
+    /// Recursive helper for circular dependency detection
+    fn has_circular_dependency_recursive(
+        &self, 
+        current: &str, 
+        target: &str, 
+        visited: &mut std::collections::HashSet<String>
+    ) -> bool {
+        if visited.contains(current) {
+            return false; // Already checked this path
+        }
+        visited.insert(current.to_string());
+        
+        if let Some(deps) = self.ruleset_dependencies.get(current) {
+            for dep in deps {
+                if dep == target {
+                    return true; // Found cycle
+                }
+                if self.has_circular_dependency_recursive(dep, target, visited) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    
+    /// Find and format a dependency cycle for error reporting
+    fn find_dependency_cycle(&self, from: &str, to: &str) -> String {
+        let mut path = Vec::new();
+        if self.find_cycle_path(from, to, &mut path, &mut std::collections::HashSet::new()) {
+            path.push(from.to_string()); // Complete the cycle
+            path.join(" -> ")
+        } else {
+            format!("{} -> {}", from, to)
+        }
+    }
+    
+    /// Find the actual path that creates a cycle
+    fn find_cycle_path(
+        &self,
+        current: &str,
+        target: &str,
+        path: &mut Vec<String>,
+        visited: &mut std::collections::HashSet<String>
+    ) -> bool {
+        if visited.contains(current) {
+            return false;
+        }
+        visited.insert(current.to_string());
+        path.push(current.to_string());
+        
+        if current == target {
+            return true;
+        }
+        
+        if let Some(deps) = self.ruleset_dependencies.get(current) {
+            for dep in deps {
+                if self.find_cycle_path(dep, target, path, visited) {
+                    return true;
+                }
+            }
+        }
+        
+        path.pop();
+        false
+    }
+
+    /// Validate escape sequences in string literals
+    fn validate_string_escape_sequences(&mut self, text: &str) {
+        let mut chars = text.chars().peekable();
+        let mut pos = 0;
+        
+        while let Some(ch) = chars.next() {
+            pos += 1;
+            if ch == '\\' {
+                if let Some(&next_ch) = chars.peek() {
+                    match next_ch {
+                        '"' | '\\' | '/' | 'b' | 'f' | 'n' | 'r' | 't' => {
+                            // Valid escape sequence
+                            chars.next(); // consume the escaped character
+                            pos += 1;
+                        }
+                        'u' => {
+                            // Unicode escape sequence: \uXXXX
+                            chars.next(); // consume 'u'
+                            pos += 1;
+                            
+                            // Check for 4 hex digits
+                            let mut hex_count = 0;
+                            while hex_count < 4 {
+                                if let Some(&hex_ch) = chars.peek() {
+                                    if hex_ch.is_ascii_hexdigit() {
+                                        chars.next();
+                                        pos += 1;
+                                        hex_count += 1;
+                                    } else {
+                                        break;
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+                            
+                            if hex_count != 4 {
+                                self.report_error(
+                                    ParseErrorKind::MalformedEscapeSequence,
+                                    &format!("Invalid unicode escape sequence at position {}: expected 4 hex digits", pos - hex_count - 2)
+                                );
+                            }
+                        }
+                        _ => {
+                            // Invalid escape sequence
+                            self.report_error(
+                                ParseErrorKind::MalformedEscapeSequence,
+                                &format!("Invalid escape sequence '\\{}' at position {}", next_ch, pos)
+                            );
+                            chars.next(); // consume the invalid character
+                            pos += 1;
+                        }
+                    }
+                } else {
+                    // Backslash at end of string
+                    self.report_error(
+                        ParseErrorKind::MalformedEscapeSequence,
+                        &format!("Incomplete escape sequence at end of string at position {}", pos)
+                    );
+                }
+            }
         }
     }
 }
@@ -2740,9 +3288,9 @@ mod tests {
     #[test]
     fn test_parse_simple_profile() {
         let source = "Profile: MyPatient\nParent: Patient";
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, parse_errors) = parse_fsh(source);
 
-        assert!(errors.is_empty());
+        assert!(parse_errors.is_empty());
         assert_eq!(cst.text().to_string(), source);
 
         // Find Profile node
@@ -2758,8 +3306,8 @@ Id: my-patient
 Title: "My Patient Profile"
 Description: "A test profile""#;
 
-        let (cst, errors) = parse_fsh(source);
-        assert!(errors.is_empty());
+        let (cst, _lexer_errors, parse_errors) = parse_fsh(source);
+        assert!(parse_errors.is_empty());
         assert_eq!(cst.text().to_string(), source);
 
         // Verify structure
@@ -2798,7 +3346,7 @@ Parent: Patient
 * name 1..1 MS
 * birthDate 0..1"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty());
         assert_eq!(cst.text().to_string(), source);
 
@@ -2823,7 +3371,7 @@ Parent: Patient
 Extension: Extension1
 Id: ext-1"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty());
         assert_eq!(cst.text().to_string(), source);
 
@@ -2838,7 +3386,7 @@ Id: ext-1"#;
 Profile: MyPatient // inline comment
 Parent: Patient"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty());
         assert_eq!(cst.text().to_string(), source);
 
@@ -2857,7 +3405,7 @@ Title: "My Patient"
 * name 1..1 MS
 * birthDate 0..1"#;
 
-        let (cst, _) = parse_fsh(source);
+        let (cst, _lexer_errors, _) = parse_fsh(source);
 
         // Perfect lossless roundtrip
         assert_eq!(cst.text().to_string(), source);
@@ -2868,7 +3416,7 @@ Title: "My Patient"
         let source = r#"CodeSystem: TestCS
 * #code1 ^property = "value""#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
         assert_eq!(cst.text().to_string(), source);
 
@@ -2890,7 +3438,7 @@ Title: "My Patient"
         let source = r#"CodeSystem: TestCS
 * #code1 insert MyRuleSet"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
         assert_eq!(cst.text().to_string(), source);
 
@@ -2913,7 +3461,7 @@ Title: "My Patient"
 Parent: Patient
 * name MS SU TU N D"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
         assert_eq!(cst.text().to_string(), source);
 
@@ -2936,7 +3484,7 @@ Parent: Patient
 Parent: Patient
 * name MS SU"#;
 
-        let (cst1, errors1) = parse_fsh(source1);
+        let (cst1, _lexer_errors, errors1) = parse_fsh(source1);
         assert!(errors1.is_empty(), "Parse errors: {:?}", errors1);
 
         let profile1 = cst1
@@ -2962,7 +3510,7 @@ Parent: Patient
 Parent: Patient
 * name 1..1"#;
 
-        let (cst2, errors2) = parse_fsh(source2);
+        let (cst2, _lexer_errors, errors2) = parse_fsh(source2);
         assert!(errors2.is_empty(), "Parse errors: {:?}", errors2);
 
         let profile2 = cst2
@@ -2989,7 +3537,7 @@ Parent: Patient
         let source = r#"ValueSet: TestVS
 * codes from system "http://example.com" where concept is-a #parent"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
         assert_eq!(cst.text().to_string(), source);
 
@@ -3018,7 +3566,7 @@ Parent: Patient
         let source = r#"ValueSet: TestVS
 * codes from system "http://example.com" where concept is-a #parent and display = "test""#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
         assert_eq!(cst.text().to_string(), source);
 
@@ -3041,7 +3589,7 @@ Parent: Patient
         let source1 = r#"CodeSystem: TestCS
 * #code1 property = "value""#;
 
-        let (cst1, errors1) = parse_fsh(source1);
+        let (cst1, _lexer_errors, errors1) = parse_fsh(source1);
         // Should parse without errors but not create CodeCaretValueRule
         assert!(errors1.is_empty(), "Should not have lexer errors");
         
@@ -3060,7 +3608,7 @@ Parent: Patient
         let source2 = r#"CodeSystem: TestCS
 * #code1 MyRuleSet"#;
 
-        let (cst2, errors2) = parse_fsh(source2);
+        let (cst2, _lexer_errors, errors2) = parse_fsh(source2);
         assert!(errors2.is_empty(), "Should not have lexer errors");
         
         let codesystem2 = cst2
@@ -3084,7 +3632,7 @@ Parent: Patient
 * birthDate MS SU
 * gender 0..1"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let profile = cst
@@ -3112,7 +3660,7 @@ Parent: Patient
         let source = r#"ValueSet: ComplexVS
 * codes from system "http://snomed.info/sct" where concept is-a #123456 and display regex ".*test.*""#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
         let valueset = cst
@@ -3148,7 +3696,7 @@ Parent: Patient
 * component[0].value 1..1
 * component[1].code 0..1"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
         assert_eq!(cst.text().to_string(), source);
 
@@ -3181,7 +3729,7 @@ Parent: Patient
 * value[x] only dateTime
 * effective only time"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
         assert_eq!(cst.text().to_string(), source);
 
@@ -3225,7 +3773,7 @@ Parent: Patient
 * item.from.code 0..1
 * data.only.text 0..1"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
         assert_eq!(cst.text().to_string(), source);
 
@@ -3270,7 +3818,7 @@ Id: test-extension
 Context: "Patient.name", "Observation.value[x]"
 * value[x] only string"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
         assert_eq!(cst.text().to_string(), source);
 
@@ -3311,7 +3859,7 @@ Id: test-extension
 Context: Patient, #observation
 * value[x] only string"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
         assert_eq!(cst.text().to_string(), source);
 
@@ -3360,7 +3908,7 @@ Parent: Patient
 * item.123.where.code 0..1
 * data.from[+].time 0..*"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         assert!(errors.is_empty(), "Parse errors: {:?}", errors);
         assert_eq!(cst.text().to_string(), source);
 
@@ -3405,7 +3953,7 @@ Parent: Patient
 * component[0].value 1..1
 * invalid..path 0..1"#;
 
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _lexer_errors, errors) = parse_fsh(source);
         // Should parse without lexer errors (parser handles structural issues)
         assert!(errors.is_empty(), "Should not have lexer errors");
         assert_eq!(cst.text().to_string(), source);

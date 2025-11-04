@@ -39,7 +39,7 @@ use super::differential_generator::DifferentialGenerator;
 use super::fhir_types::*;
 use crate::canonical::{CanonicalLoaderError, DefinitionSession};
 use crate::cst::ast::{
-    CardRule, CaretValueRule, ContainsRule, FixedValueRule, FlagRule, ObeysRule, OnlyRule, Profile,
+    CardRule, CaretValueRule, ContainsRule, FixedValueRule, FlagRule, FlagValue, ObeysRule, OnlyRule, Profile,
     Rule, ValueSetRule,
 };
 use crate::semantic::path_resolver::PathResolver;
@@ -736,22 +736,19 @@ impl ProfileExporter {
             .map(|p| p.as_string())
             .ok_or_else(|| ExportError::MissingRequiredField("path".to_string()))?;
 
-        let cardinality = rule
+        let cardinality_node = rule
             .cardinality()
             .ok_or_else(|| ExportError::InvalidCardinality("missing".to_string()))?;
 
-        trace!("Applying cardinality rule: {} {}", path_str, cardinality);
+        trace!("Applying cardinality rule: {} {}", path_str, cardinality_node);
 
-        // Parse cardinality (e.g., "1..1", "0..*")
-        let parts: Vec<&str> = cardinality.split("..").collect();
-        if parts.len() != 2 {
-            return Err(ExportError::InvalidCardinality(cardinality));
-        }
-
-        let min = parts[0]
-            .parse::<u32>()
-            .map_err(|_| ExportError::InvalidCardinality(cardinality.clone()))?;
-        let max = parts[1].to_string();
+        // Use structured cardinality access instead of string parsing
+        let min = cardinality_node
+            .min()
+            .ok_or_else(|| ExportError::InvalidCardinality("missing min".to_string()))?;
+        let max = cardinality_node
+            .max()
+            .ok_or_else(|| ExportError::InvalidCardinality("missing max".to_string()))?;
 
         // Resolve path to element
         let full_path = self.resolve_full_path(structure_def, &path_str).await?;
@@ -771,7 +768,7 @@ impl ProfileExporter {
         element.max = Some(max);
 
         // Also apply flags if present
-        for flag in rule.flags() {
+        for flag in rule.flags_as_strings() {
             self.apply_flag_to_element(element, &flag)?;
         }
 
@@ -801,7 +798,7 @@ impl ProfileExporter {
             }
         })?;
 
-        for flag in rule.flags() {
+        for flag in rule.flags_as_strings() {
             self.apply_flag_to_element(element, &flag)?;
         }
 
@@ -949,8 +946,9 @@ impl ProfileExporter {
     ) -> Result<String, ExportError> {
         // If path already includes resource type, use as-is
         if path.contains('.') {
-            let parts: Vec<&str> = path.split('.').collect();
-            if parts[0] == structure_def.type_field {
+            // Use structured path parsing instead of string splitting
+            let first_segment = path.split('.').next().unwrap_or("");
+            if first_segment == structure_def.type_field {
                 return Ok(path.to_string());
             }
         }
@@ -1293,19 +1291,18 @@ impl ProfileExporter {
 
                         let mut element = ElementDefinition::new(full_path.clone());
 
-                        // Parse cardinality
-                        if let Some(card_str) = card_rule.cardinality() {
-                            let parts: Vec<&str> = card_str.split("..").collect();
-                            if parts.len() == 2 {
-                                if let Ok(min) = parts[0].parse::<u32>() {
-                                    element.min = Some(min);
-                                }
-                                element.max = Some(parts[1].to_string());
+                        // Use structured cardinality access
+                        if let Some(cardinality_node) = card_rule.cardinality() {
+                            if let Some(min) = cardinality_node.min() {
+                                element.min = Some(min);
+                            }
+                            if let Some(max) = cardinality_node.max() {
+                                element.max = Some(max);
                             }
                         }
 
                         // Check for MS flag
-                        if card_rule.flags().contains(&"MS".to_string()) {
+                        if card_rule.flags().contains(&FlagValue::MustSupport) {
                             element.must_support = Some(true);
                         }
 
@@ -1327,14 +1324,14 @@ impl ProfileExporter {
                             .find(|e| e.path == full_path)
                         {
                             // Update existing element
-                            if flag_rule.flags().contains(&"MS".to_string()) {
+                            if flag_rule.flags().contains(&FlagValue::MustSupport) {
                                 existing.must_support = Some(true);
                             }
                         } else {
                             // Create new element
                             let mut element = ElementDefinition::new(full_path.clone());
 
-                            if flag_rule.flags().contains(&"MS".to_string()) {
+                            if flag_rule.flags().contains(&FlagValue::MustSupport) {
                                 element.must_support = Some(true);
                             }
 

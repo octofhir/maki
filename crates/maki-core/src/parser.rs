@@ -58,7 +58,7 @@ impl FshParser {
         let source: Arc<str> = Arc::from(content);
 
         // Use CST parser exclusively
-        let (cst, lex_errors) = crate::cst::parse_fsh(&source);
+        let (cst, lex_errors, _parse_errors) = crate::cst::parse_fsh(&source);
 
         // Convert lexer errors to ParseError
         let mut errors = Vec::new();

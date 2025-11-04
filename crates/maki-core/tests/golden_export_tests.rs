@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 /// Helper to parse FSH and extract profiles
 fn parse_profiles(fsh_source: &str) -> Vec<Profile> {
-    let (cst, _errors) = parse_fsh(fsh_source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(fsh_source);
     let root = Document::cast(cst).expect("Failed to cast to Document");
 
     root.profiles().collect()
@@ -26,7 +26,7 @@ fn parse_profiles(fsh_source: &str) -> Vec<Profile> {
 
 /// Helper to parse FSH and extract extensions
 fn parse_extensions(fsh_source: &str) -> Vec<Extension> {
-    let (cst, _errors) = parse_fsh(fsh_source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(fsh_source);
     let root = Document::cast(cst).expect("Failed to cast to Document");
 
     root.extensions().collect()
@@ -34,7 +34,7 @@ fn parse_extensions(fsh_source: &str) -> Vec<Extension> {
 
 /// Helper to parse FSH and extract valuesets
 fn parse_valuesets(fsh_source: &str) -> Vec<ValueSet> {
-    let (cst, _errors) = parse_fsh(fsh_source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(fsh_source);
     let root = Document::cast(cst).expect("Failed to cast to Document");
 
     root.value_sets().collect()
@@ -42,7 +42,7 @@ fn parse_valuesets(fsh_source: &str) -> Vec<ValueSet> {
 
 /// Helper to parse FSH and extract codesystems
 fn parse_codesystems(fsh_source: &str) -> Vec<CodeSystem> {
-    let (cst, _errors) = parse_fsh(fsh_source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(fsh_source);
     let root = Document::cast(cst).expect("Failed to cast to Document");
 
     root.code_systems().collect()
@@ -50,7 +50,7 @@ fn parse_codesystems(fsh_source: &str) -> Vec<CodeSystem> {
 
 /// Helper to parse FSH and extract instances
 fn parse_instances(fsh_source: &str) -> Vec<Instance> {
-    let (cst, _errors) = parse_fsh(fsh_source);
+    let (cst, _lexer_errors, _errors) = parse_fsh(fsh_source);
     let root = Document::cast(cst).expect("Failed to cast to Document");
 
     root.instances().collect()

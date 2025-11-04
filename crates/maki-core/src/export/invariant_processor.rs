@@ -169,7 +169,7 @@ Expression: "telecom or name"
 Severity: #error
 "#;
 
-        let (syntax, _errors) = parse_fsh(source);
+        let (syntax, _lexer_errors, _errors) = parse_fsh(source);
         let doc = Document::cast(syntax).expect("Expected document");
         let invariant = doc.invariants().next().expect("Expected invariant");
 
@@ -192,7 +192,7 @@ Description: "Must have focus or specimen"
 Expression: "focus.exists() or specimen.exists()"
 "#;
 
-        let (syntax, _errors) = parse_fsh(source);
+        let (syntax, _lexer_errors, _errors) = parse_fsh(source);
         let doc = Document::cast(syntax).expect("Expected document");
         let invariant = doc.invariants().next().expect("Expected invariant");
 
@@ -222,7 +222,7 @@ Expression: "value2.exists()"
 Severity: #warning
 "#;
 
-        let (syntax, _errors) = parse_fsh(source);
+        let (syntax, _lexer_errors, _errors) = parse_fsh(source);
         let doc = Document::cast(syntax).expect("Expected document");
 
         let constraints = InvariantProcessor::process_all(doc.invariants());

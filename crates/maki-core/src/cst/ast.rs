@@ -8,7 +8,7 @@
 //! ```ignore
 //! use maki_core::cst::{parse_fsh, ast::Profile};
 //!
-//! let (cst, _) = parse_fsh("Profile: MyPatient\nParent: Patient");
+//! let (cst, _lexer_errors, _) = parse_fsh("Profile: MyPatient\nParent: Patient");
 //! let profile = Profile::cast(cst.first_child().unwrap()).unwrap();
 //!
 //! assert_eq!(profile.name().unwrap(), "MyPatient");
@@ -16,6 +16,84 @@
 //! ```
 
 use super::{FshSyntaxKind, FshSyntaxNode, FshSyntaxToken};
+
+/// Flag values for FSH rules
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum FlagValue {
+    /// Must Support (MS)
+    MustSupport,
+    /// Summary (SU)
+    Summary,
+    /// Trial Use (TU)
+    TrialUse,
+    /// Normative (N)
+    Normative,
+    /// Draft (D)
+    Draft,
+    /// Modifier (?!)
+    Modifier,
+}
+
+impl FlagValue {
+    /// Convert from syntax kind to flag value
+    pub fn from_syntax_kind(kind: FshSyntaxKind) -> Option<Self> {
+        match kind {
+            FshSyntaxKind::MsFlag => Some(FlagValue::MustSupport),
+            FshSyntaxKind::SuFlag => Some(FlagValue::Summary),
+            FshSyntaxKind::TuFlag => Some(FlagValue::TrialUse),
+            FshSyntaxKind::NFlag => Some(FlagValue::Normative),
+            FshSyntaxKind::DFlag => Some(FlagValue::Draft),
+            FshSyntaxKind::ModifierFlag => Some(FlagValue::Modifier),
+            _ => None,
+        }
+    }
+
+    /// Convert to string representation
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FlagValue::MustSupport => "MS",
+            FlagValue::Summary => "SU",
+            FlagValue::TrialUse => "TU",
+            FlagValue::Normative => "N",
+            FlagValue::Draft => "D",
+            FlagValue::Modifier => "?!",
+        }
+    }
+
+    /// Check for flag conflicts (some flags are mutually exclusive)
+    pub fn conflicts_with(&self, other: &FlagValue) -> bool {
+        match (self, other) {
+            // Normative, Trial Use, and Draft are mutually exclusive
+            (FlagValue::Normative, FlagValue::TrialUse) => true,
+            (FlagValue::Normative, FlagValue::Draft) => true,
+            (FlagValue::TrialUse, FlagValue::Normative) => true,
+            (FlagValue::TrialUse, FlagValue::Draft) => true,
+            (FlagValue::Draft, FlagValue::Normative) => true,
+            (FlagValue::Draft, FlagValue::TrialUse) => true,
+            _ => false,
+        }
+    }
+}
+
+impl std::fmt::Display for FlagValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// Helper trait to join FlagValue vectors
+pub trait FlagValueJoin {
+    fn join(&self, separator: &str) -> String;
+}
+
+impl FlagValueJoin for Vec<FlagValue> {
+    fn join(&self, separator: &str) -> String {
+        self.iter()
+            .map(|f| f.as_str())
+            .collect::<Vec<_>>()
+            .join(separator)
+    }
+}
 
 /// Helper trait for casting CST nodes to typed wrappers
 pub trait AstNode: Sized {
@@ -632,6 +710,7 @@ impl AstNode for VsFilterDefinition {
 }
 
 impl VsFilterDefinition {
+    /// Get the filter property name
     pub fn property(&self) -> Option<String> {
         self.syntax
             .children_with_tokens()
@@ -640,13 +719,41 @@ impl VsFilterDefinition {
             .map(|t| t.text().to_string())
     }
 
+    /// Get the filter operator as a structured node
     pub fn operator(&self) -> Option<VsFilterOperator> {
         child_of_kind(&self.syntax, FshSyntaxKind::VsFilterOperator)
             .and_then(VsFilterOperator::cast)
     }
 
+    /// Get the filter operator as a string
+    pub fn operator_string(&self) -> Option<String> {
+        self.operator().map(|op| op.text())
+    }
+
+    /// Get the filter value as a structured node
     pub fn value(&self) -> Option<VsFilterValue> {
         child_of_kind(&self.syntax, FshSyntaxKind::VsFilterValue).and_then(VsFilterValue::cast)
+    }
+
+    /// Get the filter value as a string
+    pub fn value_string(&self) -> Option<String> {
+        self.value().map(|val| val.text())
+    }
+
+    /// Get chained filters (connected by "and")
+    pub fn chained_filters(&self) -> Vec<VsFilterDefinition> {
+        // Look for sibling VsFilterDefinition nodes
+        let mut filters = Vec::new();
+        let mut current = self.syntax.next_sibling();
+        
+        while let Some(node) = current {
+            if let Some(filter) = VsFilterDefinition::cast(node.clone()) {
+                filters.push(filter);
+            }
+            current = node.next_sibling();
+        }
+        
+        filters
     }
 }
 
@@ -1758,35 +1865,32 @@ impl CardRule {
             .and_then(Path::cast)
     }
 
-    pub fn cardinality(&self) -> Option<String> {
-        // Find NUMBER..NUMBER or NUMBER..* pattern
-        let text = self.syntax.text().to_string();
-        // Simple extraction: look for pattern like "0..1" or "1..*"
-        if let Some(pos) = text.find("..") {
-            let start = text[..pos].split_whitespace().last()?;
-            let end = text[pos + 2..].split_whitespace().next()?;
-            Some(format!("{start}..{end}"))
-        } else {
-            None
-        }
+    /// Get the cardinality as a structured CardinalityNode
+    pub fn cardinality(&self) -> Option<CardinalityNode> {
+        self.syntax
+            .children()
+            .find_map(CardinalityNode::cast)
     }
 
-    pub fn flags(&self) -> Vec<String> {
+    /// Get the cardinality as a string (for backward compatibility)
+    pub fn cardinality_string(&self) -> Option<String> {
+        self.cardinality().map(|c| c.as_string())
+    }
+
+    /// Get all flag values as structured FlagValue enum
+    pub fn flags(&self) -> Vec<FlagValue> {
         self.syntax
             .children_with_tokens()
             .filter_map(|e| e.into_token())
-            .filter(|t| {
-                matches!(
-                    t.kind(),
-                    FshSyntaxKind::MsFlag
-                        | FshSyntaxKind::SuFlag
-                        | FshSyntaxKind::TuFlag
-                        | FshSyntaxKind::NFlag
-                        | FshSyntaxKind::DFlag
-                        | FshSyntaxKind::ModifierFlag
-                )
-            })
-            .map(|t| t.text().to_string())
+            .filter_map(|t| FlagValue::from_syntax_kind(t.kind()))
+            .collect()
+    }
+
+    /// Get flag values as strings (for backward compatibility)
+    pub fn flags_as_strings(&self) -> Vec<String> {
+        self.flags()
+            .into_iter()
+            .map(|f| f.as_str().to_string())
             .collect()
     }
 }
@@ -1824,23 +1928,50 @@ impl FlagRule {
             .and_then(Path::cast)
     }
 
-    pub fn flags(&self) -> Vec<String> {
+    /// Get all flag values as structured FlagValue enum
+    pub fn flags(&self) -> Vec<FlagValue> {
         self.syntax
             .children_with_tokens()
             .filter_map(|e| e.into_token())
-            .filter(|t| {
-                matches!(
-                    t.kind(),
-                    FshSyntaxKind::MsFlag
-                        | FshSyntaxKind::SuFlag
-                        | FshSyntaxKind::TuFlag
-                        | FshSyntaxKind::NFlag
-                        | FshSyntaxKind::DFlag
-                        | FshSyntaxKind::ModifierFlag
-                )
-            })
-            .map(|t| t.text().to_string())
+            .filter_map(|t| FlagValue::from_syntax_kind(t.kind()))
             .collect()
+    }
+
+    /// Get flag values as strings (for backward compatibility)
+    pub fn flags_as_strings(&self) -> Vec<String> {
+        self.flags()
+            .into_iter()
+            .map(|f| f.as_str().to_string())
+            .collect()
+    }
+
+    /// Check if flags have any conflicts
+    pub fn has_flag_conflicts(&self) -> bool {
+        let flags = self.flags();
+        for (i, flag1) in flags.iter().enumerate() {
+            for flag2 in flags.iter().skip(i + 1) {
+                if flag1.conflicts_with(flag2) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Get conflicting flag pairs
+    pub fn flag_conflicts(&self) -> Vec<(FlagValue, FlagValue)> {
+        let flags = self.flags();
+        let mut conflicts = Vec::new();
+        
+        for (i, flag1) in flags.iter().enumerate() {
+            for flag2 in flags.iter().skip(i + 1) {
+                if flag1.conflicts_with(flag2) {
+                    conflicts.push((flag1.clone(), flag2.clone()));
+                }
+            }
+        }
+        
+        conflicts
     }
 }
 
@@ -1877,6 +2008,17 @@ impl ValueSetRule {
             .and_then(Path::cast)
     }
 
+    /// Get ValueSet components (structured access)
+    pub fn value_set_components(&self) -> impl Iterator<Item = VsComponent> + '_ {
+        self.syntax.children().filter_map(VsComponent::cast)
+    }
+
+    /// Get ValueSet filter definitions (structured access)
+    pub fn filter_definitions(&self) -> impl Iterator<Item = VsFilterDefinition> + '_ {
+        self.syntax.children().filter_map(VsFilterDefinition::cast)
+    }
+
+    /// Get the ValueSet name/URL (for backward compatibility)
     pub fn value_set(&self) -> Option<String> {
         // ValueSet can be:
         // 1. A simple identifier: "MyValueSet"
@@ -2274,22 +2416,25 @@ impl AddElementRule {
         }
     }
 
-    /// Get the flags (MS, SU, TU, etc.)
-    pub fn flags(&self) -> Vec<String> {
+    /// Get the cardinality as a string (for backward compatibility)
+    pub fn cardinality_string(&self) -> Option<String> {
+        self.cardinality()
+    }
+
+    /// Get all flag values as structured FlagValue enum
+    pub fn flags(&self) -> Vec<FlagValue> {
         self.syntax
             .children_with_tokens()
             .filter_map(|e| e.into_token())
-            .filter(|t| {
-                matches!(
-                    t.kind(),
-                    FshSyntaxKind::MsFlag
-                        | FshSyntaxKind::SuFlag
-                        | FshSyntaxKind::TuFlag
-                        | FshSyntaxKind::NFlag
-                        | FshSyntaxKind::DFlag
-                )
-            })
-            .map(|t| t.text().trim().to_string())
+            .filter_map(|t| FlagValue::from_syntax_kind(t.kind()))
+            .collect()
+    }
+
+    /// Get flag values as strings (for backward compatibility)
+    pub fn flags_as_strings(&self) -> Vec<String> {
+        self.flags()
+            .into_iter()
+            .map(|f| f.as_str().to_string())
             .collect()
     }
 
@@ -2565,6 +2710,16 @@ impl AstNode for CodeCaretValueRule {
 }
 
 impl CodeCaretValueRule {
+    /// Get the code value (first code in the rule)
+    pub fn code_value(&self) -> Option<String> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|c| c.into_token())
+            .find(|t| t.kind() == FshSyntaxKind::Code)
+            .map(|t| t.text().trim_start_matches('#').to_string())
+    }
+
+    /// Get all codes in the rule
     pub fn codes(&self) -> Vec<String> {
         self.syntax
             .children_with_tokens()
@@ -2574,10 +2729,17 @@ impl CodeCaretValueRule {
             .collect()
     }
 
+    /// Get the caret path (^property)
     pub fn caret_path(&self) -> Option<Path> {
         child_of_kind(&self.syntax, FshSyntaxKind::Path).and_then(Path::cast)
     }
 
+    /// Get the assigned value
+    pub fn assigned_value(&self) -> Option<String> {
+        self.value()
+    }
+
+    /// Get the assigned value (alias for backward compatibility)
     pub fn value(&self) -> Option<String> {
         let mut after_equals = false;
 
@@ -2640,6 +2802,16 @@ impl AstNode for CodeInsertRule {
 }
 
 impl CodeInsertRule {
+    /// Get the code value (first code in the rule)
+    pub fn code_value(&self) -> Option<String> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|c| c.into_token())
+            .find(|t| t.kind() == FshSyntaxKind::Code)
+            .map(|t| t.text().trim_start_matches('#').to_string())
+    }
+
+    /// Get all codes in the rule
     pub fn codes(&self) -> Vec<String> {
         self.syntax
             .children_with_tokens()
@@ -2649,6 +2821,12 @@ impl CodeInsertRule {
             .collect()
     }
 
+    /// Get the ruleset reference
+    pub fn ruleset_reference(&self) -> Option<String> {
+        self.rule_set()
+    }
+
+    /// Get the ruleset reference (alias for backward compatibility)
     pub fn rule_set(&self) -> Option<String> {
         self.syntax
             .children_with_tokens()
@@ -2756,8 +2934,13 @@ impl Path {
         self.syntax.text().to_string().trim().to_string()
     }
 
-    /// Get path segments (split by '.')
-    pub fn segments(&self) -> Vec<String> {
+    /// Get path segments as structured PathSegment nodes
+    pub fn segments(&self) -> impl Iterator<Item = PathSegment> + '_ {
+        self.syntax.children().filter_map(PathSegment::cast)
+    }
+
+    /// Get path segments as strings (for backward compatibility)
+    pub fn segments_as_strings(&self) -> Vec<String> {
         let text = self.syntax.text().to_string().trim().to_string();
         if text == "." {
             return vec![".".to_string()];
@@ -2792,6 +2975,201 @@ impl Path {
         segments
     }
 }
+
+// ============================================================================
+// CardinalityNode
+// ============================================================================
+
+/// Cardinality node representing min..max or single value
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CardinalityNode {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for CardinalityNode {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::CardinalityNode
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl CardinalityNode {
+    /// Get the minimum cardinality value
+    pub fn min(&self) -> Option<u32> {
+        // Find the first number token
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+            .find(|token| token.kind() == FshSyntaxKind::Integer)
+            .and_then(|token| token.text().parse().ok())
+    }
+
+    /// Get the maximum cardinality value as string (handles "*" for unbounded)
+    pub fn max(&self) -> Option<String> {
+        let mut found_range = false;
+        
+        for child in self.syntax.children_with_tokens() {
+            if let Some(token) = child.into_token() {
+                match token.kind() {
+                    FshSyntaxKind::Range => {
+                        found_range = true;
+                    }
+                    FshSyntaxKind::Integer if found_range => {
+                        return Some(token.text().to_string());
+                    }
+                    FshSyntaxKind::Asterisk if found_range => {
+                        return Some("*".to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        // If no range found, max equals min (single value cardinality)
+        if !found_range {
+            self.min().map(|m| m.to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Check if this is unbounded cardinality (max = "*")
+    pub fn is_unbounded(&self) -> bool {
+        self.max().map_or(false, |max| max == "*")
+    }
+
+    /// Get the full cardinality as a string (e.g., "0..1", "1..*", "5")
+    pub fn as_string(&self) -> String {
+        if let (Some(min), Some(max)) = (self.min(), self.max()) {
+            if min.to_string() == max {
+                // Single value cardinality
+                min.to_string()
+            } else {
+                // Range cardinality
+                format!("{}..{}", min, max)
+            }
+        } else {
+            // Fallback to raw text
+            self.syntax.text().to_string().trim().to_string()
+        }
+    }
+
+    /// Check if cardinality contains a specific string (for backward compatibility)
+    pub fn contains(&self, s: &str) -> bool {
+        self.as_string().contains(s)
+    }
+}
+
+impl std::fmt::Display for CardinalityNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_string())
+    }
+}
+
+impl Default for CardinalityNode {
+    fn default() -> Self {
+        // Create a minimal CardinalityNode with empty syntax
+        // This is a fallback for when no cardinality is specified
+        use rowan::GreenNodeBuilder;
+        let mut builder = GreenNodeBuilder::new();
+        builder.start_node(FshSyntaxKind::CardinalityNode.into());
+        builder.token(FshSyntaxKind::Integer.into(), "1");
+        builder.finish_node();
+        
+        let green = builder.finish();
+        let syntax = FshSyntaxNode::new_root(green);
+        CardinalityNode { syntax }
+    }
+}
+
+// ============================================================================
+// PathSegment
+// ============================================================================
+
+/// Individual path segment (identifier, number, keyword, etc.)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathSegment {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for PathSegment {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::PathSegment
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl PathSegment {
+    /// Get the identifier text of this path segment
+    pub fn identifier(&self) -> Option<String> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+            .find(|token| {
+                matches!(
+                    token.kind(),
+                    FshSyntaxKind::Ident
+                        | FshSyntaxKind::Integer
+                        | FshSyntaxKind::DateTime
+                        | FshSyntaxKind::Time
+                        // Add other alpha keywords as needed
+                )
+            })
+            .map(|token| token.text().to_string())
+    }
+
+    /// Check if this path segment is numeric
+    pub fn is_numeric(&self) -> bool {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+            .any(|token| token.kind() == FshSyntaxKind::Integer)
+    }
+
+    /// Check if this path segment is a datetime
+    pub fn is_datetime(&self) -> bool {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+            .any(|token| token.kind() == FshSyntaxKind::DateTime)
+    }
+
+    /// Check if this path segment is a time
+    pub fn is_time(&self) -> bool {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|child| child.into_token())
+            .any(|token| token.kind() == FshSyntaxKind::Time)
+    }
+
+    /// Get the raw text of this path segment
+    pub fn text(&self) -> String {
+        self.syntax.text().to_string().trim().to_string()
+    }
+}
+
 // ============================================================================
 // Value Expression Nodes
 // ============================================================================

@@ -9,7 +9,7 @@ Extension: TestExt
 * extension contains subExt1 0..1 MS and subExt2 1..1
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     println!("=== FULL DOCUMENT ===");
@@ -54,7 +54,7 @@ Extension: TestExt
     subExt2 1..1
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     println!("=== MULTILINE FULL DOCUMENT ===");

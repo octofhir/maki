@@ -38,7 +38,7 @@ Description: "An extension for patients"
 * value[x] only string
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -124,7 +124,7 @@ Description: "Race extension"
 * extension[text].value[x] only string
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -174,7 +174,7 @@ Description: "A test extension with metadata"
 * value[x] only boolean
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -216,7 +216,7 @@ Title: "Minimal Extension"
 * value[x] only string
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -252,7 +252,7 @@ Id: valid-ext
 * value[x] only string
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -286,7 +286,7 @@ Id: patient-only-ext
 * value[x] only string
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -325,7 +325,7 @@ Id: multi-context-ext
 * value[x] only boolean
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -368,7 +368,7 @@ Id: string-ext
 * value[x] only string
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -416,7 +416,7 @@ Id: cardinality-ext
 * value[x] only integer
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -461,7 +461,7 @@ Id: complex-ext
 
     println!("Testing FSH:\n{}", fsh);
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -516,7 +516,7 @@ Id: version-test-ext
 * value[x] only string
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -551,7 +551,7 @@ Id: versioned-ext
 * value[x] only string
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -588,7 +588,7 @@ Id: multiline-ext
 * value[x] 0..0
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -649,7 +649,7 @@ Id: complex-context-ext
 * value[x] only string
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -709,7 +709,7 @@ Id: multi-context-plus-ext
 * value[x] only string
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -761,7 +761,7 @@ Id: multi-context-numeric-ext
 * value[x] only boolean
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -815,7 +815,7 @@ Id: mixed-context-ext
 * value[x] only integer
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");

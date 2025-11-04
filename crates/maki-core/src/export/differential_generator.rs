@@ -465,7 +465,7 @@ impl RuleProcessor {
         })?;
 
         let cardinality =
-            rule.cardinality()
+            rule.cardinality_string()
                 .ok_or_else(|| DifferentialError::InvalidCardinality {
                     cardinality: "missing".to_string(),
                     path: path_str.clone(),
@@ -530,7 +530,7 @@ impl RuleProcessor {
         element.max = Some(max);
 
         // Apply any flags with proper merging
-        for flag in rule.flags() {
+        for flag in rule.flags_as_strings() {
             self.apply_flag_to_element(element, &flag)?;
         }
 
@@ -565,7 +565,7 @@ impl RuleProcessor {
             }
         })?;
 
-        let flags = rule.flags();
+        let flags = rule.flags_as_strings();
         if flags.is_empty() {
             return Err(DifferentialError::RuleProcessing {
                 rule: "FlagRule".to_string(),
@@ -587,7 +587,7 @@ impl RuleProcessor {
             self.apply_flag_to_element_with_merging(element, &flag, &full_path)?;
         }
 
-        debug!("Applied flags {:?} to {}", rule.flags(), full_path);
+        debug!("Applied flags {:?} to {}", rule.flags_as_strings(), full_path);
 
         Ok(())
     }

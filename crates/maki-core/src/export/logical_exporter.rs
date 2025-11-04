@@ -27,7 +27,7 @@
 use super::ExportError;
 use super::fhir_types::*;
 use crate::canonical::DefinitionSession;
-use crate::cst::ast::{CardRule, FixedValueRule, FlagRule, Logical, Resource, Rule, ValueSetRule};
+use crate::cst::ast::{CardRule, CardinalityNode, FixedValueRule, FlagRule, Logical, Resource, Rule, ValueSetRule};
 use crate::semantic::path_resolver::PathResolver;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -369,21 +369,16 @@ impl LogicalExporter {
             .map(|p| p.as_string())
             .ok_or_else(|| ExportError::MissingRequiredField("path".to_string()))?;
 
-        let cardinality = rule
+        let cardinality_node = rule
             .cardinality()
             .ok_or_else(|| ExportError::InvalidCardinality("missing".to_string()))?;
 
-        trace!("Applying cardinality rule: {} {}", path_str, cardinality);
+        trace!("Applying cardinality rule: {} {}", path_str, cardinality_node);
 
-        let parts: Vec<&str> = cardinality.split("..").collect();
-        if parts.len() != 2 {
-            return Err(ExportError::InvalidCardinality(cardinality));
-        }
-
-        let min = parts[0]
-            .parse::<u32>()
-            .map_err(|_| ExportError::InvalidCardinality(cardinality.clone()))?;
-        let max = parts[1].to_string();
+        let min = CardinalityNode::min(&cardinality_node)
+            .ok_or_else(|| ExportError::InvalidCardinality("missing min".to_string()))?;
+        let max = CardinalityNode::max(&cardinality_node)
+            .ok_or_else(|| ExportError::InvalidCardinality("missing max".to_string()))?;
 
         let full_path = self.resolve_full_path(structure_def, &path_str).await?;
         let type_name = structure_def.name.clone();
@@ -400,7 +395,7 @@ impl LogicalExporter {
         element.min = Some(min);
         element.max = Some(max);
 
-        for flag in rule.flags() {
+        for flag in rule.flags_as_strings() {
             self.apply_flag_to_element(element, &flag)?;
         }
 
@@ -430,7 +425,7 @@ impl LogicalExporter {
             }
         })?;
 
-        for flag in rule.flags() {
+        for flag in rule.flags_as_strings() {
             self.apply_flag_to_element(element, &flag)?;
         }
 
@@ -570,7 +565,7 @@ impl LogicalExporter {
             .ok_or_else(|| ExportError::MissingRequiredField("path".to_string()))?;
 
         let cardinality = rule
-            .cardinality()
+            .cardinality_string()
             .ok_or_else(|| ExportError::MissingRequiredField("cardinality".to_string()))?;
 
         let types = rule.types();
@@ -585,16 +580,19 @@ impl LogicalExporter {
 
         debug!("Adding new element: {} with type(s): {:?}", path_str, types);
 
-        // Parse cardinality
-        let parts: Vec<&str> = cardinality.split("..").collect();
-        if parts.len() != 2 {
+        // Parse cardinality using structured approach
+        let (min, max) = if let Some(range_pos) = cardinality.find("..") {
+            let min_str = cardinality[..range_pos].trim();
+            let max_str = cardinality[range_pos + 2..].trim();
+            
+            let min = min_str
+                .parse::<u32>()
+                .map_err(|_| ExportError::InvalidCardinality(cardinality.clone()))?;
+            let max = max_str.to_string();
+            (min, max)
+        } else {
             return Err(ExportError::InvalidCardinality(cardinality));
-        }
-
-        let min = parts[0]
-            .parse::<u32>()
-            .map_err(|_| ExportError::InvalidCardinality(cardinality.clone()))?;
-        let max = parts[1].to_string();
+        };
 
         // Build full path
         let full_path = self.resolve_full_path(structure_def, &path_str).await?;
@@ -625,7 +623,7 @@ impl LogicalExporter {
         }
 
         // Apply flags
-        for flag in rule.flags() {
+        for flag in rule.flags_as_strings() {
             self.apply_flag_to_element(&mut element, &flag)?;
         }
 
@@ -654,9 +652,10 @@ impl LogicalExporter {
         path: &str,
     ) -> Result<String, ExportError> {
         if path.contains('.') {
-            let parts: Vec<&str> = path.split('.').collect();
-            if parts[0] == structure_def.type_field {
-                return Ok(path.to_string());
+            if let Some(first_segment) = path.split('.').next() {
+                if first_segment == structure_def.type_field {
+                    return Ok(path.to_string());
+                }
             }
         }
 

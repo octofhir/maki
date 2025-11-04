@@ -671,12 +671,9 @@ impl ExtensionExporter {
 
                         // Root extension cardinality
                         if path_str == "." || path_str.is_empty() {
-                            if let Some(cardinality) = card_rule.cardinality() {
-                                let parts: Vec<&str> = cardinality.split("..").collect();
-                                if parts.len() == 2 {
-                                    if let Ok(min) = parts[0].parse::<u32>() {
-                                        extension_cardinality = Some((min, parts[1].to_string()));
-                                    }
+                            if let Some(cardinality_node) = card_rule.cardinality() {
+                                if let (Some(min), Some(max)) = (cardinality_node.min(), cardinality_node.max()) {
+                                    extension_cardinality = Some((min, max));
                                 }
                             }
                         }
@@ -690,12 +687,9 @@ impl ExtensionExporter {
                         }
                     } else {
                         // No path means root element (.)
-                        if let Some(cardinality) = card_rule.cardinality() {
-                            let parts: Vec<&str> = cardinality.split("..").collect();
-                            if parts.len() == 2 {
-                                if let Ok(min) = parts[0].parse::<u32>() {
-                                    extension_cardinality = Some((min, parts[1].to_string()));
-                                }
+                        if let Some(cardinality_node) = card_rule.cardinality() {
+                            if let (Some(min), Some(max)) = (cardinality_node.min(), cardinality_node.max()) {
+                                extension_cardinality = Some((min, max));
                             }
                         }
                     }
@@ -1154,8 +1148,7 @@ impl ExtensionExporter {
             debug!("Processing contains part: '{}'", part);
 
             // Extract the extension name (first word before any cardinality or flags)
-            let words: Vec<&str> = part.split_whitespace().collect();
-            if let Some(first_word) = words.first() {
+            if let Some(first_word) = part.split_whitespace().next() {
                 let first_word = first_word.trim();
 
                 // Skip empty words, cardinality patterns, and flags
@@ -1191,8 +1184,7 @@ impl ExtensionExporter {
                 debug!("Processing part: '{}'", part);
 
                 // Extract the first word (extension name) before any cardinality or flags
-                let words: Vec<&str> = part.split_whitespace().collect();
-                if let Some(first_word) = words.first() {
+                if let Some(first_word) = part.split_whitespace().next() {
                     let first_word = first_word.trim();
                     if !first_word.is_empty()
                         && !first_word.starts_with('*')
@@ -1424,22 +1416,19 @@ impl ExtensionExporter {
             .map(|p| p.as_string())
             .ok_or_else(|| ExportError::MissingRequiredField("path".to_string()))?;
 
-        let cardinality = rule
+        let cardinality_node = rule
             .cardinality()
             .ok_or_else(|| ExportError::InvalidCardinality("missing".to_string()))?;
 
-        trace!("Applying cardinality rule: {} {}", path_str, cardinality);
+        trace!("Applying cardinality rule: {} {}", path_str, cardinality_node);
 
-        // Parse cardinality (e.g., "1..1", "0..*")
-        let parts: Vec<&str> = cardinality.split("..").collect();
-        if parts.len() != 2 {
-            return Err(ExportError::InvalidCardinality(cardinality));
-        }
-
-        let min = parts[0]
-            .parse::<u32>()
-            .map_err(|_| ExportError::InvalidCardinality(cardinality.clone()))?;
-        let max = parts[1].to_string();
+        // Use structured cardinality access
+        let min = cardinality_node
+            .min()
+            .ok_or_else(|| ExportError::InvalidCardinality("missing min".to_string()))?;
+        let max = cardinality_node
+            .max()
+            .ok_or_else(|| ExportError::InvalidCardinality("missing max".to_string()))?;
 
         // Resolve path to element
         let full_path = self.resolve_full_path(structure_def, &path_str).await?;
@@ -1459,7 +1448,7 @@ impl ExtensionExporter {
         element.max = Some(max);
 
         // Also apply flags if present
-        for flag in rule.flags() {
+        for flag in rule.flags_as_strings() {
             self.apply_flag_to_element(element, &flag)?;
         }
 
@@ -1489,7 +1478,7 @@ impl ExtensionExporter {
             }
         })?;
 
-        for flag in rule.flags() {
+        for flag in rule.flags_as_strings() {
             self.apply_flag_to_element(element, &flag)?;
         }
 
@@ -1629,9 +1618,10 @@ impl ExtensionExporter {
     ) -> Result<String, ExportError> {
         // If path already includes resource type, use as-is
         if path.contains('.') {
-            let parts: Vec<&str> = path.split('.').collect();
-            if parts[0] == structure_def.type_field {
-                return Ok(path.to_string());
+            if let Some(first_segment) = path.split('.').next() {
+                if first_segment == structure_def.type_field {
+                    return Ok(path.to_string());
+                }
             }
         }
 

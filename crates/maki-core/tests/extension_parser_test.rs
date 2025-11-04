@@ -20,7 +20,7 @@ Id: multiline-ext
 * value[x] 0..0
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     // Debug: print the full document structure
@@ -126,7 +126,7 @@ Id: complex-context-ext
 * value[x] only string
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -242,7 +242,7 @@ Description: "A simple extension"
 * value[x] only string
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");

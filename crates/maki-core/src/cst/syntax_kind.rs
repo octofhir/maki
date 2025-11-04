@@ -363,6 +363,8 @@ pub enum FshSyntaxKind {
     Path = 332,
     /// Individual path segment
     PathSegment = 340,
+    /// Cardinality node (min..max)
+    CardinalityNode = 341,
     /// Code reference (#code or system#code)
     CodeRef = 333,
     /// Type reference

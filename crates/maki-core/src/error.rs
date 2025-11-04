@@ -13,6 +13,30 @@ pub enum MakiError {
         location: Box<crate::diagnostics::Location>,
     },
 
+    /// Specific syntax error types for better error reporting
+    #[error("Unclosed parameter bracket at line {line}, column {col}")]
+    UnclosedParameterBracket { line: u32, col: u32 },
+
+    #[error("Invalid grammar construct: {construct} at line {line}, column {col}")]
+    InvalidGrammarConstruct {
+        construct: String,
+        line: u32,
+        col: u32,
+    },
+
+    #[error("Malformed escape sequence: {sequence} at line {line}, column {col}")]
+    MalformedEscapeSequence {
+        sequence: String,
+        line: u32,
+        col: u32,
+    },
+
+    #[error("Recursive RuleSet insertion detected: {ruleset_chain}")]
+    RecursiveRuleSetInsertion { ruleset_chain: String },
+
+    #[error("Circular dependency in RuleSet: {dependency_chain}")]
+    CircularRuleSetDependency { dependency_chain: String },
+
     /// Configuration loading or validation errors
     #[error("Configuration error: {message}")]
     ConfigError { message: String },
@@ -105,6 +129,11 @@ impl MakiError {
             MakiError::AutofixError { .. } => ErrorKind::Autofix,
             MakiError::ResourceLimit { .. } => ErrorKind::ResourceLimit,
             MakiError::InternalError { .. } => ErrorKind::Internal,
+            MakiError::UnclosedParameterBracket { .. } => ErrorKind::Parse,
+            MakiError::InvalidGrammarConstruct { .. } => ErrorKind::Parse,
+            MakiError::MalformedEscapeSequence { .. } => ErrorKind::Parse,
+            MakiError::RecursiveRuleSetInsertion { .. } => ErrorKind::Parse,
+            MakiError::CircularRuleSetDependency { .. } => ErrorKind::Parse,
         }
     }
 
@@ -166,6 +195,51 @@ impl MakiError {
         Self::ParseError {
             message: message.into(),
             location: Box::new(crate::diagnostics::Location::default()),
+        }
+    }
+
+    /// Create an unclosed parameter bracket error
+    pub fn unclosed_parameter_bracket(line: u32, col: u32) -> Self {
+        Self::UnclosedParameterBracket { line, col }
+    }
+
+    /// Create an invalid grammar construct error
+    pub fn invalid_grammar_construct(
+        construct: impl Into<String>,
+        line: u32,
+        col: u32,
+    ) -> Self {
+        Self::InvalidGrammarConstruct {
+            construct: construct.into(),
+            line,
+            col,
+        }
+    }
+
+    /// Create a malformed escape sequence error
+    pub fn malformed_escape_sequence(
+        sequence: impl Into<String>,
+        line: u32,
+        col: u32,
+    ) -> Self {
+        Self::MalformedEscapeSequence {
+            sequence: sequence.into(),
+            line,
+            col,
+        }
+    }
+
+    /// Create a recursive RuleSet insertion error
+    pub fn recursive_ruleset_insertion(ruleset_chain: impl Into<String>) -> Self {
+        Self::RecursiveRuleSetInsertion {
+            ruleset_chain: ruleset_chain.into(),
+        }
+    }
+
+    /// Create a circular RuleSet dependency error
+    pub fn circular_ruleset_dependency(dependency_chain: impl Into<String>) -> Self {
+        Self::CircularRuleSetDependency {
+            dependency_chain: dependency_chain.into(),
         }
     }
 

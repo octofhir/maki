@@ -289,7 +289,7 @@ Title: "FHIR Patient to V2 PID Mapping"
 Description: "Maps FHIR Observation to HL7 V2 OBX segment"
 "#;
 
-        let (syntax, _errors) = parse_fsh(source);
+        let (syntax, _lexer_errors, _errors) = parse_fsh(source);
         let doc = Document::cast(syntax).expect("Expected document");
         let mapping = doc.mappings().next().expect("Expected mapping");
 
@@ -333,7 +333,7 @@ Target: "HL7 V2 PID segment"
 * status -> "OBX-11" "Observation result status"
 "#;
 
-        let (syntax, _errors) = parse_fsh(source);
+        let (syntax, _lexer_errors, _errors) = parse_fsh(source);
         let doc = Document::cast(syntax).expect("Expected document");
         let mapping = doc.mappings().next().expect("Expected mapping");
 

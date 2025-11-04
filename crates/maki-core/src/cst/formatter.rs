@@ -23,7 +23,7 @@
 //! ```
 
 use super::{
-    ast::{Alias, AstNode, CodeSystem, Document, Extension, Profile, Rule, ValueSet},
+    ast::{Alias, AstNode, CodeSystem, Document, Extension, FlagValueJoin, Profile, Rule, ValueSet},
     parse_fsh,
 };
 
@@ -102,9 +102,9 @@ impl FormatContext {
 
 /// Format a complete FSH document
 pub fn format_document(source: &str, options: &FormatOptions) -> String {
-    let (cst, errors) = parse_fsh(source);
+    let (cst, lexer_errors, parse_errors) = parse_fsh(source);
 
-    if !errors.is_empty() {
+    if !lexer_errors.is_empty() || !parse_errors.is_empty() {
         // If there are parse errors, return original source
         // In a real implementation, we might want to do partial formatting
         return source.to_string();
@@ -340,8 +340,8 @@ fn format_rule(ctx: &mut FormatContext, rule: &Rule, caret_column: usize) {
     match rule {
         Rule::Card(card) => {
             let path = card.path().map(|p| p.as_string()).unwrap_or_default();
-            let cardinality = card.cardinality().unwrap_or_default();
-            let flags = card.flags();
+            let cardinality = card.cardinality_string().unwrap_or_default();
+            let flags = card.flags_as_strings();
 
             if caret_column > 0 {
                 // Aligned format: "* path      1..1 MS"
@@ -376,7 +376,7 @@ fn format_rule(ctx: &mut FormatContext, rule: &Rule, caret_column: usize) {
 
         Rule::Flag(flag) => {
             let path = flag.path().map(|p| p.as_string()).unwrap_or_default();
-            let flags = flag.flags();
+            let flags = flag.flags_as_strings();
 
             if caret_column > 0 {
                 let padding = caret_column.saturating_sub(2 + path.len());
@@ -535,7 +535,7 @@ fn format_rule(ctx: &mut FormatContext, rule: &Rule, caret_column: usize) {
                 line.push_str(&path.as_string());
             }
 
-            if let Some(value) = code_rule.value() {
+            if let Some(value) = code_rule.assigned_value() {
                 line.push(' ');
                 line.push('=');
                 line.push(' ');
@@ -559,7 +559,7 @@ fn format_rule(ctx: &mut FormatContext, rule: &Rule, caret_column: usize) {
 
             line.push_str(" insert");
 
-            if let Some(name) = insert_rule.rule_set() {
+            if let Some(name) = insert_rule.ruleset_reference() {
                 line.push(' ');
                 line.push_str(&name);
             }

@@ -912,15 +912,16 @@ impl BuildOrchestrator {
             );
 
             eprintln!("[DEBUG MAKI BUILD] About to call parse_fsh");
-            let (root, errors) = crate::cst::parse_fsh(&content);
+            let (root, lexer_errors, parse_errors) = crate::cst::parse_fsh(&content);
+            let total_errors = lexer_errors.len() + parse_errors.len();
             eprintln!(
                 "[DEBUG MAKI BUILD] parse_fsh returned, got {} errors",
-                errors.len()
+                total_errors
             );
 
             // Check for parse errors
-            if !errors.is_empty() {
-                warn!("Parse errors in file {:?}: {} errors", file, errors.len());
+            if !lexer_errors.is_empty() || !parse_errors.is_empty() {
+                warn!("Parse errors in file {:?}: {} errors", file, total_errors);
             }
 
             parsed.push((file.clone(), root));

@@ -34,7 +34,7 @@ Description: "A simple logical model"
 * field1 0..1 string "Field 1"
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -81,7 +81,7 @@ Characteristics: #can-bind, #has-range
 * status 1..1 code "Status"
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -132,7 +132,7 @@ Description: "A custom FHIR resource"
 * status 1..1 code "Status"
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -170,7 +170,7 @@ Id: path-test-model
 * id 0..1 string "Identifier"
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -221,7 +221,7 @@ Title: "Observation Data Model"
 * status 1..1 code "Status"
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -267,7 +267,7 @@ Parent: DomainResource
 Id: valid-resource
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");
@@ -297,7 +297,7 @@ Logical: MinimalModel
 Id: minimal-model
 "#;
 
-    let (root, errors) = parse_fsh(fsh);
+    let (root, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let doc = Document::cast(root).expect("Failed to cast document");

@@ -34,7 +34,7 @@ async fn test_export_simple_patient_profile() {
         * gender 1..1 MS
     "#;
 
-    let (cst, errors) = parse_fsh(fsh_source);
+    let (cst, _lexer_errors, errors) = parse_fsh(fsh_source);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     // Find Profile node
@@ -99,7 +99,7 @@ async fn test_export_profile_with_cardinality() {
         * telecom 0..5
     "#;
 
-    let (cst, _) = parse_fsh(fsh_source);
+    let (cst, _lexer_errors, _) = parse_fsh(fsh_source);
     let profile_node = cst.children().find_map(Profile::cast).unwrap();
 
     let session = create_test_session().await;
@@ -133,7 +133,7 @@ async fn test_export_profile_with_flags() {
         * birthDate SU
     "#;
 
-    let (cst, _) = parse_fsh(fsh_source);
+    let (cst, _lexer_errors, _) = parse_fsh(fsh_source);
     let profile_node = cst.children().find_map(Profile::cast).unwrap();
 
     let session = create_test_session().await;
@@ -182,7 +182,7 @@ async fn test_export_profile_with_value_set_binding() {
         * maritalStatus from http://hl7.org/fhir/ValueSet/marital-status (required)
     "#;
 
-    let (cst, _) = parse_fsh(fsh_source);
+    let (cst, _lexer_errors, _) = parse_fsh(fsh_source);
     let profile_node = cst.children().find_map(Profile::cast).unwrap();
 
     let session = create_test_session().await;
@@ -221,7 +221,7 @@ async fn test_export_profile_with_fixed_values() {
         * gender = #male
     "#;
 
-    let (cst, _) = parse_fsh(fsh_source);
+    let (cst, _lexer_errors, _) = parse_fsh(fsh_source);
     let profile_node = cst.children().find_map(Profile::cast).unwrap();
 
     let session = create_test_session().await;
@@ -272,7 +272,7 @@ async fn test_export_complex_profile() {
         * maritalStatus from http://hl7.org/fhir/ValueSet/marital-status (extensible)
     "#;
 
-    let (cst, errors) = parse_fsh(fsh_source);
+    let (cst, _lexer_errors, errors) = parse_fsh(fsh_source);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 
     let profile_node = cst.children().find_map(Profile::cast).unwrap();
@@ -330,7 +330,7 @@ async fn test_export_observation_profile() {
         * value[x] 0..1 MS
     "#;
 
-    let (cst, _) = parse_fsh(fsh_source);
+    let (cst, _lexer_errors, _) = parse_fsh(fsh_source);
     let profile_node = cst.children().find_map(Profile::cast).unwrap();
 
     let session = create_test_session().await;

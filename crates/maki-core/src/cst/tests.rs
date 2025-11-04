@@ -20,7 +20,7 @@ fn path_segments_handle_keywords() {
     let path_node = root.first_child().expect("path node");
     let path = Path::cast(path_node).expect("cast to Path");
 
-    assert_eq!(path.segments(), vec!["true", "and"]);
+    assert_eq!(path.segments_as_strings(), vec!["true", "and"]);
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn path_segments_preserve_brackets() {
     let path_node = root.first_child().expect("path node");
     let path = Path::cast(path_node).expect("cast to Path");
 
-    assert_eq!(path.segments(), vec!["extension[slice]"]);
+    assert_eq!(path.segments_as_strings(), vec!["extension[slice]"]);
 }
 
 /// Test basic CST construction and lossless property

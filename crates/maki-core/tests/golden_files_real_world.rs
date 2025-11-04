@@ -39,7 +39,7 @@ Description: "A patient who has been diagnosed with or is receiving medical trea
 * extension contains USCoreBirthSex named us-core-birthsex 0..1 MS
 "#;
 
-    let (cst, errors) = parse_fsh(fsh);
+    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(
         errors.is_empty(),
         "Should parse without errors: {:?}",
@@ -114,7 +114,7 @@ Description: "Records the history of primary cancers, including location and his
 * stage.type MS
 "#;
 
-    let (cst, errors) = parse_fsh(fsh);
+    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(
         errors.is_empty(),
         "Should parse without errors: {:?}",
@@ -156,7 +156,7 @@ Description: "Concepts classifying the person into a named category of humans sh
 * extension[text].value[x] only string
 "#;
 
-    let (cst, errors) = parse_fsh(fsh);
+    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(
         errors.is_empty(),
         "Should parse without errors: {:?}",
@@ -190,7 +190,7 @@ Description: "Codes representing primary or uncertain behavior cancer disorders,
 * exclude codes from system http://snomed.info/sct where concept is-a #128462008 "Secondary malignant neoplastic disease (disorder)"
 "#;
 
-    let (cst, errors) = parse_fsh(fsh);
+    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(
         errors.is_empty(),
         "Should parse without errors: {:?}",
@@ -244,7 +244,7 @@ Description: "The result of a tumor marker test."
 * component[tumorMarkerTest].value[x] only Quantity or Ratio or string or CodeableConcept
 "#;
 
-    let (cst, errors) = parse_fsh(fsh);
+    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(
         errors.is_empty(),
         "Should parse without errors: {:?}",
@@ -291,7 +291,7 @@ Description: "A clinician's qualitative judgment on the current trend of the can
 * evidence MS
 "#;
 
-    let (cst, errors) = parse_fsh(fsh);
+    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(
         errors.is_empty(),
         "Should parse without errors: {:?}",
@@ -328,7 +328,7 @@ Description: "Example showing disease improved"
 * performer = Reference(us-core-practitioner-owen-oncologist)
 "#;
 
-    let (cst, errors) = parse_fsh(fsh);
+    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
     assert!(
         errors.is_empty(),
         "Should parse without errors: {:?}",
@@ -390,7 +390,7 @@ Description: "Genetic Analysis Summary"
     use std::time::Instant;
     let start = Instant::now();
 
-    let (cst, errors) = parse_fsh(fsh);
+    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
     let parse_duration = start.elapsed();
 
     if !errors.is_empty() {

@@ -35,7 +35,7 @@
 //! use maki_core::cst::{FshSyntaxNode, FshSyntaxKind};
 //!
 //! // Parse FSH to CST
-//! let (cst, errors) = parse_fsh("Profile: MyPatient // comment\nParent: Patient");
+//! let (cst, _lexer_errors, errors) = parse_fsh("Profile: MyPatient // comment\nParent: Patient");
 //!
 //! // Verify lossless property
 //! assert_eq!(cst.text().to_string(), "Profile: MyPatient // comment\nParent: Patient");
@@ -59,14 +59,20 @@ mod syntax_kind;
 
 pub mod ast;
 pub mod formatter;
+pub mod incremental;
+pub mod round_trip;
+pub mod trivia;
 
 pub use builder::{CstBuilder, build_cst_from_tokens, parse_fsh_simple};
 pub use formatter::{FormatOptions, format_document};
 pub use language::FshLanguage;
-pub use lexer::{CstLexResult, CstToken, lex_with_trivia};
+pub use lexer::{CstLexResult, CstToken, lex_with_trivia, LexerError};
 pub use nodes::*;
-pub use parser::parse_fsh;
+pub use parser::{parse_fsh, ParseError, ParseErrorKind};
+pub use round_trip::{RoundTripValidator, ValidationResult, SemanticDifference, DifferenceKind};
 pub use syntax_kind::FshSyntaxKind;
+pub use trivia::{TriviaCollector, TriviaPreserver, TriviaInfo, TriviaToken, TriviaFormatter};
+pub use incremental::{IncrementalUpdater, TextEdit, UpdateResult, UpdateMetrics, EditUtils};
 
 #[cfg(test)]
 mod tests;
