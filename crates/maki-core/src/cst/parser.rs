@@ -69,13 +69,13 @@ enum RecoveryContext {
 /// ```
 pub fn parse_fsh(source: &str) -> (FshSyntaxNode, Vec<LexerError>, Vec<ParseError>) {
     let (tokens, lexer_errors) = super::lex_with_trivia(source);
-    let (cst, parse_errors) = parse_tokens(&tokens);
+    let (cst, parse_errors) = parse_tokens(&tokens, source);
     (cst, lexer_errors, parse_errors)
 }
 
 /// Parse a token stream into a hierarchical CST
-fn parse_tokens(tokens: &[CstToken]) -> (FshSyntaxNode, Vec<ParseError>) {
-    let mut parser = Parser::new(tokens);
+fn parse_tokens(tokens: &[CstToken], source: &str) -> (FshSyntaxNode, Vec<ParseError>) {
+    let mut parser = Parser::new(tokens, source);
     parser.parse_document();
     let (cst, errors) = parser.finish();
     (cst, errors)
@@ -84,6 +84,7 @@ fn parse_tokens(tokens: &[CstToken]) -> (FshSyntaxNode, Vec<ParseError>) {
 /// Token stream parser
 struct Parser<'a> {
     tokens: &'a [CstToken],
+    source: &'a str,
     pos: usize,
     builder: CstBuilder,
     /// Collection of parse errors encountered during parsing
@@ -97,9 +98,10 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    fn new(tokens: &'a [CstToken]) -> Self {
+    fn new(tokens: &'a [CstToken], source: &'a str) -> Self {
         Self {
             tokens,
+            source,
             pos: 0,
             builder: CstBuilder::new(),
             errors: Vec::new(),
@@ -444,6 +446,7 @@ impl<'a> Parser<'a> {
         self.consume_trivia_and_newlines();
 
         // Parse metadata clauses (Severity, XPath, Expression, Description)
+        // Can also have rules like: * expression = "..."
         while !self.at_end() && !self.at_definition_keyword() {
             if self.at_trivia() {
                 self.consume_trivia();
@@ -456,6 +459,11 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::SeverityKw => self.parse_severity_clause(),
                 FshSyntaxKind::XpathKw => self.parse_xpath_clause(),
                 FshSyntaxKind::ExpressionKw => self.parse_expression_clause(),
+
+                // Rules (e.g., * expression = "...")
+                FshSyntaxKind::Asterisk | FshSyntaxKind::Caret => {
+                    self.parse_rule();
+                }
 
                 // Newlines between clauses
                 FshSyntaxKind::Newline => {
@@ -724,6 +732,70 @@ impl<'a> Parser<'a> {
             }
         }
         self.consume_trivia();
+    }
+
+    /// Parse the body of an insert rule (after the * has been consumed)
+    /// Grammar: insert RuleSetName [(args)]
+    fn parse_insert_rule_body(&mut self) {
+        self.builder.start_node(FshSyntaxKind::InsertRule);
+
+        // Expect and consume 'insert' keyword
+        self.expect(FshSyntaxKind::InsertKw);
+        self.consume_trivia();
+
+        // RuleSet name - check for recursion and track dependencies
+        if self.at(FshSyntaxKind::Ident) {
+            let ruleset_name = self.current().unwrap().text.to_string();
+
+            // Track dependency if we're inside a RuleSet
+            if let Some(ref current) = self.current_ruleset {
+                if let Some(deps) = self.ruleset_dependencies.get_mut(current) {
+                    if !deps.contains(&ruleset_name) {
+                        deps.push(ruleset_name.clone());
+                    }
+                }
+
+                // Check for circular dependency
+                if self.has_circular_dependency(current, &ruleset_name) {
+                    let cycle = self.find_dependency_cycle(current, &ruleset_name);
+                    self.report_error(
+                        ParseErrorKind::CircularRuleSetDependency,
+                        &format!("Circular dependency detected: {}", cycle)
+                    );
+                }
+            }
+
+            // Check for immediate recursive insertion
+            if self.ruleset_stack.contains(&ruleset_name) {
+                let chain = self.ruleset_stack.join(" -> ");
+                self.report_error(
+                    ParseErrorKind::RecursiveRuleSetInsertion,
+                    &format!("Recursive RuleSet insertion detected: {} -> {}", chain, ruleset_name)
+                );
+            } else {
+                // Track this RuleSet for recursion detection
+                self.ruleset_stack.push(ruleset_name.clone());
+            }
+
+            self.add_current_token();
+            self.advance();
+        } else {
+            self.expect(FshSyntaxKind::Ident);
+        }
+        self.consume_trivia();
+
+        // Optional arguments: (arg1, arg2)
+        if self.at(FshSyntaxKind::LParen) {
+            self.parse_insert_arguments();
+        }
+
+        self.consume_trivia_and_newlines();
+        self.builder.finish_node();
+
+        // Pop from recursion stack when done
+        if !self.ruleset_stack.is_empty() {
+            self.ruleset_stack.pop();
+        }
     }
 
     /// Parse Mapping declaration
@@ -1077,65 +1149,7 @@ impl<'a> Parser<'a> {
 
         // Check if it's an insert rule
         if self.at(FshSyntaxKind::InsertKw) {
-            self.builder.start_node(FshSyntaxKind::InsertRule);
-            self.add_current_token();
-            self.advance();
-            self.consume_trivia();
-
-            // RuleSet name - check for recursion and track dependencies
-            if self.at(FshSyntaxKind::Ident) {
-                let ruleset_name = self.current().unwrap().text.to_string();
-                
-                // Track dependency if we're inside a RuleSet
-                if let Some(ref current) = self.current_ruleset {
-                    if let Some(deps) = self.ruleset_dependencies.get_mut(current) {
-                        if !deps.contains(&ruleset_name) {
-                            deps.push(ruleset_name.clone());
-                        }
-                    }
-                    
-                    // Check for circular dependency
-                    if self.has_circular_dependency(current, &ruleset_name) {
-                        let cycle = self.find_dependency_cycle(current, &ruleset_name);
-                        self.report_error(
-                            ParseErrorKind::CircularRuleSetDependency,
-                            &format!("Circular dependency detected: {}", cycle)
-                        );
-                    }
-                }
-                
-                // Check for immediate recursive insertion
-                if self.ruleset_stack.contains(&ruleset_name) {
-                    let chain = self.ruleset_stack.join(" -> ");
-                    self.report_error(
-                        ParseErrorKind::RecursiveRuleSetInsertion,
-                        &format!("Recursive RuleSet insertion detected: {} -> {}", chain, ruleset_name)
-                    );
-                } else {
-                    // Track this RuleSet for recursion detection
-                    self.ruleset_stack.push(ruleset_name.clone());
-                }
-                
-                self.add_current_token();
-                self.advance();
-            } else {
-                self.expect(FshSyntaxKind::Ident);
-            }
-            self.consume_trivia();
-
-            // Optional arguments: (arg1, arg2)
-            if self.at(FshSyntaxKind::LParen) {
-                self.parse_insert_arguments();
-            }
-
-            self.consume_trivia_and_newlines();
-            self.builder.finish_node();
-            
-            // Pop from recursion stack when done
-            if !self.ruleset_stack.is_empty() {
-                self.ruleset_stack.pop();
-            }
-            
+            self.parse_insert_rule_body();
             return;
         }
 
@@ -1231,6 +1245,20 @@ impl<'a> Parser<'a> {
                         self.advance();
                         self.consume_trivia();
 
+                        // Optional 'named' keyword followed by alias name
+                        if self.at(FshSyntaxKind::NamedKw) {
+                            self.add_current_token();
+                            self.advance();
+                            self.consume_trivia();
+
+                            // Parse the alias name
+                            if self.at(FshSyntaxKind::Ident) {
+                                self.add_current_token();
+                                self.advance();
+                                self.consume_trivia();
+                            }
+                        }
+
                         // Optional cardinality
                         if self.at(FshSyntaxKind::Integer) {
                             self.add_current_token();
@@ -1272,6 +1300,19 @@ impl<'a> Parser<'a> {
                 }
             }
             FshSyntaxKind::FlagRule => {
+                // Parse additional paths if 'and' keyword is present
+                // Format: * path1 and path2 and path3 MS
+                while self.at(FshSyntaxKind::AndKw) {
+                    self.add_current_token(); // consume 'and'
+                    self.advance();
+                    self.consume_trivia();
+
+                    // Parse next path
+                    self.parse_path();
+                    self.consume_trivia();
+                }
+
+                // Parse flags at the end
                 self.parse_flag_sequence();
             }
             _ => {
@@ -1340,6 +1381,10 @@ impl<'a> Parser<'a> {
             self.parse_codeable_reference();
         } else if self.at(FshSyntaxKind::True) || self.at(FshSyntaxKind::False) {
             // Boolean
+            self.add_current_token();
+            self.advance();
+        } else if self.at(FshSyntaxKind::DateTime) || self.at(FshSyntaxKind::Time) {
+            // DateTime or Time literal: 2024-01-06 or 2024-01-06T10:30:00Z
             self.add_current_token();
             self.advance();
         } else if self.at(FshSyntaxKind::Unit) {
@@ -1510,24 +1555,87 @@ impl<'a> Parser<'a> {
     /// Parse name with optional display string: Name "Display String"
     fn parse_name_with_display(&mut self) {
         self.builder.start_node(FshSyntaxKind::NameValue);
-        
-        // Name identifier
+
+        // Name identifier - can include:
+        // - URN patterns: urn:ietf:bcp:47
+        // - URLs: http://terminology.hl7.org/CodeSystem/v2-0360
+        // - System#code patterns
+        // Pattern: identifier([:identifier|/identifier|.identifier])*
         self.add_current_token();
         self.advance();
+
+        // Handle complex identifiers with separators (URLs, URNs, paths)
+        // e.g., urn:ietf:bcp:47, http://hl7.org/fhir, org.example.system
+        loop {
+            if self.at(FshSyntaxKind::Colon) {
+                // Colon separator (URN or URL protocol)
+                self.add_current_token();
+                self.advance();
+
+                // Handle double slash after colon (URL: http://)
+                while self.at(FshSyntaxKind::Slash) {
+                    self.add_current_token();
+                    self.advance();
+                }
+
+                // Next token should be identifier or number
+                if self.at(FshSyntaxKind::Ident) || self.at(FshSyntaxKind::Integer) {
+                    self.add_current_token();
+                    self.advance();
+                } else {
+                    break;
+                }
+            } else if self.at(FshSyntaxKind::Slash) {
+                // Path separator (URL path)
+                self.add_current_token();
+                self.advance();
+
+                if self.at(FshSyntaxKind::Ident) || self.at(FshSyntaxKind::Integer) {
+                    self.add_current_token();
+                    self.advance();
+                } else {
+                    break;
+                }
+            } else if self.at(FshSyntaxKind::Dot) {
+                // Dot separator (reverse domain notation)
+                self.add_current_token();
+                self.advance();
+
+                if self.at(FshSyntaxKind::Ident) || self.at(FshSyntaxKind::Integer) {
+                    self.add_current_token();
+                    self.advance();
+                } else {
+                    break;
+                }
+            } else if self.at(FshSyntaxKind::Minus) {
+                // Hyphen in identifiers (common in URLs and codes)
+                self.add_current_token();
+                self.advance();
+
+                if self.at(FshSyntaxKind::Ident) || self.at(FshSyntaxKind::Integer) {
+                    self.add_current_token();
+                    self.advance();
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
 
         // Check for code suffix (System#code pattern)
         if self.at(FshSyntaxKind::Code) {
             self.add_current_token();
             self.advance();
         }
-        
+
         // Optional display string
         self.consume_trivia();
         if self.at(FshSyntaxKind::String) {
             self.add_current_token();
             self.advance();
         }
-        
+
         self.builder.finish_node();
     }
 
@@ -1911,10 +2019,65 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::Integer | FshSyntaxKind::Decimal => {
                     return false; // This is a cardinality rule
                 }
-                FshSyntaxKind::FromKw | FshSyntaxKind::OnlyKw | FshSyntaxKind::ObeysKw 
+                FshSyntaxKind::FromKw | FshSyntaxKind::OnlyKw | FshSyntaxKind::ObeysKw
                 | FshSyntaxKind::ContainsKw | FshSyntaxKind::Equals | FshSyntaxKind::PlusEquals
                 | FshSyntaxKind::Arrow => {
                     return false; // This is a different type of rule
+                }
+                // Handle 'and' keyword for multi-path flag rules (* path1 and path2 MS)
+                FshSyntaxKind::AndKw => {
+                    idx += 1; // Skip 'and'
+                    // Skip whitespace after 'and'
+                    while idx < self.tokens.len() && self.tokens[idx].kind == FshSyntaxKind::Whitespace {
+                        idx += 1;
+                    }
+                    // Now skip the entire path that follows 'and'
+                    // Path can be: identifier[...]...identifier[...]
+                    while idx < self.tokens.len() {
+                        let path_kind = self.tokens[idx].kind;
+                        match path_kind {
+                            // Path segment tokens
+                            FshSyntaxKind::Ident => {
+                                idx += 1;
+                                // Check for brackets after identifier
+                                while idx < self.tokens.len() && self.tokens[idx].kind == FshSyntaxKind::LBracket {
+                                    idx += 1; // Skip [
+                                    // Skip bracket content (identifier, number, +, =)
+                                    while idx < self.tokens.len() {
+                                        let bracket_kind = self.tokens[idx].kind;
+                                        if bracket_kind == FshSyntaxKind::RBracket {
+                                            idx += 1; // Skip ]
+                                            break;
+                                        } else if matches!(bracket_kind, FshSyntaxKind::Ident | FshSyntaxKind::Integer | FshSyntaxKind::Plus | FshSyntaxKind::Equals) {
+                                            idx += 1;
+                                        } else {
+                                            idx += 1; // Skip unexpected token
+                                        }
+                                    }
+                                }
+                                // Check for dot (continuation of path)
+                                if idx < self.tokens.len() && self.tokens[idx].kind == FshSyntaxKind::Dot {
+                                    idx += 1;
+                                    // Continue loop to parse next segment
+                                } else {
+                                    // End of path
+                                    break;
+                                }
+                            }
+                            FshSyntaxKind::Whitespace => {
+                                // Path ended, exit inner loop
+                                break;
+                            }
+                            _ => {
+                                // Not a path token, exit inner loop
+                                break;
+                            }
+                        }
+                    }
+                }
+                // Other path-like tokens that might appear - just skip them
+                FshSyntaxKind::Ident | FshSyntaxKind::Dot | FshSyntaxKind::LBracket | FshSyntaxKind::RBracket => {
+                    idx += 1;
                 }
                 _ => {
                     // For other tokens, if we've already seen flags, this might be the end
@@ -2022,6 +2185,12 @@ impl<'a> Parser<'a> {
     fn parse_lr_rule(&mut self) {
         self.expect(FshSyntaxKind::Asterisk);
         self.consume_trivia();
+
+        // Check if it's an insert rule (* insert RuleSetName)
+        if self.at(FshSyntaxKind::InsertKw) {
+            self.parse_insert_rule_body();
+            return;
+        }
 
         // Parse path
         self.parse_path();
@@ -2460,6 +2629,19 @@ impl<'a> Parser<'a> {
                 self.parse_flag_sequence();
             }
             FshSyntaxKind::FlagRule => {
+                // Parse additional paths if 'and' keyword is present
+                // Format: * path1 and path2 and path3 MS
+                while self.at(FshSyntaxKind::AndKw) {
+                    self.add_current_token(); // consume 'and'
+                    self.advance();
+                    self.consume_trivia();
+
+                    // Parse next path
+                    self.parse_path();
+                    self.consume_trivia();
+                }
+
+                // Parse flags at the end
                 self.parse_flag_sequence();
             }
             _ => {
@@ -2624,10 +2806,59 @@ impl<'a> Parser<'a> {
 
     /// Parse a ValueSet rule (include/exclude components)
     fn parse_vs_rule(&mut self) {
-        self.builder.start_node(FshSyntaxKind::VsComponent);
-
         self.expect(FshSyntaxKind::Asterisk);
         self.consume_trivia();
+
+        // Check if this is a caret rule: * ^path = value
+        // Check AFTER consuming trivia to handle: * ^path or *^path
+        if self.at(FshSyntaxKind::Caret) {
+            // This is a caret value rule, parse it as such
+            self.builder.start_node(FshSyntaxKind::CaretValueRule);
+
+            // Parse caret path
+            self.parse_path();
+            self.consume_trivia();
+
+            // Assignment (= or +=)
+            if self.at(FshSyntaxKind::Equals) || self.at(FshSyntaxKind::PlusEquals) {
+                self.add_current_token();
+                self.advance();
+                self.consume_trivia();
+
+                // Value expression
+                self.parse_value_expression();
+            }
+
+            self.consume_trivia_and_newlines();
+            self.builder.finish_node();
+            return;
+        }
+
+        // Check if this is an insert rule: * insert RuleSetName
+        if self.at(FshSyntaxKind::InsertKw) {
+            self.builder.start_node(FshSyntaxKind::InsertRule);
+
+            self.expect(FshSyntaxKind::InsertKw);
+            self.consume_trivia();
+
+            // RuleSet name
+            if self.at(FshSyntaxKind::Ident) {
+                self.add_current_token();
+                self.advance();
+                self.consume_trivia();
+            }
+
+            // Optional parameters in parentheses
+            if self.at(FshSyntaxKind::LParen) {
+                self.parse_insert_arguments();
+            }
+
+            self.consume_trivia_and_newlines();
+            self.builder.finish_node();
+            return;
+        }
+
+        self.builder.start_node(FshSyntaxKind::VsComponent);
 
         if self.at(FshSyntaxKind::IncludeKw) || self.at(FshSyntaxKind::ExcludeKw) {
             self.add_current_token();
@@ -3122,11 +3353,25 @@ impl<'a> Parser<'a> {
 
     fn current_position(&self) -> (u32, u32) {
         if let Some(token) = self.current() {
-            // For now, return placeholder values
-            // In a real implementation, tokens would carry position information
-            (1, 1)
+            // Convert byte offset to line and column
+            let offset = token.span.start;
+            let source_up_to_offset = &self.source[..offset.min(self.source.len())];
+
+            let line = source_up_to_offset.chars().filter(|&c| c == '\n').count() as u32 + 1;
+            let col = source_up_to_offset
+                .rfind('\n')
+                .map(|last_newline| offset - last_newline - 1)
+                .unwrap_or(offset) as u32 + 1;
+
+            (line, col)
         } else {
-            (1, 1)
+            // End of file
+            let line = self.source.chars().filter(|&c| c == '\n').count() as u32 + 1;
+            let col = self.source
+                .rfind('\n')
+                .map(|last_newline| self.source.len() - last_newline - 1)
+                .unwrap_or(self.source.len()) as u32 + 1;
+            (line, col)
         }
     }
 

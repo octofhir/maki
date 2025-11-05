@@ -36,7 +36,7 @@ impl FshGritTree {
     /// // Now you can query this tree with GritQL patterns
     /// ```
     pub fn parse(source: &str) -> Self {
-        let (cst, _errors) = parse_fsh(source);
+        let (cst, _lexer_errors, _parse_errors) = parse_fsh(source);
         Self::from_cst(cst, source.to_string())
     }
 

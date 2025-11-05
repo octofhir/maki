@@ -50,8 +50,9 @@ fn check_resource_cardinality_rules(
     let mut diagnostics = Vec::new();
 
     for rule in rules {
-        if let Some(cardinality_str) = rule.cardinality() {
+        if let Some(cardinality_node) = rule.cardinality() {
             // Parse cardinality: "min..max"
+            let cardinality_str = cardinality_node.as_string();
             if let Some((min_str, max_str)) = cardinality_str.split_once("..") {
                 let min_result = min_str.trim().parse::<u32>();
                 let max_result = if max_str.trim() == "*" {

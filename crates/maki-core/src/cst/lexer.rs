@@ -63,6 +63,7 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
     let len = bytes.len();
     let mut i = 0usize;
     let mut param_stack: Vec<bool> = Vec::new();
+    let mut last_non_trivia_token: Option<FshSyntaxKind> = None;
 
     while i < len {
         let ch = match next_char(input, i) {
@@ -165,8 +166,15 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
             // Comments - PRESERVE THEM!
             '/' => {
                 if let Some((next, next_size)) = next_char(input, i + size) {
-                    if next == '/' {
-                        // Line comment
+                    // Check if this is :// or // in URL (protocol separator or path) instead of a comment
+                    // If last token was Colon or Slash, treat // as part of URL, not a comment
+                    let is_url_separator = matches!(
+                        last_non_trivia_token,
+                        Some(FshSyntaxKind::Colon) | Some(FshSyntaxKind::Slash)
+                    );
+
+                    if next == '/' && !is_url_separator {
+                        // Line comment (but not if preceded by colon, e.g., http://)
                         let mut end = i + size + next_size;
                         while end < len {
                             if let Some((c, step)) = next_char(input, end) {
@@ -220,26 +228,37 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
                         continue;
                     }
                 }
-                // Not a comment, try regex literal (e.g., /pattern/)
-                if let Some((end, regex_error)) = lex_regex_literal(input, start) {
-                    if let Some(err) = regex_error {
-                        errors.push(err);
+                // Not a comment, check for regex literal (e.g., /pattern/)
+                // But skip regex parsing if part of URL (after colon or slash)
+                let is_url_separator = matches!(
+                    last_non_trivia_token,
+                    Some(FshSyntaxKind::Colon) | Some(FshSyntaxKind::Slash)
+                );
+
+                if !is_url_separator {
+                    // Try regex literal
+                    if let Some((end, regex_error)) = lex_regex_literal(input, start) {
+                        if let Some(err) = regex_error {
+                            errors.push(err);
+                        }
+                        tokens.push(CstToken::new(
+                            FshSyntaxKind::Regex,
+                            &input[start..end],
+                            span(start, end),
+                        ));
+                        i = end;
+                        continue;
                     }
-                    tokens.push(CstToken::new(
-                        FshSyntaxKind::Regex,
-                        &input[start..end],
-                        span(start, end),
-                    ));
-                    i = end;
-                } else {
-                    // Fallback to regular slash token
-                    tokens.push(CstToken::new(
-                        FshSyntaxKind::Slash,
-                        "/",
-                        span(start, i + size),
-                    ));
-                    i += size;
                 }
+
+                // Fallback to regular slash token (for URLs or division)
+                tokens.push(CstToken::new(
+                    FshSyntaxKind::Slash,
+                    "/",
+                    span(start, i + size),
+                ));
+                last_non_trivia_token = Some(FshSyntaxKind::Slash);
+                i += size;
             }
 
             // Punctuation and operators
@@ -257,6 +276,7 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
                     ":",
                     span(start, i + size),
                 ));
+                last_non_trivia_token = Some(FshSyntaxKind::Colon);
                 i += size;
             }
             '=' => {
@@ -866,6 +886,7 @@ fn lex_number(input: &str, start: usize) -> (FshSyntaxKind, usize) {
     let mut i = start;
     let mut has_dot = false;
 
+    // First, collect initial digits
     while i < len {
         match bytes[i] as char {
             '0'..='9' => i += 1,
@@ -884,6 +905,64 @@ fn lex_number(input: &str, start: usize) -> (FshSyntaxKind, usize) {
         }
     }
 
+    // Check for DateTime pattern: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS...
+    // Must be exactly 4 digits at start to be a year
+    if !has_dot && (i - start) == 4 && i < len && bytes[i] == b'-' {
+        // Could be a datetime like 2024-01-06
+        let checkpoint = i;
+        i += 1; // skip '-'
+
+        // Parse month (1-2 digits)
+        let month_start = i;
+        while i < len && (bytes[i] as char).is_ascii_digit() {
+            i += 1;
+        }
+
+        if (i - month_start) >= 1 && (i - month_start) <= 2 {
+            // Valid month digits
+            if i < len && bytes[i] == b'-' {
+                i += 1; // skip second '-'
+
+                // Parse day (1-2 digits)
+                let day_start = i;
+                while i < len && (bytes[i] as char).is_ascii_digit() {
+                    i += 1;
+                }
+
+                if (i - day_start) >= 1 && (i - day_start) <= 2 {
+                    // Valid day digits - we have at least YYYY-MM-DD
+                    // Check for optional time component
+                    if i < len && bytes[i] == b'T' {
+                        i += 1; // skip 'T'
+
+                        // Try to parse time (HH:MM:SS with optional fractional seconds and timezone)
+                        let time_start = i;
+                        if let Some(time_end) = lex_time_component(input, time_start) {
+                            i = time_end;
+                        } else {
+                            // Invalid time after 'T', revert to just YYYY-MM-DD
+                            i = day_start + (i - day_start);
+                            while i > day_start && (bytes[i - 1] as char).is_ascii_digit() {
+                                break;
+                            }
+                        }
+                    }
+
+                    return (FshSyntaxKind::DateTime, i);
+                } else if (i - day_start) == 0 && i == len || !((bytes[i] as char).is_ascii_digit()) {
+                    // No day digits but we have YYYY-MM, which is also valid
+                    return (FshSyntaxKind::DateTime, checkpoint + 1 + (i - month_start));
+                }
+            } else if i == len || !(bytes[i] as char).is_ascii_digit() {
+                // No second dash, but we have YYYY-MM, which is valid
+                return (FshSyntaxKind::DateTime, i);
+            }
+        }
+
+        // Not a valid datetime, revert to integer
+        i = checkpoint;
+    }
+
     let kind = if has_dot {
         FshSyntaxKind::Decimal
     } else {
@@ -891,6 +970,90 @@ fn lex_number(input: &str, start: usize) -> (FshSyntaxKind, usize) {
     };
 
     (kind, i)
+}
+
+/// Helper to lex time component: HH:MM:SS with optional .ffffff and timezone
+fn lex_time_component(input: &str, start: usize) -> Option<usize> {
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+    let mut i = start;
+
+    // Parse HH
+    let hour_start = i;
+    while i < len && (bytes[i] as char).is_ascii_digit() {
+        i += 1;
+    }
+    if (i - hour_start) != 2 {
+        return None;
+    }
+
+    if i >= len || bytes[i] != b':' {
+        return None;
+    }
+    i += 1; // skip ':'
+
+    // Parse MM
+    let min_start = i;
+    while i < len && (bytes[i] as char).is_ascii_digit() {
+        i += 1;
+    }
+    if (i - min_start) != 2 {
+        return None;
+    }
+
+    if i >= len || bytes[i] != b':' {
+        return None;
+    }
+    i += 1; // skip ':'
+
+    // Parse SS
+    let sec_start = i;
+    while i < len && (bytes[i] as char).is_ascii_digit() {
+        i += 1;
+    }
+    if (i - sec_start) != 2 {
+        return None;
+    }
+
+    // Optional fractional seconds
+    if i < len && bytes[i] == b'.' {
+        i += 1;
+        while i < len && (bytes[i] as char).is_ascii_digit() {
+            i += 1;
+        }
+    }
+
+    // Optional timezone: Z, +HH:MM, or -HH:MM
+    if i < len {
+        match bytes[i] as char {
+            'Z' => {
+                i += 1;
+            }
+            '+' | '-' => {
+                i += 1;
+                // Parse timezone hours
+                let tz_hour_start = i;
+                while i < len && (bytes[i] as char).is_ascii_digit() {
+                    i += 1;
+                }
+                if (i - tz_hour_start) == 2 && i < len && bytes[i] == b':' {
+                    i += 1;
+                    // Parse timezone minutes
+                    let tz_min_start = i;
+                    while i < len && (bytes[i] as char).is_ascii_digit() {
+                        i += 1;
+                    }
+                    if (i - tz_min_start) != 2 {
+                        // Invalid timezone format, but we got the time part
+                        return Some(tz_hour_start - 1);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Some(i)
 }
 
 /// Lex a string literal

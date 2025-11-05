@@ -218,6 +218,11 @@ impl Package {
     pub fn fish(&self, identifier: &str) -> Option<Arc<JsonValue>> {
         self.resources.get(identifier).cloned()
     }
+
+    /// Get all resources in the package (for iteration)
+    pub fn all_resources(&self) -> &HashMap<String, Arc<JsonValue>> {
+        &self.resources
+    }
 }
 
 /// Fishing Context - Coordinates all three tiers of resource resolution
@@ -233,6 +238,8 @@ pub struct FishingContext {
     tank: Arc<RwLock<FshTank>>,
     /// Package containing exported FHIR resources
     package: Arc<RwLock<Package>>,
+    /// Alias table for resolving FSH aliases to canonical URLs
+    alias_table: Option<Arc<crate::semantic::AliasTable>>,
 }
 
 impl FishingContext {
@@ -246,7 +253,23 @@ impl FishingContext {
             canonical_session,
             tank,
             package,
+            alias_table: None,
         }
+    }
+
+    /// Set the alias table for resolving FSH aliases
+    pub fn with_alias_table(mut self, alias_table: Arc<crate::semantic::AliasTable>) -> Self {
+        self.alias_table = Some(alias_table);
+        self
+    }
+
+    /// Resolve an alias to its canonical URL
+    ///
+    /// Returns the canonical URL if the name is an alias, otherwise returns None.
+    pub fn resolve_alias(&self, name: &str) -> Option<String> {
+        self.alias_table
+            .as_ref()
+            .and_then(|table| table.resolve(name).map(|s| s.to_string()))
     }
 
     /// Fish for a FHIR resource following the three-tier priority
@@ -345,12 +368,20 @@ impl FishingContext {
 
     /// Fish in canonical (external FHIR packages)
     async fn fish_in_canonical(&self, identifier: &str) -> CanonicalResult<Option<Arc<JsonValue>>> {
-        match self.canonical_session.resolve(identifier).await {
+        eprintln!("[DEBUG] Fishing in canonical for: {}", identifier);
+        let start = std::time::Instant::now();
+
+        let result = self.canonical_session.resolve(identifier).await;
+        let elapsed = start.elapsed();
+
+        match result {
             Ok(resource) => {
+                eprintln!("[DEBUG] Found {} in canonical after {:?}", identifier, elapsed);
                 debug!("Found {} in canonical", identifier);
                 Ok(Some(Arc::new((*resource.content).clone())))
             }
-            Err(_) => {
+            Err(e) => {
+                eprintln!("[DEBUG] Not found {} in canonical after {:?}: {}", identifier, elapsed, e);
                 // Not found in canonical
                 Ok(None)
             }

@@ -193,6 +193,13 @@ impl Language for FshLanguage {
             339 => FshSyntaxKind::Ratio,
             340 => FshSyntaxKind::PathSegment,
 
+            // Value nodes (380-389)
+            380 => FshSyntaxKind::RegexValue,
+            381 => FshSyntaxKind::CanonicalValue,
+            382 => FshSyntaxKind::ReferenceValue,
+            383 => FshSyntaxKind::CodeableReferenceValue,
+            384 => FshSyntaxKind::NameValue,
+
             // Special tokens (400+)
             400 => FshSyntaxKind::Error,
             401 => FshSyntaxKind::Eof,

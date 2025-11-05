@@ -3,9 +3,11 @@
 //! This module provides the main test harness for running MAKI and SUSHI
 //! side-by-side and comparing their outputs.
 
-use super::comparator::{Difference, compare_json, format_differences};
+use super::comparator::{
+    Difference, SemanticComparisonResult, compare_json, compare_semantic_equivalence,
+    format_differences
+};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -29,6 +31,8 @@ pub struct ComparisonResult {
     pub maki_time: Duration,
     pub sushi_time: Option<Duration>,
     pub compatibility_percent: f64,
+    pub semantic_results: Vec<SemanticComparisonResult>,
+    pub semantic_equivalence_score: f64,
 }
 
 /// Main test harness for SUSHI compatibility
@@ -36,6 +40,8 @@ pub struct SushiCompatibilityHarness {
     maki_binary: PathBuf,
     sushi_available: bool,
     test_cases: Vec<TestCase>,
+    reference_files: Vec<PathBuf>,
+    compatibility_threshold: f64,
 }
 
 impl SushiCompatibilityHarness {
@@ -48,7 +54,16 @@ impl SushiCompatibilityHarness {
             maki_binary,
             sushi_available,
             test_cases: Vec::new(),
+            reference_files: Vec::new(),
+            compatibility_threshold: 90.0,
         })
+    }
+
+    /// Create test harness with custom compatibility threshold
+    pub fn with_threshold(threshold: f64) -> Result<Self, String> {
+        let mut harness = Self::new()?;
+        harness.compatibility_threshold = threshold;
+        Ok(harness)
     }
 
     /// Find the MAKI binary (either debug or release)
@@ -85,6 +100,100 @@ impl SushiCompatibilityHarness {
     /// Add a test case
     pub fn add_test_case(&mut self, test_case: TestCase) {
         self.test_cases.push(test_case);
+    }
+
+    /// Load SUSHI reference files from a directory
+    pub fn load_reference_files(&mut self, reference_dir: &Path) -> Result<(), String> {
+        if !reference_dir.exists() {
+            return Err(format!("Reference directory does not exist: {:?}", reference_dir));
+        }
+
+        self.reference_files.clear();
+        self.collect_reference_files(reference_dir)?;
+        
+        // Convert reference files to test cases
+        for ref_file in &self.reference_files.clone() {
+            if let Some(test_case) = self.create_test_case_from_reference(ref_file) {
+                self.test_cases.push(test_case);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Recursively collect FSH files from reference directory
+    fn collect_reference_files(&mut self, dir: &Path) -> Result<(), String> {
+        let entries = fs::read_dir(dir)
+            .map_err(|e| format!("Failed to read directory {:?}: {}", dir, e))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                self.collect_reference_files(&path)?;
+            } else if path.extension().and_then(|s| s.to_str()) == Some("fsh") {
+                self.reference_files.push(path);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Create a test case from a reference FSH file
+    fn create_test_case_from_reference(&self, fsh_file: &Path) -> Option<TestCase> {
+        let name = fsh_file
+            .file_stem()?
+            .to_string_lossy()
+            .to_string();
+
+        // Look for associated config file
+        let config_file = fsh_file
+            .parent()?
+            .join("sushi-config.yaml")
+            .exists()
+            .then(|| fsh_file.parent().unwrap().join("sushi-config.yaml"));
+
+        Some(TestCase {
+            name: format!("ref_{}", name),
+            fsh_files: vec![fsh_file.to_path_buf()],
+            config_file,
+            expected_outputs: vec![],
+        })
+    }
+
+    /// Load all FSH files from examples directory as test cases
+    pub fn load_examples_as_tests(&mut self) -> Result<(), String> {
+        let binding = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = binding
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
+        
+        let examples_dir = workspace_root.join("examples");
+        
+        if !examples_dir.exists() {
+            return Err("Examples directory not found".to_string());
+        }
+
+        let entries = fs::read_dir(&examples_dir)
+            .map_err(|e| format!("Failed to read examples directory: {}", e))?;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("fsh") {
+                let test_case = TestCase {
+                    name: path.file_stem().unwrap().to_string_lossy().to_string(),
+                    fsh_files: vec![path],
+                    config_file: None,
+                    expected_outputs: vec![],
+                };
+                self.test_cases.push(test_case);
+            }
+        }
+
+        Ok(())
     }
 
     /// Run MAKI on a test case
@@ -148,8 +257,9 @@ impl SushiCompatibilityHarness {
     }
 
     /// Compare outputs from MAKI and SUSHI
-    fn compare_outputs(&self, maki_dir: &Path, sushi_dir: &Path) -> Vec<Difference> {
+    fn compare_outputs(&self, maki_dir: &Path, sushi_dir: &Path) -> (Vec<Difference>, Vec<SemanticComparisonResult>) {
         let mut differences = Vec::new();
+        let mut semantic_results = Vec::new();
 
         // Collect all JSON files from both directories
         let maki_files = Self::collect_json_files(maki_dir);
@@ -176,9 +286,15 @@ impl SushiCompatibilityHarness {
                     serde_json::from_str::<Value>(&maki_json),
                     serde_json::from_str::<Value>(&sushi_json),
                 ) {
-                    let file_diffs =
-                        compare_json(&rel_path.to_string_lossy(), &maki_val, &sushi_val);
+                    let file_name = rel_path.to_string_lossy();
+                    
+                    // Basic comparison
+                    let file_diffs = compare_json(&file_name, &maki_val, &sushi_val);
                     differences.extend(file_diffs);
+                    
+                    // Semantic comparison
+                    let semantic_result = compare_semantic_equivalence(&file_name, &maki_val, &sushi_val);
+                    semantic_results.push(semantic_result);
                 }
             }
         }
@@ -195,7 +311,7 @@ impl SushiCompatibilityHarness {
             }
         }
 
-        differences
+        (differences, semantic_results)
     }
 
     /// Collect all JSON files in a directory
@@ -256,10 +372,10 @@ impl SushiCompatibilityHarness {
         };
 
         // Compare outputs
-        let differences = if sushi_time.is_some() {
+        let (differences, semantic_results) = if sushi_time.is_some() {
             self.compare_outputs(&maki_output, &sushi_output)
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
 
         let compatibility_percent = if !differences.is_empty() {
@@ -272,13 +388,22 @@ impl SushiCompatibilityHarness {
             100.0
         };
 
+        // Calculate semantic equivalence score
+        let semantic_equivalence_score = if !semantic_results.is_empty() {
+            semantic_results.iter().map(|r| r.equivalence_score).sum::<f64>() / semantic_results.len() as f64
+        } else {
+            1.0
+        };
+
         Some(ComparisonResult {
             test_name: test_case.name.clone(),
-            passed: compatibility_percent >= 90.0,
+            passed: compatibility_percent >= self.compatibility_threshold,
             differences,
             maki_time,
             sushi_time,
             compatibility_percent,
+            semantic_results,
+            semantic_equivalence_score,
         })
     }
 
@@ -294,21 +419,92 @@ impl SushiCompatibilityHarness {
              Overall Compatibility: {:.2}%\n\
              Total Tests: {}\n\
              Passed: {}\n\
-             Failed: {}\n\n",
+             Failed: {}\n\
+             Threshold: {:.1}%\n\n",
             overall_compat,
             total,
             passed,
-            total - passed
+            total - passed,
+            self.compatibility_threshold
         );
+
+        // Add performance summary
+        if !results.is_empty() {
+            let avg_maki_time = results.iter()
+                .map(|r| r.maki_time.as_millis())
+                .sum::<u128>() as f64 / results.len() as f64;
+            
+            let avg_sushi_time = results.iter()
+                .filter_map(|r| r.sushi_time.map(|t| t.as_millis()))
+                .sum::<u128>() as f64 / results.iter().filter(|r| r.sushi_time.is_some()).count().max(1) as f64;
+
+            report.push_str(&format!(
+                "Performance:\n\
+                 - Average MAKI time: {:.1}ms\n\
+                 - Average SUSHI time: {:.1}ms\n\n",
+                avg_maki_time, avg_sushi_time
+            ));
+        }
 
         // Add failed tests
         report.push_str("Failed Tests:\n");
         for result in results.iter().filter(|r| !r.passed) {
-            report.push_str(&format!("\n  - {}\n", result.test_name));
+            report.push_str(&format!("\n  - {} ({:.1}% compatible)\n", result.test_name, result.compatibility_percent));
             report.push_str(&format_differences(&result.differences));
         }
 
+        // Add compatibility trend if available
+        report.push_str(&self.generate_compatibility_trend());
+
         report
+    }
+
+    /// Generate compatibility trend information
+    fn generate_compatibility_trend(&self) -> String {
+        // For now, just return empty string
+        // In the future, this could read historical data
+        String::new()
+    }
+
+    /// Generate CI-friendly report (JSON format)
+    pub fn generate_ci_report(&self, results: &[ComparisonResult]) -> String {
+        use serde_json::json;
+
+        let total = results.len();
+        let passed = results.iter().filter(|r| r.passed).count();
+        let overall_compat = if total > 0 { (passed as f64 / total as f64) * 100.0 } else { 100.0 };
+
+        let report = json!({
+            "compatibility_percentage": overall_compat,
+            "threshold": self.compatibility_threshold,
+            "total_tests": total,
+            "passed_tests": passed,
+            "failed_tests": total - passed,
+            "meets_threshold": overall_compat >= self.compatibility_threshold,
+            "test_results": results.iter().map(|r| {
+                json!({
+                    "name": r.test_name,
+                    "passed": r.passed,
+                    "compatibility": r.compatibility_percent,
+                    "maki_time_ms": r.maki_time.as_millis(),
+                    "sushi_time_ms": r.sushi_time.map(|t| t.as_millis()),
+                    "differences_count": r.differences.len()
+                })
+            }).collect::<Vec<_>>()
+        });
+
+        serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// Check if compatibility meets threshold
+    pub fn meets_threshold(&self, results: &[ComparisonResult]) -> bool {
+        if results.is_empty() {
+            return true;
+        }
+
+        let passed = results.iter().filter(|r| r.passed).count();
+        let overall_compat = (passed as f64 / results.len() as f64) * 100.0;
+        overall_compat >= self.compatibility_threshold
     }
 }
 

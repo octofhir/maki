@@ -176,6 +176,175 @@ impl InstanceExporter {
         self.instance_registry.get(name)
     }
 
+    /// Resolve the base FHIR resource type for a profile by following the parent chain
+    ///
+    /// This method recursively follows the parent chain of a profile until it finds
+    /// a base FHIR resource type (like "Patient", "Observation", etc.).
+    ///
+    /// # Arguments
+    ///
+    /// * `fishing_ctx` - Fishing context for looking up profiles
+    /// * `profile_name` - Name of the profile to resolve
+    /// * `metadata` - Initial metadata for the profile
+    ///
+    /// # Returns
+    ///
+    /// The base FHIR resource type (e.g., "Patient" for a CancerPatient profile)
+    async fn resolve_base_resource_type(
+        &self,
+        fishing_ctx: &Arc<FishingContext>,
+        profile_name: &str,
+        metadata: &crate::semantic::FishableMetadata,
+    ) -> String {
+        const MAX_DEPTH: usize = 10; // Prevent infinite loops
+        let mut depth = 0;
+        let mut current_parent = metadata.parent.clone();
+
+        trace!(
+            "Starting base resource type resolution for profile '{}' with parent: {:?}",
+            profile_name,
+            current_parent
+        );
+
+        // Follow the parent chain until we find a base resource or hit max depth
+        while let Some(parent) = current_parent {
+            depth += 1;
+            if depth > MAX_DEPTH {
+                warn!(
+                    "Max depth ({}) exceeded resolving base type for '{}', using parent '{}'",
+                    MAX_DEPTH, profile_name, parent
+                );
+                return parent;
+            }
+
+            trace!("  [Depth {}] Checking parent: '{}'", depth, parent);
+
+            // Check if parent is a known base FHIR resource type
+            // Base resources typically don't have parents or their parent is "DomainResource"/"Resource"
+            if self.is_base_resource_type(&parent) {
+                debug!(
+                    "Found base resource type '{}' for profile '{}' at depth {}",
+                    parent, profile_name, depth
+                );
+                return parent;
+            }
+
+            // Try to fish for the parent profile's metadata
+            if let Some(parent_metadata) = fishing_ctx
+                .fish_metadata(&parent, &[
+                    crate::semantic::ResourceType::Profile,
+                    crate::semantic::ResourceType::Logical,
+                ])
+                .await
+            {
+                trace!(
+                    "  [Depth {}] Found parent '{}' with parent: {:?}",
+                    depth,
+                    parent,
+                    parent_metadata.parent
+                );
+                current_parent = parent_metadata.parent.clone();
+            } else {
+                // Parent not found in tank, try canonical packages
+                trace!("  [Depth {}] Parent '{}' not in tank, trying canonical", depth, parent);
+
+                // Try to resolve alias first (e.g., "USCorePatient" -> canonical URL)
+                let parent_to_fish = fishing_ctx.resolve_alias(&parent).unwrap_or_else(|| parent.clone());
+                if parent_to_fish != parent {
+                    trace!("  [Depth {}] Resolved alias '{}' -> '{}'", depth, parent, parent_to_fish);
+                }
+
+                match fishing_ctx.fish_structure_definition(&parent_to_fish).await {
+                    Ok(Some(sd)) => {
+                        trace!(
+                            "  [Depth {}] Found parent '{}' in canonical with type: '{}'",
+                            depth,
+                            parent,
+                            sd.type_field
+                        );
+                        // StructureDefinition.type is the base resource type
+                        return sd.type_field;
+                    }
+                    Ok(None) => {
+                        debug!(
+                            "Parent '{}' not found (None), assuming it's the base resource type for '{}'",
+                            parent, profile_name
+                        );
+                        return parent;
+                    }
+                    Err(e) => {
+                        debug!(
+                            "Parent '{}' error: {}, assuming it's the base resource type for '{}'",
+                            parent, e, profile_name
+                        );
+                        return parent;
+                    }
+                }
+            }
+        }
+
+        // No parent found - use the profile name as the base type
+        debug!(
+            "No parent found for '{}', using profile name as base resource type",
+            profile_name
+        );
+        profile_name.to_string()
+    }
+
+    /// Check if a name is a known base FHIR resource type
+    ///
+    /// This checks against common FHIR resource types to determine if we've
+    /// reached the base of the profile inheritance chain.
+    fn is_base_resource_type(&self, name: &str) -> bool {
+        // Common FHIR R4 resource types
+        // See: http://hl7.org/fhir/R4/resourcelist.html
+        matches!(
+            name,
+            "Account" | "ActivityDefinition" | "AdverseEvent" | "AllergyIntolerance"
+                | "Appointment" | "AppointmentResponse" | "AuditEvent" | "Basic"
+                | "Binary" | "BiologicallyDerivedProduct" | "BodyStructure" | "Bundle"
+                | "CapabilityStatement" | "CarePlan" | "CareTeam" | "CatalogEntry"
+                | "ChargeItem" | "ChargeItemDefinition" | "Claim" | "ClaimResponse"
+                | "ClinicalImpression" | "CodeSystem" | "Communication" | "CommunicationRequest"
+                | "CompartmentDefinition" | "Composition" | "ConceptMap" | "Condition"
+                | "Consent" | "Contract" | "Coverage" | "CoverageEligibilityRequest"
+                | "CoverageEligibilityResponse" | "DetectedIssue" | "Device"
+                | "DeviceDefinition" | "DeviceMetric" | "DeviceRequest" | "DeviceUseStatement"
+                | "DiagnosticReport" | "DocumentManifest" | "DocumentReference"
+                | "DomainResource" | "EffectEvidenceSynthesis" | "Encounter" | "Endpoint"
+                | "EnrollmentRequest" | "EnrollmentResponse" | "EpisodeOfCare"
+                | "EventDefinition" | "Evidence" | "EvidenceVariable" | "ExampleScenario"
+                | "ExplanationOfBenefit" | "FamilyMemberHistory" | "Flag" | "Goal"
+                | "GraphDefinition" | "Group" | "GuidanceResponse" | "HealthcareService"
+                | "ImagingStudy" | "Immunization" | "ImmunizationEvaluation"
+                | "ImmunizationRecommendation" | "ImplementationGuide" | "InsurancePlan"
+                | "Invoice" | "Library" | "Linkage" | "List" | "Location" | "Measure"
+                | "MeasureReport" | "Media" | "Medication" | "MedicationAdministration"
+                | "MedicationDispense" | "MedicationKnowledge" | "MedicationRequest"
+                | "MedicationStatement" | "MedicinalProduct" | "MedicinalProductAuthorization"
+                | "MedicinalProductContraindication" | "MedicinalProductIndication"
+                | "MedicinalProductIngredient" | "MedicinalProductInteraction"
+                | "MedicinalProductManufactured" | "MedicinalProductPackaged"
+                | "MedicinalProductPharmaceutical" | "MedicinalProductUndesirableEffect"
+                | "MessageDefinition" | "MessageHeader" | "MolecularSequence"
+                | "NamingSystem" | "NutritionOrder" | "Observation" | "ObservationDefinition"
+                | "OperationDefinition" | "OperationOutcome" | "Organization"
+                | "OrganizationAffiliation" | "Parameters" | "Patient" | "PaymentNotice"
+                | "PaymentReconciliation" | "Person" | "PlanDefinition" | "Practitioner"
+                | "PractitionerRole" | "Procedure" | "Provenance" | "Questionnaire"
+                | "QuestionnaireResponse" | "RelatedPerson" | "RequestGroup"
+                | "ResearchDefinition" | "ResearchElementDefinition" | "ResearchStudy"
+                | "ResearchSubject" | "Resource" | "RiskAssessment" | "RiskEvidenceSynthesis"
+                | "Schedule" | "SearchParameter" | "ServiceRequest" | "Slot" | "Specimen"
+                | "SpecimenDefinition" | "StructureDefinition" | "StructureMap"
+                | "Subscription" | "Substance" | "SubstanceNucleicAcid" | "SubstancePolymer"
+                | "SubstanceProtein" | "SubstanceReferenceInformation" | "SubstanceSourceMaterial"
+                | "SubstanceSpecification" | "SupplyDelivery" | "SupplyRequest" | "Task"
+                | "TerminologyCapabilities" | "TestReport" | "TestScript" | "ValueSet"
+                | "VerificationResult" | "VisionPrescription"
+        )
+    }
+
     /// Export an Instance to a FHIR resource (JSON)
     ///
     /// # Arguments
@@ -219,11 +388,80 @@ impl InstanceExporter {
 
         trace!("Instance {} is of type {}", name, instance_of);
 
-        // Create base resource
-        let mut resource = serde_json::json!({
-            "resourceType": instance_of,
-            "id": name,
-        });
+        // Resolve profile to get base resource type and canonical URL
+        let (resource_type, canonical_url) = if let Some(fishing_ctx) = &self.fishing_context {
+            // Try to get metadata from the tank first (profiles not yet exported)
+            // This is fast and doesn't require full export
+            if let Some(metadata) = fishing_ctx
+                .fish_metadata(&instance_of, &[
+                    crate::semantic::ResourceType::Profile,
+                    crate::semantic::ResourceType::Extension,
+                    crate::semantic::ResourceType::Logical,
+                ])
+                .await
+            {
+                // Found in tank - resolve base resource type by following parent chain
+                let base_type = self.resolve_base_resource_type(fishing_ctx, &instance_of, &metadata).await;
+                let profile_url = metadata.url.clone();
+                debug!(
+                    "Resolved profile '{}' from tank -> base type: '{}', canonical URL: '{}'",
+                    instance_of, base_type, profile_url
+                );
+                (base_type, Some(profile_url))
+            } else {
+                // Not in tank, try canonical packages (external FHIR definitions)
+                match fishing_ctx.fish_structure_definition(&instance_of).await {
+                    Ok(Some(sd)) => {
+                        // Found in canonical packages - use its base type and canonical URL
+                        let base_type = sd.type_field.clone();
+                        let profile_url = sd.url.clone();
+                        debug!(
+                            "Resolved profile '{}' from canonical -> base type: '{}', canonical URL: '{}'",
+                            instance_of, base_type, profile_url
+                        );
+                        (base_type, Some(profile_url))
+                    }
+                    Ok(None) => {
+                        // Not found anywhere - might be a base resource type
+                        debug!(
+                            "Profile '{}' not found, assuming it's a base resource type",
+                            instance_of
+                        );
+                        (instance_of.to_string(), None)
+                    }
+                    Err(e) => {
+                        // Error during resolution - log warning and fall back
+                        warn!(
+                            "Error resolving profile '{}': {}, using as resourceType",
+                            instance_of, e
+                        );
+                        (instance_of.to_string(), None)
+                    }
+                }
+            }
+        } else {
+            // No fishing context available - fall back to using instance_of as-is
+            debug!("No fishing context available, using '{}' as resourceType", instance_of);
+            (instance_of.to_string(), None)
+        };
+
+        // Create base resource with correct resourceType
+        let mut resource = if let Some(profile_url) = canonical_url {
+            // Include meta.profile with canonical URL
+            serde_json::json!({
+                "resourceType": resource_type,
+                "id": name,
+                "meta": {
+                    "profile": [profile_url]
+                }
+            })
+        } else {
+            // No profile URL available - just use resourceType and id
+            serde_json::json!({
+                "resourceType": resource_type,
+                "id": name,
+            })
+        };
 
         // Apply rules
         for rule in instance.rules() {
@@ -293,20 +531,23 @@ impl InstanceExporter {
                     .to_string(),
             })?;
 
-        let value_str = rule.value().ok_or_else(|| {
-            ExportError::InvalidValue("Missing value in fixed value rule".to_string())
-        })?;
+        // Skip if there's no value - this is actually a path rule (structural navigation)
+        // Example: * valueCodeableConcept (without = value)
+        let Some(value_str) = rule.value() else {
+            trace!("Skipping fixed value rule with no value (path rule): {}", path);
+            return Ok(());
+        };
 
         trace!("Applying assignment: {} = {}", path, value_str);
 
         // Parse the path into segments
         let segments = self.parse_path(&path)?;
 
-        // Convert value string to JSON
-        let json_value = self.convert_value(&value_str).await?;
+        // Convert value string to JSON, passing path context to preserve string types
+        let json_value = self.convert_value_with_path(&value_str, &path).await?;
 
         // Navigate and set the value
-        self.set_value_at_path(resource, &segments, json_value)?;
+        self.set_value_at_path(resource, &segments, json_value).await?;
 
         Ok(())
     }
@@ -393,7 +634,7 @@ impl InstanceExporter {
     /// - Array indexing (name.given[0] = "John")
     /// - Slice names (extension[myExtension].url = "http://...")
     /// - Complex value merging (when setting properties on existing objects)
-    fn set_value_at_path(
+    async fn set_value_at_path(
         &mut self,
         resource: &mut JsonValue,
         segments: &[PathSegment],
@@ -418,15 +659,24 @@ impl InstanceExporter {
                     if is_last {
                         // Set the final value
                         if let JsonValue::Object(obj) = current_value {
+                            // Check if this field should be an array
+                            let final_value = if self.is_array_field(field) && !value.is_array() {
+                                // Wrap scalar value in an array
+                                trace!("Wrapping value in array for field '{}'", field);
+                                JsonValue::Array(vec![value.clone()])
+                            } else {
+                                value.clone()
+                            };
+
                             // If the field already exists and both are objects, merge them
                             if let Some(existing) = obj.get_mut(field) {
-                                if existing.is_object() && value.is_object() {
-                                    self.merge_objects(existing, &value);
+                                if existing.is_object() && final_value.is_object() {
+                                    self.merge_objects(existing, &final_value);
                                 } else {
-                                    *existing = value.clone();
+                                    *existing = final_value;
                                 }
                             } else {
-                                obj.insert(field.clone(), value.clone());
+                                obj.insert(field.clone(), final_value);
                             }
                             return Ok(());
                         } else {
@@ -436,12 +686,42 @@ impl InstanceExporter {
                             });
                         }
                     } else {
-                        // Navigate or create intermediate object
+                        // Navigate or create intermediate structure
                         if let JsonValue::Object(obj) = current_value {
                             if !obj.contains_key(field) {
-                                obj.insert(field.clone(), JsonValue::Object(Map::new()));
+                                // Determine if we should create an array or object
+                                // If the next segment is a Field (not ArrayAccess), this might be
+                                // FSH shorthand for accessing array element properties without index
+                                let next_is_field = i + 1 < segments.len() && matches!(segments[i + 1], PathSegment::Field(_));
+
+                                if next_is_field {
+                                    // Create an array with one empty object - FSH shorthand for identifier.use
+                                    // means identifier[0].use when identifier is an array field
+                                    let mut arr = Vec::new();
+                                    arr.push(JsonValue::Object(Map::new()));
+                                    obj.insert(field.clone(), JsonValue::Array(arr));
+                                } else {
+                                    // Create a regular object
+                                    obj.insert(field.clone(), JsonValue::Object(Map::new()));
+                                }
                             }
-                            obj.get_mut(field).unwrap()
+
+                            // Navigate into the field
+                            let field_value = obj.get_mut(field).unwrap();
+
+                            // If it's an array and next is a field, navigate into first element
+                            if field_value.is_array() {
+                                let arr = field_value.as_array_mut().unwrap();
+                                if arr.is_empty() {
+                                    arr.push(JsonValue::Object(Map::new()));
+                                }
+                                // Get current index for this field, default to 0
+                                let idx = *self.current_indices.get(field).unwrap_or(&0);
+                                let arr_len = arr.len();
+                                &mut arr[idx.min(arr_len - 1)]
+                            } else {
+                                field_value
+                            }
                         } else {
                             return Err(ExportError::InvalidPath {
                                 path: field.clone(),
@@ -477,7 +757,7 @@ impl InstanceExporter {
                         // Determine actual index based on slice name or numeric index
                         let actual_index = if let Some(slice) = slice_name {
                             // Find or create element with matching slice name
-                            self.find_or_create_slice(arr, slice, field)?
+                            self.find_or_create_slice(arr, slice, field).await?
                         } else {
                             match index {
                                 ArrayIndex::Numeric(n) => *n,
@@ -524,29 +804,37 @@ impl InstanceExporter {
 
     /// Find or create an array element with a specific slice name
     ///
-    /// For extensions, this matches by the `url` field.
+    /// For extensions, this matches by the `url` field and resolves slice names to canonical URLs.
     /// For other slices, this uses the `_sliceName` internal field.
-    fn find_or_create_slice(
+    async fn find_or_create_slice(
         &self,
         arr: &mut Vec<JsonValue>,
         slice_name: &str,
         field: &str,
     ) -> Result<usize, ExportError> {
-        // For extensions, match by URL
+        // For extensions, match by URL and resolve slice names to canonical URLs
         if field == "extension" || field == "modifierExtension" {
+            // Resolve slice name to canonical URL
+            let extension_url = self.resolve_extension_url(slice_name).await;
+
+            trace!(
+                "Resolving extension slice '{}' -> canonical URL '{}'",
+                slice_name,
+                extension_url
+            );
+
             // Try to find existing extension with this URL
             for (idx, elem) in arr.iter().enumerate() {
                 if let Some(url) = elem.get("url").and_then(|u| u.as_str()) {
-                    if url == slice_name {
+                    if url == extension_url {
                         return Ok(idx);
                     }
                 }
             }
-            // Not found, create new element at end
+            // Not found, create new element at end with canonical URL
             let idx = arr.len();
             arr.push(serde_json::json!({
-                "url": slice_name,
-                "_sliceName": slice_name
+                "url": extension_url
             }));
             Ok(idx)
         } else {
@@ -565,6 +853,63 @@ impl InstanceExporter {
             }));
             Ok(idx)
         }
+    }
+
+    /// Resolve extension slice name to canonical URL
+    ///
+    /// This method attempts to resolve extension slice names in the following order:
+    /// 1. If it's already a URL (contains "://"), use it as-is
+    /// 2. If it's an alias, resolve to canonical URL via alias table
+    /// 3. Try to find extension definition in tank/canonical
+    /// 4. Fall back to using slice name as-is (for backwards compatibility)
+    async fn resolve_extension_url(&self, slice_name: &str) -> String {
+        // If it's already a full URL, use as-is
+        if slice_name.contains("://") {
+            return slice_name.to_string();
+        }
+
+        // Try alias resolution first
+        if let Some(fishing_ctx) = &self.fishing_context {
+            if let Some(canonical_url) = fishing_ctx.resolve_alias(slice_name) {
+                debug!("Resolved extension alias '{}' -> '{}'", slice_name, canonical_url);
+                return canonical_url;
+            }
+
+            // Try multiple naming patterns for the extension
+            let candidates = vec![
+                slice_name.to_string(),
+                format!("us-core-{}", slice_name),
+                format!("uscoreext-{}", slice_name),
+            ];
+
+            for candidate in &candidates {
+                trace!("Trying extension name: '{}'", candidate);
+
+                // Try to find extension definition in tank
+                if let Some(metadata) = fishing_ctx
+                    .fish_metadata(candidate, &[crate::semantic::ResourceType::Extension])
+                    .await
+                {
+                    debug!("Resolved extension '{}' (tried '{}') from tank -> '{}'", slice_name, candidate, metadata.url);
+                    return metadata.url;
+                }
+
+                // Try to find extension in canonical packages
+                match fishing_ctx.fish_structure_definition(candidate).await {
+                    Ok(Some(sd)) => {
+                        debug!("Resolved extension '{}' (tried '{}') from canonical -> '{}'", slice_name, candidate, sd.url);
+                        return sd.url;
+                    }
+                    Ok(None) | Err(_) => {
+                        // Not found with this candidate, try next
+                    }
+                }
+            }
+        }
+
+        // Fallback: use slice name as-is
+        debug!("Could not resolve extension '{}', using as-is", slice_name);
+        slice_name.to_string()
     }
 
     /// Merge two JSON objects, combining their properties
@@ -604,6 +949,99 @@ impl InstanceExporter {
         }
     }
 
+    /// Convert a FSH value string to appropriate JSON value with path context
+    ///
+    /// This method preserves string types for known FHIR string fields even if the value
+    /// looks like a number (e.g., postalCode, identifier.value).
+    ///
+    /// Handles:
+    /// - Simple types: strings, numbers, booleans, codes
+    /// - Complex types: CodeableConcept, Quantity, Reference, Ratio
+    /// - FHIR-specific patterns
+    async fn convert_value_with_path(&self, value_str: &str, path: &str) -> Result<JsonValue, ExportError> {
+        // Check if this path should always be a string
+        if self.is_string_field_path(path) {
+            let trimmed = value_str.trim();
+            // If it's a quoted string, remove quotes
+            if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+                || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+            {
+                return Ok(JsonValue::String(trimmed[1..trimmed.len() - 1].to_string()));
+            }
+            // Otherwise, keep as-is (even if it looks like a number)
+            return Ok(JsonValue::String(trimmed.to_string()));
+        }
+
+        // Use standard conversion for other fields
+        self.convert_value(value_str).await
+    }
+
+    /// Check if a path represents a field that should always be a string in FHIR
+    ///
+    /// This includes fields like postalCode, identifier.value, id, etc. that are
+    /// defined as string types in the FHIR spec but often contain numeric-looking values.
+    fn is_string_field_path(&self, path: &str) -> bool {
+        // Extract the final field name from the path (after last dot)
+        let field_name = path.rsplit('.').next().unwrap_or(path);
+
+        // Check for known FHIR string fields that often contain numeric values
+        match field_name {
+            // Address fields
+            "postalCode" | "postal" => true,
+            // Identifier fields
+            "value" if path.contains("identifier") => true,
+            // NPI, SSN, etc.
+            "system" if path.contains("identifier") => true,
+            // Phone numbers
+            "value" if path.contains("telecom") => true,
+            // ID fields
+            "id" => true,
+            // Various other string fields that might look numeric
+            "version" | "reference" | "display" => true,
+            _ => false,
+        }
+    }
+
+    /// Check if a field name represents an array field in FHIR
+    ///
+    /// This includes common FHIR array fields like address.line, name.given,
+    /// identifier, telecom, etc.
+    fn is_array_field(&self, field_name: &str) -> bool {
+        // Check for known FHIR array fields
+        matches!(
+            field_name,
+            // Common array fields across many resources
+            "identifier" | "telecom" | "address" | "contact" | "communication" |
+            "contained" | "extension" | "modifierExtension" |
+            // Name fields
+            "name" | "given" | "prefix" | "suffix" |
+            // Address fields
+            "line" |
+            // Coding/CodeableConcept
+            "coding" |
+            // Observation
+            "category" | "performer" | "interpretation" | "note" | "referenceRange" | "component" |
+            // Patient
+            "photo" | "link" |
+            // Practitioner
+            "qualification" |
+            // Organization
+            "alias" | "endpoint" |
+            // Condition
+            "bodySite" | "stage" | "evidence" |
+            // Procedure
+            "complication" | "followUp" | "focalDevice" | "usedReference" | "usedCode" |
+            // MedicationRequest
+            "dosageInstruction" | "detectedIssue" | "eventHistory" |
+            // DiagnosticReport
+            "result" | "imagingStudy" | "media" |
+            // Encounter
+            "statusHistory" | "classHistory" | "participant" | "diagnosis" | "account" | "hospitalization" | "location" |
+            // Various
+            "instantiatesCanonical" | "instantiatesUri" | "basedOn" | "partOf" | "reasonCode" | "reasonReference"
+        )
+    }
+
     /// Convert a FSH value string to appropriate JSON value
     ///
     /// Handles:
@@ -631,7 +1069,7 @@ impl InstanceExporter {
         // Code with system (CodeableConcept pattern): system#code "display"
         // Example: http://loinc.org#LA6576-8 "Excellent"
         if trimmed.contains('#') && !trimmed.starts_with('#') {
-            return self.parse_codeable_concept(trimmed);
+            return self.parse_codeable_concept(trimmed).await;
         }
 
         // Code (starts with #)
@@ -694,16 +1132,30 @@ impl InstanceExporter {
     }
 
     /// Parse CodeableConcept from FSH notation
-    /// Format: system#code "display"
-    fn parse_codeable_concept(&self, value: &str) -> Result<JsonValue, ExportError> {
+    /// Format: system#code "display" or ALIAS#code "display"
+    async fn parse_codeable_concept(&self, value: &str) -> Result<JsonValue, ExportError> {
         // Split into system#code and display
         let parts: Vec<&str> = value.splitn(2, '#').collect();
         if parts.len() != 2 {
             return Ok(JsonValue::String(value.to_string()));
         }
 
-        let system = parts[0].trim();
+        let system_or_alias = parts[0].trim();
         let code_and_display = parts[1];
+
+        // Resolve system alias to canonical URL
+        let system = if let Some(fishing_ctx) = &self.fishing_context {
+            if let Some(canonical_url) = fishing_ctx.resolve_alias(system_or_alias) {
+                debug!("Resolved CodeSystem alias '{}' -> '{}'", system_or_alias, canonical_url);
+                canonical_url
+            } else {
+                // Not an alias, use as-is
+                system_or_alias.to_string()
+            }
+        } else {
+            // No fishing context, use as-is
+            system_or_alias.to_string()
+        };
 
         // Extract code and display
         let (code, display) = if let Some(space_idx) = code_and_display.find(' ') {

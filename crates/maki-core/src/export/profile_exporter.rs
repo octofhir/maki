@@ -163,6 +163,10 @@ pub struct ProfileExporter {
     status: Option<String>,
     /// Publisher from config
     publisher: Option<String>,
+    /// Alias table for resolving profile/extension aliases
+    alias_table: crate::semantic::AliasTable,
+    /// Package for finding locally exported profiles
+    package: Arc<tokio::sync::RwLock<crate::semantic::Package>>,
 }
 
 impl ProfileExporter {
@@ -201,6 +205,8 @@ impl ProfileExporter {
         version: Option<String>,
         status: Option<String>,
         publisher: Option<String>,
+        alias_table: crate::semantic::AliasTable,
+        package: Arc<tokio::sync::RwLock<crate::semantic::Package>>,
     ) -> Result<Self, ExportError> {
         let path_resolver = Arc::new(PathResolver::new(session.clone()));
         let differential_generator =
@@ -212,6 +218,8 @@ impl ProfileExporter {
             differential_generator,
             base_url,
             generate_snapshots: false, // Default OFF to match SUSHI
+            alias_table,
+            package,
             version,
             status,
             publisher,
@@ -403,24 +411,55 @@ impl ProfileExporter {
         );
         debug!("Resolving parent: {}", parent);
 
-        // 1. If canonical provided explicitly, resolve immediately
-        if parent.starts_with("http://") || parent.starts_with("https://") {
+        // 0a. Check if parent is in locally exported Package (by name)
+        // This allows child profiles to find parent profiles exported earlier in the same build
+        {
+            let package = self.package.read().await;
+            for (canonical_url, resource_json) in package.all_resources().iter() {
+                if let Ok(sd) = serde_json::from_value::<StructureDefinition>((**resource_json).clone()) {
+                    // Check if name matches parent
+                    if sd.name == parent {
+                        eprintln!(
+                            "[GET_BASE_SD] Step 0: Found parent '{}' in local Package by name → {}",
+                            parent, canonical_url
+                        );
+                        debug!("Found parent '{}' in local Package", parent);
+                        return Ok(sd);
+                    }
+                }
+            }
+        }
+
+        // 0b. Check if parent is an alias and resolve it to canonical URL
+        let parent_to_resolve = if let Some(resolved_url) = self.alias_table.resolve(parent) {
+            eprintln!(
+                "[GET_BASE_SD] Step 1a: Parent '{}' is an alias, resolved to canonical URL: {}",
+                parent, resolved_url
+            );
+            debug!("Resolved alias '{}' → '{}'", parent, resolved_url);
+            resolved_url
+        } else {
+            parent
+        };
+
+        // 1. If canonical provided explicitly (or resolved from alias), resolve immediately
+        if parent_to_resolve.starts_with("http://") || parent_to_resolve.starts_with("https://") {
             eprintln!("[GET_BASE_SD] Step 2: Parent is a canonical URL, resolving...");
             if let Some(sd) = self
-                .resolve_structure_definition_from_canonical(parent)
+                .resolve_structure_definition_from_canonical(parent_to_resolve)
                 .await?
             {
                 eprintln!(
                     "[GET_BASE_SD] Step 3: Resolved parent via canonical URL {} → {}",
-                    parent, sd.url
+                    parent_to_resolve, sd.url
                 );
-                debug!("Resolved parent via canonical URL {} → {}", parent, sd.url);
+                debug!("Resolved parent via canonical URL {} → {}", parent_to_resolve, sd.url);
                 return Ok(sd);
             }
 
             return Err(ExportError::ParentNotFound(format!(
                 "{}: canonical URL {} not found",
-                parent, parent
+                parent, parent_to_resolve
             )));
         }
 
@@ -429,53 +468,66 @@ impl ProfileExporter {
         // or exists in a loaded package with that name
         eprintln!(
             "[GET_BASE_SD] Step 4: Trying to resolve parent '{}' via canonical manager by name",
-            parent
+            parent_to_resolve
         );
         debug!(
             "Trying to resolve parent '{}' via canonical manager by name",
-            parent
+            parent_to_resolve
         );
 
-        eprintln!("[GET_BASE_SD] Step 5: About to call session.resolve()");
-        if let Ok(resource) = self.session.resolve(parent).await {
+        eprintln!("[DEBUG] >>> CRITICAL: About to call session.resolve() for: {}", parent_to_resolve);
+        let resolve_start = std::time::Instant::now();
+
+        let resolve_result = self.session.resolve(parent_to_resolve).await;
+        let resolve_elapsed = resolve_start.elapsed();
+
+        eprintln!("[DEBUG] <<< session.resolve() returned after {:?} for: {}", resolve_elapsed, parent_to_resolve);
+
+        if let Ok(resource) = resolve_result {
             eprintln!(
                 "[GET_BASE_SD] Step 6: Found parent '{}' in canonical packages by name",
-                parent
+                parent_to_resolve
             );
-            debug!("Found parent '{}' in canonical packages by name", parent);
+            debug!("Found parent '{}' in canonical packages by name", parent_to_resolve);
             let sd_json = (*resource.content).clone();
             match serde_json::from_value::<StructureDefinition>(sd_json) {
                 Ok(sd) => {
                     debug!(
                         "Successfully parsed StructureDefinition for parent: {}",
-                        parent
+                        parent_to_resolve
                     );
                     return Ok(sd);
                 }
                 Err(e) => {
                     debug!(
                         "Failed to parse StructureDefinition for parent {}: {}",
-                        parent, e
+                        parent_to_resolve, e
                     );
                 }
             }
         }
 
         // 3. Try resolving as a FHIR core profile (fast path)
-        let core_candidate = format!("http://hl7.org/fhir/StructureDefinition/{}", parent);
+        eprintln!("[DEBUG] >>> Trying FHIR core canonical for: {}", parent_to_resolve);
+        let start_core = std::time::Instant::now();
+        let core_candidate = format!("http://hl7.org/fhir/StructureDefinition/{}", parent_to_resolve);
         if let Some(sd) = self
             .resolve_structure_definition_from_canonical(&core_candidate)
             .await?
         {
+            eprintln!("[DEBUG] <<< Found via FHIR core after {:?}", start_core.elapsed());
             debug!(
                 "Resolved parent {} using FHIR core canonical {}",
-                parent, core_candidate
+                parent_to_resolve, core_candidate
             );
             return Ok(sd);
         }
+        eprintln!("[DEBUG] <<< FHIR core lookup failed after {:?}", start_core.elapsed());
 
         // 4. Fallback to searching by ID/name via canonical manager index
-        debug!("Searching for StructureDefinition with name/id: {}", parent);
+        eprintln!("[DEBUG] >>> Searching by ID: {}", parent_to_resolve);
+        let start_search = std::time::Instant::now();
+        debug!("Searching for StructureDefinition with name/id: {}", parent_to_resolve);
 
         // Try multiple search strategies:
         // 1. Search by exact ID match (e.g., "us-core-patient")
@@ -484,10 +536,11 @@ impl ProfileExporter {
 
         let canonical_from_search = if let Ok(Some(resource)) = self
             .session
-            .resource_by_type_and_id("StructureDefinition", parent)
+            .resource_by_type_and_id("StructureDefinition", parent_to_resolve)
             .await
         {
-            debug!("Found parent by exact ID: {}", parent);
+            eprintln!("[DEBUG] <<< Found by ID after {:?}", start_search.elapsed());
+            debug!("Found parent by exact ID: {}", parent_to_resolve);
             resource
                 .content
                 .as_object()
@@ -496,38 +549,63 @@ impl ProfileExporter {
                 .ok_or_else(|| {
                     ExportError::CanonicalError(format!(
                         "Found resource but missing url field: {}",
-                        parent
+                        parent_to_resolve
                     ))
                 })?
                 .to_string()
         } else {
-            let kebab_case = camel_to_kebab(parent);
-            debug!("Trying kebab-case variant: {}", kebab_case);
-
+            // Try by exact name first (SUSHI-compatible: USCoreVitalSignsProfile)
+            eprintln!("[DEBUG] Trying by exact name: {}", parent_to_resolve);
             if let Ok(Some(resource)) = self
                 .session
-                .resource_by_type_and_id("StructureDefinition", &kebab_case)
+                .resource_by_type_and_name("StructureDefinition", parent_to_resolve)
                 .await
             {
-                debug!("Found parent by kebab-case ID: {}", kebab_case);
-                resource
-                    .content
-                    .as_object()
-                    .and_then(|obj| obj.get("url"))
-                    .and_then(|url| url.as_str())
-                    .ok_or_else(|| {
-                        ExportError::CanonicalError(format!(
-                            "Found resource but missing url field: {}",
-                            kebab_case
-                        ))
-                    })?
-                    .to_string()
+                eprintln!("[DEBUG] <<< Found by exact name after {:?}", start_search.elapsed());
+                debug!("Found parent by exact name: {}", parent_to_resolve);
+                resource.canonical_url.clone()
             } else {
-                debug!(
-                    "No match found via search for {}, assuming FHIR core canonical",
-                    parent
-                );
-                core_candidate
+                // Try with "Profile" suffix by name (common US Core pattern: USCoreMedicationRequestProfile)
+                let with_profile_suffix = format!("{}Profile", parent_to_resolve);
+                debug!("Trying with Profile suffix by name: {}", with_profile_suffix);
+
+                if let Ok(Some(resource)) = self
+                    .session
+                    .resource_by_type_and_name("StructureDefinition", &with_profile_suffix)
+                    .await
+                {
+                    debug!("Found parent with Profile suffix by name: {}", with_profile_suffix);
+                    resource.canonical_url.clone()
+                } else {
+                    let kebab_case = camel_to_kebab(parent_to_resolve);
+                    debug!("Trying kebab-case variant: {}", kebab_case);
+
+                    if let Ok(Some(resource)) = self
+                        .session
+                        .resource_by_type_and_id("StructureDefinition", &kebab_case)
+                        .await
+                    {
+                        debug!("Found parent by kebab-case ID: {}", kebab_case);
+                        resource
+                            .content
+                            .as_object()
+                            .and_then(|obj| obj.get("url"))
+                            .and_then(|url| url.as_str())
+                            .ok_or_else(|| {
+                                ExportError::CanonicalError(format!(
+                                    "Found resource but missing url field: {}",
+                                    kebab_case
+                                ))
+                            })?
+                            .to_string()
+                    } else {
+                        debug!(
+                            "No match found via search for {}, assuming FHIR core canonical",
+                            parent_to_resolve
+                        );
+                        core_candidate
+                    }
+                }
             }
         };
 
@@ -537,13 +615,13 @@ impl ProfileExporter {
         {
             debug!(
                 "Resolved parent {} via canonical {}",
-                parent, canonical_from_search
+                parent_to_resolve, canonical_from_search
             );
             Ok(sd)
         } else {
             Err(ExportError::ParentNotFound(format!(
                 "{}: canonical resolution failed for {}",
-                parent, canonical_from_search
+                parent_to_resolve, canonical_from_search
             )))
         }
     }

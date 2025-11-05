@@ -23,5 +23,8 @@
 pub mod comparator;
 pub mod runner;
 
-pub use comparator::{Difference, compare_json, format_differences};
+pub use comparator::{
+    Difference, SemanticComparisonResult, SemanticIssue, SemanticIssueType, SemanticSeverity,
+    compare_json, compare_semantic_equivalence, format_differences, format_semantic_results
+};
 pub use runner::{ComparisonResult, SushiCompatibilityHarness, TestCase};

@@ -2088,22 +2088,63 @@ impl FixedValueRule {
     }
 
     pub fn value(&self) -> Option<String> {
-        // Value can be code (with optional display), string, number, identifier, or boolean
-        // Priority: Code > Identifier > String > Number > Boolean
-        // This ensures `#collection "Collection"` returns `#collection` not `"Collection"`
-        token_of_kind(&self.syntax, FshSyntaxKind::Code)
-            .map(|t| t.text().to_string())
-            .or_else(|| get_ident_text(&self.syntax))
-            .or_else(|| get_string_text(&self.syntax))
-            .or_else(|| {
-                token_of_kind(&self.syntax, FshSyntaxKind::Integer).map(|t| t.text().to_string())
-            })
-            .or_else(|| {
-                token_of_kind(&self.syntax, FshSyntaxKind::True).map(|t| t.text().to_string())
-            })
-            .or_else(|| {
-                token_of_kind(&self.syntax, FshSyntaxKind::False).map(|t| t.text().to_string())
-            })
+        // Value can be:
+        // 1. CodeableConcept pattern: SYSTEM#code "display" or URL#code "display"
+        // 2. Simple code: #code "display"
+        // 3. String: "text"
+        // 4. Number: 42 or 3.14
+        // 5. Boolean: true or false
+        // 6. Identifier: SomeValue
+        //
+        // For CodeableConcept patterns, we need to capture ALL tokens:
+        // IDTYPE#PT "Patient external identifier" -> entire string
+        //
+        // Strategy: Collect all relevant tokens after the "=" sign until newline/comment
+
+        // First check if there's a NameValue child node (for complex values like IDTYPE#PT "display")
+        for child in self.syntax.children() {
+            if child.kind() == FshSyntaxKind::NameValue {
+                // Extract text from NameValue node
+                let text = child.text().to_string();
+                return Some(text.trim().to_string());
+            }
+        }
+
+        // Fall back to token-based extraction for simple values
+        let mut found_equals = false;
+        let mut value_parts = Vec::new();
+        let mut all_tokens = Vec::new();
+
+        for element in self.syntax.children_with_tokens() {
+            if let Some(token) = element.as_token() {
+                all_tokens.push(format!("{}:{:?}", token.text(), token.kind()));
+
+                match token.kind() {
+                    FshSyntaxKind::Equals => {
+                        found_equals = true;
+                        continue;
+                    }
+                    // Skip whitespace and comments before value
+                    FshSyntaxKind::Whitespace if !found_equals => continue,
+                    FshSyntaxKind::CommentLine => break, // Stop at comments
+                    FshSyntaxKind::Newline => break, // Stop at newline
+                    // Skip whitespace at start but keep it within the value
+                    FshSyntaxKind::Whitespace if found_equals && value_parts.is_empty() => continue,
+                    // Collect value token text
+                    _ if found_equals => {
+                        value_parts.push(token.text().to_string());
+                    }
+                    _ => continue,
+                }
+            }
+        }
+
+        if value_parts.is_empty() {
+            return None;
+        }
+
+        // Build the value string from collected token texts
+        Some(value_parts.join("").trim().to_string())
     }
 }
 
@@ -3428,9 +3469,41 @@ impl AstNode for NameValue {
 }
 
 impl NameValue {
-    /// Get the name/identifier part
+    /// Get the name/identifier part (handles URLs, URNs, and dotted names)
     pub fn name(&self) -> Option<String> {
-        token_of_kind(&self.syntax, FshSyntaxKind::Ident).map(|t| t.text().to_string())
+        let mut parts = Vec::new();
+
+        // Collect all tokens that make up the name until we hit code or display
+        for element in self.syntax.children_with_tokens() {
+            if let Some(token) = element.as_token() {
+                match token.kind() {
+                    // Name components
+                    FshSyntaxKind::Ident |
+                    FshSyntaxKind::Integer |
+                    FshSyntaxKind::Colon |
+                    FshSyntaxKind::Slash |
+                    FshSyntaxKind::Dot |
+                    FshSyntaxKind::Minus => {
+                        parts.push(token.text().to_string());
+                    }
+                    // Stop at code or display string
+                    FshSyntaxKind::Code |
+                    FshSyntaxKind::String => break,
+                    // Skip trivia
+                    FshSyntaxKind::Whitespace |
+                    FshSyntaxKind::Newline |
+                    FshSyntaxKind::CommentLine |
+                    FshSyntaxKind::CommentBlock => {}
+                    _ => break,
+                }
+            }
+        }
+
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(""))
+        }
     }
 
     /// Get the code part if this is System#code format

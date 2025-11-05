@@ -279,6 +279,7 @@ impl BuildOrchestrator {
                     cache_dir: maki_dir.join("cache"),
                     packages_dir: maki_dir.join("packages"),
                     max_cache_size: "5GB".to_string(),
+                    connection_pool_size: 32, // Increased pool size for concurrent workloads
                 },
                 optimization: OptimizationConfig {
                     parallel_workers: rayon::current_num_threads(), // Use all CPU cores for performance
@@ -560,7 +561,24 @@ impl BuildOrchestrator {
         // Note: Linting (if enabled via --lint flag) is handled at CLI level
         // before build() is called to avoid circular dependencies
 
-        // Step 3: Extract resources from parsed files
+        // Step 3a: Extract aliases from parsed files (needed for parent resolution)
+        eprintln!("[DEBUG MAKI BUILD] About to extract aliases");
+        info!("🔗 Extracting FSH aliases...");
+        let alias_table = self.extract_aliases(&parsed_files)?;
+        eprintln!("[DEBUG MAKI BUILD] Extracted {} aliases", alias_table.len());
+
+        // Recreate fishing context with alias table for profile resolution
+        let fishing_ctx = Arc::new(
+            FishingContext::new(
+                session.clone(),
+                tank.clone(),
+                package.clone(),
+            )
+            .with_alias_table(Arc::new(alias_table.clone()))
+        );
+        eprintln!("[DEBUG MAKI BUILD] Recreated FishingContext with alias table");
+
+        // Step 3b: Extract resources from parsed files
         eprintln!("[DEBUG MAKI BUILD] About to extract resources");
         info!("🔍 Extracting FSH resources...");
         let resources = self.extract_resources(&parsed_files)?;
@@ -607,9 +625,12 @@ impl BuildOrchestrator {
                 &source_text,
                 &tracked.source_file,
             );
-            eprintln!("[DEBUG MAKI BUILD] About to acquire tank write lock");
-            tank.write().await.add_resource(fhir_resource);
-            eprintln!("[DEBUG MAKI BUILD] Added resource to tank");
+            eprintln!("[DEBUG] >>> Acquiring tank.write() lock");
+            let mut tank_guard = tank.write().await;
+            eprintln!("[DEBUG] <<< Acquired tank.write() lock");
+            tank_guard.add_resource(fhir_resource);
+            drop(tank_guard);
+            eprintln!("[DEBUG] Released tank.write() lock");
         }
         eprintln!("[DEBUG MAKI BUILD] Finished adding profiles to tank");
 
@@ -721,6 +742,7 @@ impl BuildOrchestrator {
             &file_structure,
             &mut stats,
             &mut fsh_index,
+            alias_table, // Already a plain AliasTable
         )
         .await?;
         eprintln!("[DEBUG MAKI BUILD] Finished exporting profiles and extensions");
@@ -729,6 +751,7 @@ impl BuildOrchestrator {
         self.export_instances(
             session.clone(),
             package.clone(),
+            fishing_ctx.clone(),
             &resources,
             &file_structure,
             &mut stats,
@@ -922,6 +945,14 @@ impl BuildOrchestrator {
             // Check for parse errors
             if !lexer_errors.is_empty() || !parse_errors.is_empty() {
                 warn!("Parse errors in file {:?}: {} errors", file, total_errors);
+
+                // Log first 3 errors for debugging
+                for (i, err) in lexer_errors.iter().take(3).enumerate() {
+                    eprintln!("  [LEXER ERROR {}] {:?}", i+1, err);
+                }
+                for (i, err) in parse_errors.iter().take(3).enumerate() {
+                    eprintln!("  [PARSE ERROR {}] {:?}", i+1, err);
+                }
             }
 
             parsed.push((file.clone(), root));
@@ -929,6 +960,47 @@ impl BuildOrchestrator {
         }
 
         Ok(parsed)
+    }
+
+    /// Extract aliases from parsed FSH files into a global alias table
+    fn extract_aliases(
+        &self,
+        parsed_files: &[(PathBuf, FshSyntaxNode)],
+    ) -> std::result::Result<crate::semantic::AliasTable, BuildError> {
+        use crate::cst::ast::{AstNode, Alias as AstAlias};
+        use crate::semantic::{Alias, AliasTable};
+
+        let mut alias_table = AliasTable::new();
+
+        for (file_path, root) in parsed_files {
+            // Extract all alias declarations from this file
+            for alias_node in root.children().filter_map(AstAlias::cast) {
+                if let (Some(name), Some(url)) = (alias_node.name(), alias_node.value()) {
+                    eprintln!("[DEBUG ALIAS] Found alias: {} → {}", name, url);
+                    let range = alias_node.syntax().text_range();
+                    let alias = Alias {
+                        name: name.clone(),
+                        url: url.clone(),
+                        source_file: file_path.clone(),
+                        source_span: range.start().into()..range.end().into(),
+                    };
+
+                    // Add to global table (ignoring duplicates for now, SUSHI allows them)
+                    if let Err(e) = alias_table.add_alias(alias) {
+                        warn!("Duplicate alias '{}' in {:?}: {}", name, file_path, e);
+                        // SUSHI allows duplicate aliases, last one wins
+                        // We could implement override behavior here if needed
+                    } else {
+                        eprintln!("[DEBUG ALIAS] Successfully added alias: {} → {}", name, url);
+                        debug!("Added alias: {} → {}", name, url);
+                    }
+                }
+            }
+        }
+
+        eprintln!("[DEBUG ALIAS] ✅ Total extracted: {} aliases", alias_table.len());
+        info!("✅ Extracted {} aliases from FSH files", alias_table.len());
+        Ok(alias_table)
     }
 
     /// Extract FSH resources from parsed files with source tracking
@@ -1018,6 +1090,8 @@ impl BuildOrchestrator {
             + codesystems.len()
             + instances.len();
 
+        eprintln!("[DEBUG EXTRACTION] Extracted {} instances from {} files", instances.len(), parsed_files.len());
+
         info!(
             "✅ EXTRACTED {} TOTAL RESOURCES from {} FSH files:",
             total_extracted,
@@ -1047,6 +1121,84 @@ impl BuildOrchestrator {
         })
     }
 
+    /// Build dependency graph for profiles based on Parent declarations
+    fn build_profile_dependency_graph(
+        &self,
+        profiles: &[SourceTrackedResource<Profile>],
+        alias_table: &crate::semantic::AliasTable,
+    ) -> crate::semantic::DependencyGraph {
+        use crate::semantic::{DependencyGraph, DependencyType};
+
+        let mut graph = DependencyGraph::new();
+
+        for profile in profiles {
+            let profile_name = profile
+                .resource
+                .name()
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            // Add this profile as a node
+            graph.add_node(profile_name.clone());
+
+            // Get parent and resolve alias if needed
+            if let Some(parent_rule) = profile.resource.parent() {
+                // parent_rule.value() returns Option<String>
+                if let Some(parent_name) = parent_rule.value() {
+                    // Resolve alias to get actual parent name
+                    let resolved_parent = if let Some(canonical_url) = alias_table.resolve(&parent_name)
+                    {
+                        // If it's a canonical URL, extract profile name from it
+                        if canonical_url.starts_with("http://") || canonical_url.starts_with("https://")
+                        {
+                            // Try to extract last segment as name
+                            canonical_url
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or(&parent_name)
+                                .to_string()
+                        } else {
+                            canonical_url.to_string()
+                        }
+                    } else {
+                        parent_name.clone()
+                    };
+
+                // Check if parent is a local profile (exists in our profiles list)
+                let is_local_profile = profiles
+                    .iter()
+                    .any(|p| p.resource.name().as_deref() == Some(&resolved_parent));
+
+                    if is_local_profile {
+                        // Add edge: this profile depends on parent profile
+                        eprintln!(
+                            "[DEBUG DEPENDENCY] Adding edge: {} → {} (local profile)",
+                            profile_name, resolved_parent
+                        );
+                        graph.add_edge(
+                            &profile_name,
+                            &resolved_parent,
+                            DependencyType::Parent,
+                            0..0, // TODO: get actual source location
+                        );
+                    } else {
+                        eprintln!(
+                            "[DEBUG DEPENDENCY] Skipping external parent: {} → {}",
+                            profile_name, parent_name
+                        );
+                    }
+                } // Close if let Some(parent_name) = parent_rule.value()
+            } // Close if let Some(parent_rule) = profile.resource.parent()
+        } // Close for profile in profiles
+
+        eprintln!(
+            "[DEBUG DEPENDENCY] Built dependency graph: {} nodes, {} edges",
+            graph.node_count(),
+            graph.edge_count()
+        );
+
+        graph
+    }
+
     /// Export profiles and extensions
     async fn export_profiles_and_extensions(
         &self,
@@ -1056,11 +1208,15 @@ impl BuildOrchestrator {
         file_structure: &FileStructureGenerator,
         stats: &mut BuildStats,
         fsh_index: &mut Vec<FshIndexEntry>,
+        alias_table: crate::semantic::AliasTable,
     ) -> std::result::Result<(), BuildError> {
         use crate::export::{ExtensionExporter, ProfileExporter};
         use futures::stream::{self, StreamExt};
         use std::sync::Arc as StdArc;
         use tokio::sync::Mutex; // Use async-aware Mutex
+
+        // Clone alias_table before using it (one for ProfileExporter, one for dependency graph)
+        let alias_table_for_deps = alias_table.clone();
 
         // Create exporters
         eprintln!("[DEBUG EXPORT] About to create ProfileExporter");
@@ -1075,6 +1231,8 @@ impl BuildOrchestrator {
             self.build_config().version.clone(),
             self.build_config().status.clone(),
             publisher_name.clone(),
+            alias_table, // Move alias_table here
+            package.clone(), // Pass package for local profile lookup
         )
         .await
         .map_err(|e| BuildError::ExportError(format!("Failed to create ProfileExporter: {}", e)))?;
@@ -1095,8 +1253,59 @@ impl BuildOrchestrator {
         })?;
         eprintln!("[DEBUG EXPORT] ExtensionExporter created");
 
+        // Build dependency graph for profiles and sort by dependencies
+        eprintln!("[DEBUG EXPORT] Building profile dependency graph...");
+        let dep_graph = self.build_profile_dependency_graph(&resources.profiles, &alias_table_for_deps);
+
+        // Get processing batches (profiles grouped by dependency level)
+        let profile_batches = dep_graph.get_processing_batches();
+        eprintln!(
+            "[DEBUG EXPORT] Profile batches: {} levels",
+            profile_batches.len()
+        );
+
+        for (level, batch) in profile_batches.iter().enumerate() {
+            eprintln!(
+                "[DEBUG EXPORT]   Level {}: {} profiles - {}",
+                level,
+                batch.len(),
+                batch.join(", ")
+            );
+        }
+
+        // Group profiles by batch (dependency level) for parallel-by-level execution
+        // This allows high concurrency within each level while maintaining ordering between levels
+        let mut profiles_by_batch: Vec<Vec<SourceTrackedResource<Profile>>> =
+            profile_batches.iter().map(|_| Vec::new()).collect();
+
+        // Create name-to-profile map for fast lookup
+        let profile_map: std::collections::HashMap<String, &SourceTrackedResource<Profile>> =
+            resources.profiles
+                .iter()
+                .filter_map(|tracked| {
+                    tracked.resource.name().map(|name| (name, tracked))
+                })
+                .collect();
+
+        // Assign each profile to its batch
+        for (batch_idx, batch_names) in profile_batches.iter().enumerate() {
+            for profile_name in batch_names {
+                if let Some(tracked) = profile_map.get(profile_name) {
+                    profiles_by_batch[batch_idx].push((*tracked).clone());
+                }
+            }
+        }
+
+        eprintln!(
+            "[DEBUG EXPORT] Organized {} profiles into {} dependency levels",
+            resources.profiles.len(),
+            profiles_by_batch.len()
+        );
+
+        let total_profiles = resources.profiles.len();
+
         // Create progress bar for profiles if show_progress is enabled
-        let profile_pb = if self.options.show_progress && !resources.profiles.is_empty() {
+        let profile_pb = if self.options.show_progress && total_profiles > 0 {
             let pb = ProgressBar::new(resources.profiles.len() as u64);
             pb.set_style(
                 ProgressStyle::default_bar()
@@ -1126,11 +1335,23 @@ impl BuildOrchestrator {
             // Create progress bar shared across tasks
             let profile_pb_arc = StdArc::new(profile_pb);
 
-            // Create async tasks for each profile
-            let profile_tasks: Vec<_> = resources
-                .profiles
-                .iter()
-                .map(|tracked| {
+            // Process each dependency level sequentially, but profiles within each level in parallel
+            // This maximizes parallelism while respecting dependency order
+            eprintln!("[DEBUG EXPORT] Starting level-by-level parallel export...");
+
+            for (level_idx, batch_profiles) in profiles_by_batch.iter().enumerate() {
+                eprintln!(
+                    "[DEBUG EXPORT] Processing level {}/{}: {} profiles",
+                    level_idx + 1,
+                    profiles_by_batch.len(),
+                    batch_profiles.len()
+                );
+
+                // Create tasks for this level
+                let level_tasks: Vec<_> = batch_profiles
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, tracked)| {
                     let profile = tracked.resource.clone();
                     let profile_exporter = profile_exporter.clone();
                     let file_structure = file_structure.clone();
@@ -1147,6 +1368,9 @@ impl BuildOrchestrator {
 
                     async move {
                         let profile_name = profile.name().unwrap_or_else(|| "Unknown".to_string());
+                        let start_time = std::time::Instant::now();
+                        eprintln!("[DEBUG] [Task {}] Profile export starting {}/{}: {}",
+                            idx + 1, idx + 1, total_profiles, profile_name);
                         debug!("Exporting profile: {}", profile_name);
 
                         match profile_exporter.export(&profile).await {
@@ -1203,11 +1427,17 @@ impl BuildOrchestrator {
                                         }
                                     }
 
+                                    let elapsed = start_time.elapsed();
+                                    eprintln!("[DEBUG] [Task {}] Profile {} exported successfully in {:?}",
+                                        idx + 1, profile_name, elapsed);
                                     debug!("Successfully exported profile: {}", profile_name);
                                 }
                             }
                             Err(e) => {
+                                let elapsed = start_time.elapsed();
                                 let error_msg = format!("{}", e);
+                                eprintln!("[DEBUG] [Task {}] Profile {} FAILED after {:?}: {}",
+                                    idx + 1, profile_name, elapsed, error_msg);
                                 warn!("Failed to export profile '{}': {}", profile_name, error_msg);
                                 failed_profiles_shared
                                     .lock()
@@ -1225,19 +1455,24 @@ impl BuildOrchestrator {
                 })
                 .collect();
 
-            // Execute profile exports with controlled concurrency
-            // NOTE: canonical-manager's session.resolve() has concurrency issues with sqlite
-            // Reducing to 1 (sequential) until canonical-manager supports concurrent queries
-            let concurrency = 1; // Sequential to avoid database deadlock
-            let mut results_stream = stream::iter(profile_tasks).buffer_unordered(concurrency);
+                // Execute this level's tasks with high concurrency
+                // Profiles within the same level have no dependencies on each other
+                let concurrency = 8; // Higher concurrency within each level
+                let mut results_stream = stream::iter(level_tasks).buffer_unordered(concurrency);
 
-            // Wait for all tasks to complete
-            let mut task_count = 0;
-            while let Some(()) = results_stream.next().await {
-                task_count += 1;
+                // Wait for all tasks in this level to complete
+                while let Some(()) = results_stream.next().await {
+                    // Task completed
+                }
+
+                eprintln!(
+                    "[DEBUG EXPORT] Completed level {}/{}",
+                    level_idx + 1,
+                    profiles_by_batch.len()
+                );
             }
 
-            // Finish progress bar before extracting from Arc
+            // Finish progress bar
             if let Some(pb) = profile_pb_arc.as_ref() {
                 pb.finish_with_message("done");
             }
@@ -1426,6 +1661,7 @@ impl BuildOrchestrator {
         &self,
         session: Arc<crate::canonical::DefinitionSession>,
         package: Arc<tokio::sync::RwLock<crate::semantic::Package>>,
+        fishing_ctx: Arc<crate::semantic::FishingContext>,
         resources: &ParsedResources,
         file_structure: &FileStructureGenerator,
         stats: &mut BuildStats,
@@ -1436,13 +1672,14 @@ impl BuildOrchestrator {
         use std::sync::Arc as StdArc;
         use tokio::sync::Mutex; // Use async-aware Mutex
 
-        // Create instance exporter
+        // Create instance exporter with fishing context for profile resolution
         let mut instance_exporter =
             InstanceExporter::new(session, self.build_config().canonical.clone())
                 .await
                 .map_err(|e| {
                     BuildError::ExportError(format!("Failed to create InstanceExporter: {}", e))
-                })?;
+                })?
+                .with_fishing_context(fishing_ctx);
 
         // Create progress bar for instances if show_progress is enabled
         let instance_pb = if self.options.show_progress && !resources.instances.is_empty() {
@@ -1536,6 +1773,10 @@ impl BuildOrchestrator {
                                 ));
                             }
                             Err(e) => {
+                                eprintln!(
+                                    "[DEBUG INSTANCE EXPORT ERROR] Failed to export instance {} ({}): {}",
+                                    instance_name, instance_type, e
+                                );
                                 warn!(
                                     "Failed to export instance {} (pass 1): {}",
                                     instance_name, e

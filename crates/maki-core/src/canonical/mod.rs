@@ -26,10 +26,9 @@ use tracing::{debug, error, info, warn};
 pub type CanonicalResult<T> = Result<T, CanonicalLoaderError>;
 
 /// Timeout applied to canonical package installation in seconds.
-/// Increased to 300s (5 minutes) to handle large IGs with many dependencies.
-/// Note: Blocking SQLite operations in async context cause thread pool starvation.
-/// TODO: Convert canonical-manager to use tokio-rusqlite or spawn_blocking.
-const CANONICAL_INSTALL_TIMEOUT_SECS: u64 = 300;
+/// Reduced to 120s (2 minutes) after increasing SQLite connection pool size.
+/// With proper connection pooling, package installation should complete faster.
+const CANONICAL_INSTALL_TIMEOUT_SECS: u64 = 120;
 
 /// Errors produced by the canonical loader facade.
 #[derive(Debug, Error)]
@@ -533,6 +532,55 @@ impl DefinitionSession {
         Ok((*resource.content).clone())
     }
 
+    /// Resolve by resource type and name (fast direct SQL lookup)
+    pub async fn resource_by_type_and_name(
+        &self,
+        resource_type: &str,
+        name: &str,
+    ) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
+        eprintln!("[DEBUG] >>> resource_by_type_and_name: direct SQL lookup for {}:{}", resource_type, name);
+        let search_start = std::time::Instant::now();
+
+        let results = self
+            .facade
+            .manager
+            .find_by_type_and_name(resource_type, name)
+            .await?;
+
+        eprintln!("[DEBUG]     find_by_type_and_name() returned {} results after {:?}", results.len(), search_start.elapsed());
+
+        if results.is_empty() {
+            return Ok(None);
+        }
+
+        // Take the first result (there should only be one with exact name match)
+        let resource_index = &results[0];
+        let canonical_url = resource_index.canonical_url.clone();
+
+        // Load the actual resource content from CAS
+        let resource = self.facade.manager.storage().package_storage().get_resource(resource_index).await?;
+
+        let resolved = Arc::new(DefinitionResource {
+            canonical_url: canonical_url.clone(),
+            resource_type: resource_index.resource_type.clone(),
+            package_id: format!(
+                "{}@{}",
+                resource_index.package_name, resource_index.package_version
+            ),
+            version: resource_index.metadata.version.clone(),
+            content: Arc::new(resource.content),
+        });
+
+        eprintln!("[DEBUG]     Found and cached resource by name: {}", canonical_url);
+
+        self.facade
+            .global_cache
+            .insert(canonical_url.clone(), resolved.clone());
+        self.local_cache.insert(canonical_url, resolved.clone());
+
+        Ok(Some(resolved))
+    }
+
     /// Resolve by resource type and id using the canonical manager search engine.
     ///
     /// This method filters search results by the FHIR version configured for this session
@@ -542,54 +590,61 @@ impl DefinitionSession {
         resource_type: &str,
         id: &str,
     ) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
-        let mut query = self
+        eprintln!("[DEBUG] >>> resource_by_type_and_id: direct SQL lookup for {}:{}", resource_type, id);
+        let search_start = std::time::Instant::now();
+
+        // Use fast direct SQL lookup instead of slow text search
+        let results = self
             .facade
             .manager
-            .search()
-            .await
-            .resource_type(resource_type);
-        query = query.text(id).limit(50);
-        let results = query.execute().await?;
+            .find_by_type_and_id(resource_type, id)
+            .await?;
+
+        eprintln!("[DEBUG]     find_by_type_and_id() returned {} results after {:?}", results.len(), search_start.elapsed());
 
         // Get the primary FHIR version for filtering
         let fhir_version_filter = self.releases.first().map(|r| r.to_version_string());
 
-        for match_result in results.resources {
+        for resource_index in results {
             // Filter by FHIR version if configured
-            if let Some(expected_version) = fhir_version_filter {
-                if match_result.index.fhir_version != expected_version {
+            if let Some(expected_version) = &fhir_version_filter {
+                if &resource_index.fhir_version != expected_version {
                     debug!(
                         "Skipping resource {} from FHIR version {}, expecting {}",
-                        id, match_result.index.fhir_version, expected_version
+                        id, resource_index.fhir_version, expected_version
                     );
                     continue;
                 }
             }
 
-            if match_result.resource.id == id {
-                let canonical_url = match_result
-                    .resource
-                    .url
-                    .clone()
-                    .unwrap_or_else(|| format!("{}-{}", resource_type, id));
-                let resolved = Arc::new(DefinitionResource {
-                    canonical_url: canonical_url.clone(),
-                    resource_type: match_result.resource.resource_type,
-                    package_id: format!(
-                        "{}@{}",
-                        match_result.index.package_name, match_result.index.package_version
-                    ),
-                    version: match_result.index.metadata.version.clone(),
-                    content: Arc::new(match_result.resource.content),
-                });
-                self.facade
-                    .global_cache
-                    .insert(canonical_url.clone(), resolved.clone());
-                self.local_cache.insert(canonical_url, resolved.clone());
-                return Ok(Some(resolved));
-            }
+            // The SQL query already filtered by ID, so we can use the first match
+            let canonical_url = resource_index.canonical_url.clone();
+
+            // Load the actual resource content from CAS
+            let resource = self.facade.manager.storage().package_storage().get_resource(&resource_index).await?;
+
+            let resolved = Arc::new(DefinitionResource {
+                canonical_url: canonical_url.clone(),
+                resource_type: resource_index.resource_type.clone(),
+                package_id: format!(
+                    "{}@{}",
+                    resource_index.package_name, resource_index.package_version
+                ),
+                version: resource_index.metadata.version.clone(),
+                content: Arc::new(resource.content),
+            });
+
+            eprintln!("[DEBUG]     Found and cached resource: {}", canonical_url);
+
+            self.facade
+                .global_cache
+                .insert(canonical_url.clone(), resolved.clone());
+            self.local_cache.insert(canonical_url, resolved.clone());
+
+            return Ok(Some(resolved));
         }
 
+        eprintln!("[DEBUG]     No matching resource found for {}:{}", resource_type, id);
         Ok(None)
     }
 
