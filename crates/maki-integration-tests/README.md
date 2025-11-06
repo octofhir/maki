@@ -9,16 +9,19 @@ The parity testing framework runs MAKI against SUSHI's test suite to verify comp
 ### Prerequisites
 
 1. **Build MAKI**:
+
    ```bash
    cargo build --release --package maki-cli
    ```
 
 2. **Install SUSHI** (or use existing installation):
+
    ```bash
    npm install -g fsh-sushi
    ```
 
 3. **Clone SUSHI repository** (for test fixtures):
+
    ```bash
    git clone https://github.com/FHIR/sushi.git /path/to/sushi
    ```
@@ -96,6 +99,7 @@ Machine-readable report with full test details:
 #### 2. Markdown Report (`parity_report.md`)
 
 Human-readable report with:
+
 - Summary statistics
 - Test results table
 - Detailed failure analysis
@@ -106,6 +110,7 @@ Human-readable report with:
 - **Compatibility < 95%**: Needs improvement ⚠️
 
 Common difference categories:
+
 - **profiles**: Profile generation differences
 - **extensions**: Extension generation differences
 - **valuesets**: ValueSet generation differences
@@ -150,7 +155,7 @@ jobs:
             --output ./parity-reports
 
       - name: Upload Reports
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: parity-reports
           path: parity-reports/
@@ -161,6 +166,7 @@ jobs:
 #### "Maki executable not found"
 
 Ensure you've built the release version:
+
 ```bash
 cargo build --release --package maki-cli
 ```
@@ -168,6 +174,7 @@ cargo build --release --package maki-cli
 #### "SUSHI fixtures directory not found"
 
 Update the fixtures path:
+
 ```bash
 cargo run --bin run-parity-tests -- --fixtures /correct/path/to/sushi/test/ig/fixtures
 ```
@@ -175,6 +182,7 @@ cargo run --bin run-parity-tests -- --fixtures /correct/path/to/sushi/test/ig/fi
 #### "SUSHI command not found"
 
 Install SUSHI globally:
+
 ```bash
 npm install -g fsh-sushi
 # Or specify custom path
@@ -189,6 +197,7 @@ To add new comparison logic:
 2. Update the `compare_outputs()` method
 3. Add new difference categories as needed
 4. Run tests:
+
    ```bash
    cargo test --package maki-integration-tests
    ```
