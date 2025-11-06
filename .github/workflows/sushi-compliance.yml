@@ -158,6 +158,7 @@ jobs:
           # Try to get official SUSHI test files if available
           git clone https://github.com/FHIR/sushi.git sushi-repo || true
           if [ -d "sushi-repo/test" ]; then
+            mkdir -p test-data
             cp -r sushi-repo/test test-data/sushi-reference
           fi
 

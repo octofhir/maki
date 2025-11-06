@@ -59,10 +59,13 @@ jobs:
         # Fail on warnings for stricter quality control
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      - name: Build
+        run: cargo build --workspace
+
       - name: Test
         run: cargo test --workspace --verbose
 
-      - name: Build
+      - name: Build Release
         run: cargo build --release --workspace
 
   integration:
