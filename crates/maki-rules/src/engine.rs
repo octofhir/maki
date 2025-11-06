@@ -173,19 +173,30 @@ impl RuleRegistry {
             ));
         }
 
-        // Find pack priority from discovery config
-        let pack_priority = self
+        // Find pack priority and override setting from discovery config
+        let (pack_priority, can_override) = self
             .discovery_config
             .precedence
             .iter()
             .find(|p| p.pack_name == pack_name)
-            .map(|p| p.priority)
-            .unwrap_or(0);
+            .map(|p| (p.priority, p.can_override))
+            .unwrap_or((0, false));
 
         // Register all rules from the pack with the pack's priority
         for rule in &pack.rules {
-            // Set rule priority based on pack priority
-            self.rule_precedence.insert(rule.id.clone(), pack_priority);
+            // Check if rule already has a priority
+            if let Some(&existing_priority) = self.rule_precedence.get(&rule.id) {
+                // Only override if:
+                // 1. This pack has higher priority, OR
+                // 2. This pack has can_override=true and priority >= existing
+                if pack_priority > existing_priority || (can_override && pack_priority >= existing_priority) {
+                    self.rule_precedence.insert(rule.id.clone(), pack_priority);
+                }
+                // Otherwise, keep the existing priority (don't override)
+            } else {
+                // No existing priority, just set it
+                self.rule_precedence.insert(rule.id.clone(), pack_priority);
+            }
         }
 
         let rules_count = pack.rules.len();
