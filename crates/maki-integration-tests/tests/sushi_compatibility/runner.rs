@@ -77,9 +77,16 @@ impl SushiCompatibilityHarness {
             .unwrap()
             .to_path_buf();
 
+        // Build binary name with platform-specific extension
+        let binary_name = if cfg!(windows) {
+            "maki.exe"
+        } else {
+            "maki"
+        };
+
         // Try release first, then debug
-        let release_path = workspace_root.join("target/release/maki");
-        let debug_path = workspace_root.join("target/debug/maki");
+        let release_path = workspace_root.join("target/release").join(binary_name);
+        let debug_path = workspace_root.join("target/debug").join(binary_name);
 
         if release_path.exists() {
             Ok(release_path)
