@@ -204,19 +204,19 @@ fn test_performance_comparison() {
     let results = harness.run_all_tests();
     let total_time = start_time.elapsed();
 
+    // Always generate and save performance report
+    let ci_report = harness.generate_ci_report(&results);
+
+    // Save performance data for trending (even if empty)
+    if let Ok(reports_dir) = env::var("MAKI_REPORTS_DIR") {
+        let report_path = PathBuf::from(reports_dir).join("performance_comparison.json");
+        if let Err(e) = std::fs::write(&report_path, &ci_report) {
+            eprintln!("Failed to write performance report: {}", e);
+        }
+    }
+
     if !results.is_empty() {
         analyze_performance(&results, total_time);
-
-        // Generate performance report
-        let ci_report = harness.generate_ci_report(&results);
-
-        // Save performance data for trending
-        if let Ok(reports_dir) = env::var("MAKI_REPORTS_DIR") {
-            let report_path = PathBuf::from(reports_dir).join("performance_comparison.json");
-            if let Err(e) = std::fs::write(&report_path, &ci_report) {
-                eprintln!("Failed to write performance report: {}", e);
-            }
-        }
 
         // Check if Maki is competitive with SUSHI
         let maki_times: Vec<_> = results.iter().map(|r| r.maki_time.as_millis()).collect();
@@ -259,20 +259,22 @@ fn test_ci_validation() {
 
     let results = harness.run_all_tests();
 
+    // Always generate CI report and artifacts
+    let ci_report = harness.generate_ci_report(&results);
+    println!("CI Validation Report:\n{}", ci_report);
+
+    // Save CI artifacts (even if empty, to track no-op runs)
+    generate_ci_artifacts(&harness, &results);
+
+    // CI should pass with lower threshold for faster feedback (only if tests ran)
     if !results.is_empty() {
-        // Generate CI report
-        let ci_report = harness.generate_ci_report(&results);
-        println!("CI Validation Report:\n{}", ci_report);
-
-        // Save CI artifacts
-        generate_ci_artifacts(&harness, &results);
-
-        // CI should pass with lower threshold for faster feedback
         assert!(
             harness.meets_threshold(&results),
             "CI validation failed - compatibility below {}%",
             harness.compatibility_threshold()
         );
+    } else {
+        eprintln!("Warning: No test results generated. Check test case loading.");
     }
 }
 
@@ -287,10 +289,14 @@ fn test_regression_prevention() {
 
     let results = harness.run_all_tests();
 
-    if !results.is_empty() {
-        let report = harness.generate_report(&results);
-        println!("Regression Test Report:\n{}", report);
+    // Always generate report
+    let report = harness.generate_report(&results);
+    println!("Regression Test Report:\n{}", report);
 
+    // Always save CI artifacts
+    generate_ci_artifacts(&harness, &results);
+
+    if !results.is_empty() {
         // Regression tests should have very high compatibility
         assert!(
             harness.meets_threshold(&results),

@@ -696,10 +696,20 @@ impl DefinitionSession {
     #[cfg(test)]
     pub fn for_testing() -> Self {
         fn build_session() -> DefinitionSession {
+            use std::time::{SystemTime, UNIX_EPOCH};
             use tokio::runtime::Runtime;
 
+            // Create a unique test directory to avoid SQLite database locking issues
+            // when running tests in parallel, especially on Windows
+            let thread_id = std::thread::current().id();
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let unique_dir = format!("/tmp/maki-test-{:?}-{}", thread_id, timestamp);
+
             let test_config = octofhir_canonical_manager::FcmConfig::test_config(
-                std::path::Path::new("/tmp/maki-test"),
+                std::path::Path::new(&unique_dir),
             );
 
             let rt = Runtime::new().expect("Failed to create test runtime");
