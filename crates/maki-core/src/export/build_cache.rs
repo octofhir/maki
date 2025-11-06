@@ -98,18 +98,7 @@ impl BuildCache {
             return Ok(true);
         }
 
-        // Quick check: modification time
-        let metadata = run_blocking_io(|| fs::metadata(path))?;
-        let current_mtime = metadata.modified()?;
-
-        if let Some(&cached_mtime) = self.file_mtimes.get(path)
-            && current_mtime <= cached_mtime
-        {
-            // File hasn't been modified since last build
-            return Ok(false);
-        }
-
-        // Slower check: content hash
+        // Check content hash (most reliable way to detect actual changes)
         let current_hash = Self::hash_file(path)?;
         let cached_hash = self.file_hashes.get(path);
 

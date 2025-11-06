@@ -85,9 +85,12 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-integration-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-integration-
+            ${{ runner.os }}-cargo-
+
+      - name: Build binary
+        run: cargo build
 
       - name: Run integration tests
         run: cargo test --test integration_test --verbose

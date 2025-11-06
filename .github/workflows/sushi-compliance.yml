@@ -251,6 +251,7 @@ jobs:
 
       - name: Upload performance data
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: performance-tracking
           path: ${{ env.MAKI_REPORTS_DIR }}/performance_*.json
