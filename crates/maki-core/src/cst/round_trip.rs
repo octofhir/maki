@@ -15,15 +15,16 @@
 //!
 //! let validator = RoundTripValidator::new();
 //! let source = "Profile: MyPatient\nParent: Patient\n* name 1..1 MS";
-//! 
+//!
 //! let result = validator.validate_round_trip(source)?;
 //! assert!(result.is_valid());
 //! ```
 
 use super::{
+    FshSyntaxNode,
     ast::{AstNode, Document},
     formatter::{FormatOptions, format_document},
-    parse_fsh, FshSyntaxNode,
+    parse_fsh,
     trivia::{TriviaCollector, TriviaInfo},
 };
 use std::collections::HashMap;
@@ -62,27 +63,36 @@ impl ValidationResult {
     /// Get all validation issues
     pub fn issues(&self) -> Vec<String> {
         let mut issues = Vec::new();
-        
+
         if !self.differences.is_empty() {
-            issues.push(format!("Found {} semantic differences", self.differences.len()));
+            issues.push(format!(
+                "Found {} semantic differences",
+                self.differences.len()
+            ));
         }
-        
+
         if !self.original_errors.is_empty() {
-            issues.push(format!("Original parsing had {} errors", self.original_errors.len()));
+            issues.push(format!(
+                "Original parsing had {} errors",
+                self.original_errors.len()
+            ));
         }
-        
+
         if !self.reparsed_errors.is_empty() {
-            issues.push(format!("Re-parsing had {} errors", self.reparsed_errors.len()));
+            issues.push(format!(
+                "Re-parsing had {} errors",
+                self.reparsed_errors.len()
+            ));
         }
-        
+
         if self.formatted != self.reparsed {
             issues.push("Formatted text differs from re-parsed text".to_string());
         }
-        
+
         if !self.trivia_preserved {
             issues.push("Trivia (comments/whitespace) not properly preserved".to_string());
         }
-        
+
         issues
     }
 }
@@ -138,13 +148,20 @@ impl RoundTripValidator {
     }
 
     /// Validate round-trip consistency for FSH source code
-    pub fn validate_round_trip(&self, source: &str) -> Result<ValidationResult, Box<dyn std::error::Error>> {
+    pub fn validate_round_trip(
+        &self,
+        source: &str,
+    ) -> Result<ValidationResult, Box<dyn std::error::Error>> {
         // Step 1: Parse original source
         let (original_cst, original_lexer_errors, original_parse_errors) = parse_fsh(source);
         let original_errors: Vec<String> = original_lexer_errors
             .into_iter()
             .map(|e| format!("Lexer error: {:?}", e))
-            .chain(original_parse_errors.into_iter().map(|e| format!("Parse error: {:?}", e)))
+            .chain(
+                original_parse_errors
+                    .into_iter()
+                    .map(|e| format!("Parse error: {:?}", e)),
+            )
             .collect();
 
         // Step 2: Format the parsed CST
@@ -155,7 +172,11 @@ impl RoundTripValidator {
         let reparsed_errors: Vec<String> = reparsed_lexer_errors
             .into_iter()
             .map(|e| format!("Lexer error: {:?}", e))
-            .chain(reparsed_parse_errors.into_iter().map(|e| format!("Parse error: {:?}", e)))
+            .chain(
+                reparsed_parse_errors
+                    .into_iter()
+                    .map(|e| format!("Parse error: {:?}", e)),
+            )
             .collect();
 
         // Step 4: Collect and compare trivia
@@ -168,8 +189,8 @@ impl RoundTripValidator {
         let differences = self.compare_semantic_equivalence(&original_cst, &reparsed_cst)?;
 
         // Step 6: Determine if validation passed
-        let is_valid = differences.is_empty() 
-            && original_errors.is_empty() 
+        let is_valid = differences.is_empty()
+            && original_errors.is_empty()
             && reparsed_errors.is_empty()
             && trivia_preserved;
 
@@ -284,13 +305,9 @@ impl RoundTripValidator {
         // Compare aliases
         let orig_aliases: Vec<_> = original.aliases().collect();
         let repr_aliases: Vec<_> = reparsed.aliases().collect();
-        self.compare_collections(
-            &orig_aliases,
-            &repr_aliases,
-            "Alias",
-            differences,
-            |a| a.name().unwrap_or_default(),
-        )?;
+        self.compare_collections(&orig_aliases, &repr_aliases, "Alias", differences, |a| {
+            a.name().unwrap_or_default()
+        })?;
 
         Ok(())
     }
@@ -308,15 +325,11 @@ impl RoundTripValidator {
         F: Fn(&T) -> String,
     {
         // Create maps by name for comparison
-        let orig_map: HashMap<String, &T> = original
-            .iter()
-            .map(|item| (name_fn(item), item))
-            .collect();
-        
-        let repr_map: HashMap<String, &T> = reparsed
-            .iter()
-            .map(|item| (name_fn(item), item))
-            .collect();
+        let orig_map: HashMap<String, &T> =
+            original.iter().map(|item| (name_fn(item), item)).collect();
+
+        let repr_map: HashMap<String, &T> =
+            reparsed.iter().map(|item| (name_fn(item), item)).collect();
 
         // Find missing items
         for name in orig_map.keys() {
@@ -337,7 +350,10 @@ impl RoundTripValidator {
                 differences.push(SemanticDifference {
                     kind: DifferenceKind::ExtraNode,
                     location: Some(format!("{} '{}'", node_type, name)),
-                    description: format!("{} '{}' found in re-parsed CST but not in original", node_type, name),
+                    description: format!(
+                        "{} '{}' found in re-parsed CST but not in original",
+                        node_type, name
+                    ),
                     expected: None,
                     actual: Some(name.clone()),
                 });
@@ -404,22 +420,12 @@ impl RoundTripValidator {
     ) -> bool {
         // For now, we consider trivia preserved if both have similar comment counts
         // A more sophisticated implementation would compare actual comment content
-        let original_comments: usize = original
-            .values()
-            .map(|info| info.comments().len())
-            .sum();
-        
-        let reparsed_comments: usize = reparsed
-            .values()
-            .map(|info| info.comments().len())
-            .sum();
+        let original_comments: usize = original.values().map(|info| info.comments().len()).sum();
+
+        let reparsed_comments: usize = reparsed.values().map(|info| info.comments().len()).sum();
 
         // Allow some tolerance for comment preservation
-        let comment_diff = if original_comments > reparsed_comments {
-            original_comments - reparsed_comments
-        } else {
-            reparsed_comments - original_comments
-        };
+        let comment_diff = original_comments.abs_diff(reparsed_comments);
 
         // Consider preserved if we don't lose more than 10% of comments
         let max_loss = (original_comments as f64 * 0.1).ceil() as usize;
@@ -454,7 +460,7 @@ Parent: Patient
 * name 1..1 MS"#;
 
         let result = validator.validate_round_trip(source).unwrap();
-        
+
         // Should not crash and should produce a result
         assert!(!result.original.is_empty());
         assert!(!result.formatted.is_empty());
@@ -474,15 +480,15 @@ Description: "A complex patient profile"
 * ^status = #active"#;
 
         let result = validator.validate_round_trip(source).unwrap();
-        
+
         // Should handle complex profiles
         assert!(!result.original.is_empty());
         assert!(!result.formatted.is_empty());
-        
+
         // Check that key elements are preserved
         assert!(result.formatted.contains("Profile: ComplexPatient"));
         assert!(result.formatted.contains("Parent: Patient"));
-        
+
         // The formatter may not perfectly preserve cardinality formatting
         // but should preserve the essential structure and flags
         assert!(result.formatted.contains("* name") && result.formatted.contains("MS"));
@@ -497,7 +503,7 @@ Title: "My Extension"
 * value[x] only string"#;
 
         let result = validator.validate_round_trip(source).unwrap();
-        
+
         assert!(!result.original.is_empty());
         assert!(!result.formatted.is_empty());
         assert!(result.formatted.contains("Extension: MyExtension"));
@@ -512,7 +518,7 @@ Title: "My Value Set"
 * include codes from system http://example.org/codes"#;
 
         let result = validator.validate_round_trip(source).unwrap();
-        
+
         assert!(!result.original.is_empty());
         assert!(!result.formatted.is_empty());
         assert!(result.formatted.contains("ValueSet: MyValueSet"));
@@ -527,7 +533,7 @@ Profile: MyPatient
 Parent: Patient"#;
 
         let result = validator.validate_round_trip(source).unwrap();
-        
+
         assert!(!result.original.is_empty());
         assert!(!result.formatted.is_empty());
         assert!(result.formatted.contains("Alias: SCT"));
@@ -567,15 +573,18 @@ Parent: Patient"#;
     #[test]
     fn test_normalize_text() {
         let validator = RoundTripValidator::new();
-        
+
         let text1 = "  Profile: MyPatient  \n  Parent: Patient  \n\n  * name 1..1  ";
         let text2 = "Profile: MyPatient\nParent: Patient\n* name 1..1";
-        
+
         let normalized1 = validator.normalize_text(text1);
         let normalized2 = validator.normalize_text(text2);
-        
+
         assert_eq!(normalized1, normalized2);
-        assert_eq!(normalized1, "Profile: MyPatient\nParent: Patient\n* name 1..1");
+        assert_eq!(
+            normalized1,
+            "Profile: MyPatient\nParent: Patient\n* name 1..1"
+        );
     }
 
     #[test]

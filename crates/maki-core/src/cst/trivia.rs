@@ -15,16 +15,16 @@
 //!
 //! let source = "Profile: MyPatient // Comment\n  Parent: Patient";
 //! let (cst, _, _) = parse_fsh(source);
-//! 
+//!
 //! let collector = TriviaCollector::new();
 //! let trivia = collector.collect_trivia(&cst);
-//! 
+//!
 //! // Trivia includes the comment and whitespace
 //! assert!(trivia.has_comments());
 //! assert!(trivia.has_whitespace());
 //! ```
 
-use super::{FshSyntaxNode, FshSyntaxToken, FshSyntaxKind};
+use super::{FshSyntaxKind, FshSyntaxNode, FshSyntaxToken};
 use rowan::NodeOrToken;
 use std::collections::HashMap;
 
@@ -117,12 +117,18 @@ impl TriviaToken {
 
     /// Check if this is a comment
     pub fn is_comment(&self) -> bool {
-        matches!(self.kind, FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock)
+        matches!(
+            self.kind,
+            FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock
+        )
     }
 
     /// Check if this is whitespace
     pub fn is_whitespace(&self) -> bool {
-        matches!(self.kind, FshSyntaxKind::Whitespace | FshSyntaxKind::Newline)
+        matches!(
+            self.kind,
+            FshSyntaxKind::Whitespace | FshSyntaxKind::Newline
+        )
     }
 
     /// Check if this is a newline
@@ -144,7 +150,8 @@ impl TriviaToken {
             }
             FshSyntaxKind::CommentBlock => {
                 // Remove /* */ wrapper
-                let content = self.text
+                let content = self
+                    .text
                     .trim_start_matches("/*")
                     .trim_end_matches("*/")
                     .trim();
@@ -183,15 +190,15 @@ impl TriviaCollector {
         // Collect leading trivia (previous siblings that are trivia)
         let mut current = node.prev_sibling();
         let mut leading_trivia = Vec::new();
-        
+
         while let Some(sibling) = current {
             if self.is_trivia_node(&sibling) {
                 // Collect all trivia tokens from this sibling
                 for element in sibling.children_with_tokens() {
-                    if let Some(token) = element.as_token() {
-                        if token.kind().is_trivia() {
-                            leading_trivia.push(TriviaToken::from_token(token));
-                        }
+                    if let Some(token) = element.as_token()
+                        && token.kind().is_trivia()
+                    {
+                        leading_trivia.push(TriviaToken::from_token(token));
                     }
                 }
                 current = sibling.prev_sibling();
@@ -199,7 +206,7 @@ impl TriviaCollector {
                 break;
             }
         }
-        
+
         // Reverse to get correct order
         leading_trivia.reverse();
         info.leading = leading_trivia;
@@ -209,13 +216,13 @@ impl TriviaCollector {
         while let Some(sibling) = current {
             if self.is_trivia_node(&sibling) {
                 for element in sibling.children_with_tokens() {
-                    if let Some(token) = element.as_token() {
-                        if token.kind().is_trivia() {
-                            info.trailing.push(TriviaToken::from_token(token));
-                            // Stop at newline for trailing trivia
-                            if token.kind() == FshSyntaxKind::Newline {
-                                return info;
-                            }
+                    if let Some(token) = element.as_token()
+                        && token.kind().is_trivia()
+                    {
+                        info.trailing.push(TriviaToken::from_token(token));
+                        // Stop at newline for trailing trivia
+                        if token.kind() == FshSyntaxKind::Newline {
+                            return info;
                         }
                     }
                 }
@@ -260,10 +267,10 @@ impl TriviaCollector {
         let mut internal_trivia = Vec::new();
 
         for element in node.children_with_tokens() {
-            if let Some(token) = element.as_token() {
-                if token.kind().is_trivia() {
-                    internal_trivia.push(TriviaToken::from_token(token));
-                }
+            if let Some(token) = element.as_token()
+                && token.kind().is_trivia()
+            {
+                internal_trivia.push(TriviaToken::from_token(token));
             }
         }
 
@@ -458,7 +465,10 @@ mod tests {
 
         assert!(token.is_comment());
         assert!(!token.is_whitespace());
-        assert_eq!(token.comment_content(), Some("This is a comment".to_string()));
+        assert_eq!(
+            token.comment_content(),
+            Some("This is a comment".to_string())
+        );
     }
 
     #[test]
@@ -468,14 +478,20 @@ mod tests {
             "// Test comment".to_string(),
             rowan::TextRange::new(0.into(), 15.into()),
         );
-        assert_eq!(line_comment.comment_content(), Some("Test comment".to_string()));
+        assert_eq!(
+            line_comment.comment_content(),
+            Some("Test comment".to_string())
+        );
 
         let block_comment = TriviaToken::new(
             FshSyntaxKind::CommentBlock,
             "/* Block comment */".to_string(),
             rowan::TextRange::new(0.into(), 19.into()),
         );
-        assert_eq!(block_comment.comment_content(), Some("Block comment".to_string()));
+        assert_eq!(
+            block_comment.comment_content(),
+            Some("Block comment".to_string())
+        );
 
         let whitespace = TriviaToken::new(
             FshSyntaxKind::Whitespace,
@@ -573,7 +589,7 @@ Parent: Patient"#;
 
         // No comments formatter should not include comments
         assert!(!formatted_no_comments.contains("// Test comment"));
-        
+
         // Both should handle the trivia differently
         assert_ne!(formatted_no_comments, formatted_no_normalize);
     }

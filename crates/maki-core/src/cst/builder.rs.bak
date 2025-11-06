@@ -130,7 +130,7 @@ pub fn build_cst_from_tokens(tokens: &[CstToken]) -> FshSyntaxNode {
 /// use maki_core::cst::parse_fsh_simple;
 ///
 /// let source = "Profile: MyPatient // comment\nParent: Patient";
-/// let (cst, _errors) = parse_fsh_simple(source);
+/// let (cst, errors) = parse_fsh_simple(source);
 ///
 /// // Verify lossless property
 /// assert_eq!(cst.text().to_string(), source);
@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn test_parse_simple_lossless() {
         let source = "Profile: MyPatient";
-        let (cst, _errors) = parse_fsh_simple(source);
+        let (cst, errors) = parse_fsh_simple(source);
 
         // Should have no errors
         // Parser may return errors for error recovery - commenting out
@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn test_parse_simple_with_comment() {
         let source = "Profile: MyPatient // comment";
-        let (cst, _errors) = parse_fsh_simple(source);
+        let (cst, errors) = parse_fsh_simple(source);
 
         // Parser may return errors for error recovery - commenting out
         // assert!(errors.is_empty());
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn test_parse_simple_multiline() {
         let source = "Profile: MyPatient\nParent: Patient";
-        let (cst, _errors) = parse_fsh_simple(source);
+        let (cst, errors) = parse_fsh_simple(source);
 
         // Parser may return errors for error recovery - commenting out
         // assert!(errors.is_empty());
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn test_parse_simple_with_whitespace() {
         let source = "Profile:  MyPatient"; // Two spaces
-        let (cst, _errors) = parse_fsh_simple(source);
+        let (cst, errors) = parse_fsh_simple(source);
 
         // Parser may return errors for error recovery - commenting out
         // assert!(errors.is_empty());
@@ -276,7 +276,7 @@ Parent: Patient
 
 * name 1..1 MS"#;
 
-        let (cst, _errors) = parse_fsh_simple(source);
+        let (cst, errors) = parse_fsh_simple(source);
 
         // No lexer errors
         // Parser may return errors for error recovery - commenting out

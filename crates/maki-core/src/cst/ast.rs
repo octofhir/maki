@@ -640,7 +640,7 @@ impl VsFromValueset {
                             current.clear();
                         }
                     }
-                    _ => current.push_str(&token.text().to_string()),
+                    _ => current.push_str(token.text()),
                 }
             }
         }
@@ -745,14 +745,14 @@ impl VsFilterDefinition {
         // Look for sibling VsFilterDefinition nodes
         let mut filters = Vec::new();
         let mut current = self.syntax.next_sibling();
-        
+
         while let Some(node) = current {
             if let Some(filter) = VsFilterDefinition::cast(node.clone()) {
                 filters.push(filter);
             }
             current = node.next_sibling();
         }
-        
+
         filters
     }
 }
@@ -849,7 +849,7 @@ impl CodeRef {
                 if token.kind() == FshSyntaxKind::Code {
                     break;
                 }
-                text.push_str(&token.text().to_string());
+                text.push_str(token.text());
             }
         }
 
@@ -1007,8 +1007,8 @@ impl Logical {
                 // After Characteristics keyword, collect codes
                 if found_characteristics_kw {
                     let text = token.text();
-                    if text.starts_with('#') {
-                        codes.push(text[1..].to_string());
+                    if let Some(code) = text.strip_prefix('#') {
+                        codes.push(code.to_string());
                     }
                 }
             }
@@ -1600,11 +1600,7 @@ impl UsageClause {
             .map(|t| {
                 let text = t.text().trim();
                 // Remove # prefix if present
-                if text.starts_with('#') {
-                    text[1..].to_string()
-                } else {
-                    text.to_string()
-                }
+                text.strip_prefix('#').unwrap_or(text).to_string()
             })
     }
 }
@@ -1867,9 +1863,7 @@ impl CardRule {
 
     /// Get the cardinality as a structured CardinalityNode
     pub fn cardinality(&self) -> Option<CardinalityNode> {
-        self.syntax
-            .children()
-            .find_map(CardinalityNode::cast)
+        self.syntax.children().find_map(CardinalityNode::cast)
     }
 
     /// Get the cardinality as a string (for backward compatibility)
@@ -1962,7 +1956,7 @@ impl FlagRule {
     pub fn flag_conflicts(&self) -> Vec<(FlagValue, FlagValue)> {
         let flags = self.flags();
         let mut conflicts = Vec::new();
-        
+
         for (i, flag1) in flags.iter().enumerate() {
             for flag2 in flags.iter().skip(i + 1) {
                 if flag1.conflicts_with(flag2) {
@@ -1970,7 +1964,7 @@ impl FlagRule {
                 }
             }
         }
-        
+
         conflicts
     }
 }
@@ -2127,7 +2121,7 @@ impl FixedValueRule {
                     // Skip whitespace and comments before value
                     FshSyntaxKind::Whitespace if !found_equals => continue,
                     FshSyntaxKind::CommentLine => break, // Stop at comments
-                    FshSyntaxKind::Newline => break, // Stop at newline
+                    FshSyntaxKind::Newline => break,     // Stop at newline
                     // Skip whitespace at start but keep it within the value
                     FshSyntaxKind::Whitespace if found_equals && value_parts.is_empty() => continue,
                     // Collect value token text
@@ -2228,7 +2222,7 @@ impl ContainsRule {
             .trim();
 
         // Clean up the text - replace newlines with spaces and normalize whitespace
-        let cleaned_text = after_contains.replace('\n', " ").replace('\r', " ");
+        let cleaned_text = after_contains.replace(['\n', '\r'], " ");
 
         // Split by "and" keyword and extract item names
         cleaned_text
@@ -2518,17 +2512,17 @@ impl AddElementRule {
     pub fn definition(&self) -> Option<String> {
         let mut string_count = 0;
         for child in self.syntax.children_with_tokens() {
-            if let Some(token) = child.as_token() {
-                if token.kind() == FshSyntaxKind::String {
-                    string_count += 1;
-                    if string_count == 2 {
-                        let text = token.text();
-                        // Remove surrounding quotes
-                        if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
-                            return Some(text[1..text.len() - 1].to_string());
-                        } else {
-                            return Some(text.to_string());
-                        }
+            if let Some(token) = child.as_token()
+                && token.kind() == FshSyntaxKind::String
+            {
+                string_count += 1;
+                if string_count == 2 {
+                    let text = token.text();
+                    // Remove surrounding quotes
+                    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+                        return Some(text[1..text.len() - 1].to_string());
+                    } else {
+                        return Some(text.to_string());
                     }
                 }
             }
@@ -2596,17 +2590,17 @@ impl MappingRule {
     pub fn comment(&self) -> Option<String> {
         let mut string_count = 0;
         for child in self.syntax.children_with_tokens() {
-            if let Some(token) = child.as_token() {
-                if token.kind() == FshSyntaxKind::String {
-                    string_count += 1;
-                    if string_count == 2 {
-                        let text = token.text();
-                        // Remove surrounding quotes
-                        if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
-                            return Some(text[1..text.len() - 1].to_string());
-                        } else {
-                            return Some(text.to_string());
-                        }
+            if let Some(token) = child.as_token()
+                && token.kind() == FshSyntaxKind::String
+            {
+                string_count += 1;
+                if string_count == 2 {
+                    let text = token.text();
+                    // Remove surrounding quotes
+                    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+                        return Some(text[1..text.len() - 1].to_string());
+                    } else {
+                        return Some(text.to_string());
                     }
                 }
             }
@@ -2617,16 +2611,12 @@ impl MappingRule {
     /// Get the language code (e.g., #en, #en-US)
     pub fn language(&self) -> Option<String> {
         for child in self.syntax.children_with_tokens() {
-            if let Some(token) = child.as_token() {
-                if token.kind() == FshSyntaxKind::Code {
-                    let text = token.text();
-                    // Remove leading #
-                    if text.starts_with('#') {
-                        return Some(text[1..].to_string());
-                    } else {
-                        return Some(text.to_string());
-                    }
-                }
+            if let Some(token) = child.as_token()
+                && token.kind() == FshSyntaxKind::Code
+            {
+                let text = token.text();
+                // Remove leading #
+                return Some(text.strip_prefix('#').unwrap_or(text).to_string());
             }
         }
         None
@@ -2666,13 +2656,13 @@ impl CaretValueRule {
         // The structure is: * [element_path] ^field = value
         // We need to find the first Path that doesn't start with a caret
         for sibling in self.syntax.siblings_with_tokens(rowan::Direction::Prev) {
-            if let Some(node) = sibling.as_node() {
-                if node.kind() == FshSyntaxKind::Path {
-                    // Check if this path starts with a caret (^field path)
-                    let text = node.text().to_string();
-                    if !text.trim().starts_with('^') {
-                        return Path::cast(FshSyntaxNode::from(node.clone()));
-                    }
+            if let Some(node) = sibling.as_node()
+                && node.kind() == FshSyntaxKind::Path
+            {
+                // Check if this path starts with a caret (^field path)
+                let text = node.text().to_string();
+                if !text.trim().starts_with('^') {
+                    return Path::cast(FshSyntaxNode::from(node.clone()));
                 }
             }
         }
@@ -2695,11 +2685,7 @@ impl CaretValueRule {
         self.caret_path().map(|p| {
             let text = p.syntax().text().to_string();
             // Remove leading ^ if present
-            if text.starts_with('^') {
-                text[1..].to_string()
-            } else {
-                text
-            }
+            text.strip_prefix('^').unwrap_or(&text).to_string()
         })
     }
 
@@ -2928,7 +2914,7 @@ impl InsertRuleArguments {
                             current.clear();
                         }
                     }
-                    _ => current.push_str(&token.text().to_string()),
+                    _ => current.push_str(token.text()),
                 }
             }
         }
@@ -3059,7 +3045,7 @@ impl CardinalityNode {
     /// Get the maximum cardinality value as string (handles "*" for unbounded)
     pub fn max(&self) -> Option<String> {
         let mut found_range = false;
-        
+
         for child in self.syntax.children_with_tokens() {
             if let Some(token) = child.into_token() {
                 match token.kind() {
@@ -3076,7 +3062,7 @@ impl CardinalityNode {
                 }
             }
         }
-        
+
         // If no range found, max equals min (single value cardinality)
         if !found_range {
             self.min().map(|m| m.to_string())
@@ -3087,7 +3073,7 @@ impl CardinalityNode {
 
     /// Check if this is unbounded cardinality (max = "*")
     pub fn is_unbounded(&self) -> bool {
-        self.max().map_or(false, |max| max == "*")
+        self.max().is_some_and(|max| max == "*")
     }
 
     /// Get the full cardinality as a string (e.g., "0..1", "1..*", "5")
@@ -3127,7 +3113,7 @@ impl Default for CardinalityNode {
         builder.start_node(FshSyntaxKind::CardinalityNode.into());
         builder.token(FshSyntaxKind::Integer.into(), "1");
         builder.finish_node();
-        
+
         let green = builder.finish();
         let syntax = FshSyntaxNode::new_root(green);
         CardinalityNode { syntax }
@@ -3174,8 +3160,7 @@ impl PathSegment {
                     FshSyntaxKind::Ident
                         | FshSyntaxKind::Integer
                         | FshSyntaxKind::DateTime
-                        | FshSyntaxKind::Time
-                        // Add other alpha keywords as needed
+                        | FshSyntaxKind::Time // Add other alpha keywords as needed
                 )
             })
             .map(|token| token.text().to_string())
@@ -3301,11 +3286,8 @@ impl CanonicalValue {
         // Look for version in Canonical token
         if let Some(token) = token_of_kind(&self.syntax, FshSyntaxKind::Canonical) {
             let text = token.text();
-            if let Some(pipe_pos) = text.find('|') {
-                Some(text[pipe_pos + 1..].to_string())
-            } else {
-                None
-            }
+            text.find('|')
+                .map(|pipe_pos| text[pipe_pos + 1..].to_string())
         } else {
             // Look for separate version token (if lexer splits it)
             self.syntax
@@ -3478,22 +3460,21 @@ impl NameValue {
             if let Some(token) = element.as_token() {
                 match token.kind() {
                     // Name components
-                    FshSyntaxKind::Ident |
-                    FshSyntaxKind::Integer |
-                    FshSyntaxKind::Colon |
-                    FshSyntaxKind::Slash |
-                    FshSyntaxKind::Dot |
-                    FshSyntaxKind::Minus => {
+                    FshSyntaxKind::Ident
+                    | FshSyntaxKind::Integer
+                    | FshSyntaxKind::Colon
+                    | FshSyntaxKind::Slash
+                    | FshSyntaxKind::Dot
+                    | FshSyntaxKind::Minus => {
                         parts.push(token.text().to_string());
                     }
                     // Stop at code or display string
-                    FshSyntaxKind::Code |
-                    FshSyntaxKind::String => break,
+                    FshSyntaxKind::Code | FshSyntaxKind::String => break,
                     // Skip trivia
-                    FshSyntaxKind::Whitespace |
-                    FshSyntaxKind::Newline |
-                    FshSyntaxKind::CommentLine |
-                    FshSyntaxKind::CommentBlock => {}
+                    FshSyntaxKind::Whitespace
+                    | FshSyntaxKind::Newline
+                    | FshSyntaxKind::CommentLine
+                    | FshSyntaxKind::CommentBlock => {}
                     _ => break,
                 }
             }

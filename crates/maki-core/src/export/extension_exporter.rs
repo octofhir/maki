@@ -3,6 +3,8 @@
 //! Exports FSH Extension definitions to FHIR StructureDefinition resources.
 //! Extensions are special profiles with specific structural requirements.
 //!
+
+#![allow(dead_code)]
 //! # FHIR Extension Structure
 //!
 //! Extensions are StructureDefinitions with:
@@ -33,6 +35,7 @@
 //! let exporter = ExtensionExporter::new(
 //!     session,
 //!     "http://example.org/fhir".to_string(),
+//!     Some("1.0.0".to_string()),
 //! ).await?;
 //!
 //! // Parse extension from FSH
@@ -84,11 +87,11 @@ impl ExtensionExporter {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// use maki_core::export::ExtensionExporter;
     /// use maki_core::canonical::DefinitionSession;
     /// use std::sync::Arc;
     ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let session: Arc<DefinitionSession> = todo!();
     /// let exporter = ExtensionExporter::new(
     ///     session,
@@ -364,23 +367,23 @@ impl ExtensionExporter {
                         }
                     }
                     // Handle direct context expression rules: ^context = "Patient"
-                    else if path_str == "context" {
-                        if let Some(expression) = caret_rule.value() {
-                            let clean_expression = expression.trim_matches('"');
+                    else if path_str == "context"
+                        && let Some(expression) = caret_rule.value()
+                    {
+                        let clean_expression = expression.trim_matches('"');
 
-                            // Determine context type based on expression
-                            let context = if clean_expression.starts_with("http://") {
-                                StructureDefinitionContext::extension(clean_expression)
-                            } else if clean_expression.contains('.') {
-                                StructureDefinitionContext::element(clean_expression)
-                            } else {
-                                // Assume it's a resource type
-                                StructureDefinitionContext::element(clean_expression)
-                            };
+                        // Determine context type based on expression
+                        let context = if clean_expression.starts_with("http://") {
+                            StructureDefinitionContext::extension(clean_expression)
+                        } else if clean_expression.contains('.') {
+                            StructureDefinitionContext::element(clean_expression)
+                        } else {
+                            // Assume it's a resource type
+                            StructureDefinitionContext::element(clean_expression)
+                        };
 
-                            contexts.push(context);
-                            found_context_rules = true;
-                        }
+                        contexts.push(context);
+                        found_context_rules = true;
                     }
                 }
             } else if let Rule::FixedValue(fixed_rule) = rule {
@@ -397,7 +400,7 @@ impl ExtensionExporter {
                         if clean_path.starts_with("context") && clean_path.contains(".type") {
                             if let Some(value) = fixed_rule.value() {
                                 let context_type = value.trim_start_matches('#');
-                                let raw_index = self.extract_context_index(&clean_path);
+                                let raw_index = self.extract_context_index(clean_path);
 
                                 // Handle special SUSHI indices
                                 let index_key = match raw_index.as_str() {
@@ -440,7 +443,7 @@ impl ExtensionExporter {
                         {
                             if let Some(value) = fixed_rule.value() {
                                 let expression = value.trim_matches('"');
-                                let raw_index = self.extract_context_index(&clean_path);
+                                let raw_index = self.extract_context_index(clean_path);
 
                                 // Handle special SUSHI indices (same logic as above)
                                 let index_key = match raw_index.as_str() {
@@ -475,28 +478,28 @@ impl ExtensionExporter {
                             }
                         }
                         // Handle direct context expression rules: ^context = "Patient"
-                        else if clean_path == "context" {
-                            if let Some(expression) = fixed_rule.value() {
-                                let clean_expression = expression.trim_matches('"');
+                        else if clean_path == "context"
+                            && let Some(expression) = fixed_rule.value()
+                        {
+                            let clean_expression = expression.trim_matches('"');
 
-                                // Determine context type based on expression
-                                let context = if clean_expression.starts_with("http://") {
-                                    StructureDefinitionContext::extension(clean_expression)
-                                } else if clean_expression.contains('.') {
-                                    StructureDefinitionContext::element(clean_expression)
-                                } else {
-                                    // Assume it's a resource type
-                                    StructureDefinitionContext::element(clean_expression)
-                                };
+                            // Determine context type based on expression
+                            let context = if clean_expression.starts_with("http://") {
+                                StructureDefinitionContext::extension(clean_expression)
+                            } else if clean_expression.contains('.') {
+                                StructureDefinitionContext::element(clean_expression)
+                            } else {
+                                // Assume it's a resource type
+                                StructureDefinitionContext::element(clean_expression)
+                            };
 
-                                contexts.push(context);
-                                found_context_rules = true;
+                            contexts.push(context);
+                            found_context_rules = true;
 
-                                debug!(
-                                    "Found direct context rule via FixedValue: {} = {}",
-                                    path_str, clean_expression
-                                );
-                            }
+                            debug!(
+                                "Found direct context rule via FixedValue: {} = {}",
+                                path_str, clean_expression
+                            );
                         }
                     }
                 }
@@ -569,12 +572,11 @@ impl ExtensionExporter {
     /// - "context[=].expression" -> "="
     /// - "context.type" -> "default"
     fn extract_context_index(&self, path: &str) -> String {
-        if let Some(start) = path.find('[') {
-            if let Some(end) = path.find(']') {
-                if end > start {
-                    return path[start + 1..end].to_string();
-                }
-            }
+        if let Some(start) = path.find('[')
+            && let Some(end) = path.find(']')
+            && end > start
+        {
+            return path[start + 1..end].to_string();
         }
 
         // If no brackets found, use "default" as key
@@ -591,14 +593,14 @@ impl ExtensionExporter {
         let expression_path = type_path.replace(".type", ".expression");
 
         for rule in extension.rules() {
-            if let Rule::CaretValue(caret_rule) = rule {
-                if let Some(path) = caret_rule.caret_path() {
-                    let path_str = path.as_string();
-                    if path_str == expression_path {
-                        if let Some(value) = caret_rule.value() {
-                            return Ok(value.trim_matches('"').to_string());
-                        }
-                    }
+            if let Rule::CaretValue(caret_rule) = rule
+                && let Some(path) = caret_rule.caret_path()
+            {
+                let path_str = path.as_string();
+                if path_str == expression_path
+                    && let Some(value) = caret_rule.value()
+                {
+                    return Ok(value.trim_matches('"').to_string());
                 }
             }
         }
@@ -670,12 +672,12 @@ impl ExtensionExporter {
                         let path_str = path.as_string();
 
                         // Root extension cardinality
-                        if path_str == "." || path_str.is_empty() {
-                            if let Some(cardinality_node) = card_rule.cardinality() {
-                                if let (Some(min), Some(max)) = (cardinality_node.min(), cardinality_node.max()) {
-                                    extension_cardinality = Some((min, max));
-                                }
-                            }
+                        if (path_str == "." || path_str.is_empty())
+                            && let Some(cardinality_node) = card_rule.cardinality()
+                            && let (Some(min), Some(max)) =
+                                (cardinality_node.min(), cardinality_node.max())
+                        {
+                            extension_cardinality = Some((min, max));
                         }
                         // Value[x] constraints indicate simple extension
                         else if path_str.starts_with("value[x]") || path_str == "value" {
@@ -687,10 +689,11 @@ impl ExtensionExporter {
                         }
                     } else {
                         // No path means root element (.)
-                        if let Some(cardinality_node) = card_rule.cardinality() {
-                            if let (Some(min), Some(max)) = (cardinality_node.min(), cardinality_node.max()) {
-                                extension_cardinality = Some((min, max));
-                            }
+                        if let Some(cardinality_node) = card_rule.cardinality()
+                            && let (Some(min), Some(max)) =
+                                (cardinality_node.min(), cardinality_node.max())
+                        {
+                            extension_cardinality = Some((min, max));
                         }
                     }
                 }
@@ -751,15 +754,12 @@ impl ExtensionExporter {
         }
 
         // Apply root extension cardinality if specified
-        if let Some((min, max)) = extension_cardinality {
-            if let Some(snapshot) = &mut structure_def.snapshot {
-                if let Some(root_element) =
-                    snapshot.element.iter_mut().find(|e| e.path == "Extension")
-                {
-                    root_element.min = Some(min);
-                    root_element.max = Some(max);
-                }
-            }
+        if let Some((min, max)) = extension_cardinality
+            && let Some(snapshot) = &mut structure_def.snapshot
+            && let Some(root_element) = snapshot.element.iter_mut().find(|e| e.path == "Extension")
+        {
+            root_element.min = Some(min);
+            root_element.max = Some(max);
         }
 
         // Validate extension type consistency
@@ -851,7 +851,7 @@ impl ExtensionExporter {
 
             // Process each contained extension name
             let items = if contains_rule.items().is_empty() {
-                self.parse_contains_rule_manually(&contains_rule)
+                self.parse_contains_rule_manually(contains_rule)
             } else {
                 contains_rule.items()
             };
@@ -1038,20 +1038,19 @@ impl ExtensionExporter {
 
     /// Extract extension name from a path like "extension[subExt1].value[x]"
     fn extract_extension_name_from_path(&self, path: &str) -> Option<String> {
-        if path.starts_with("extension[") && path.contains(']') {
-            if let Some(start) = path.find('[') {
-                if let Some(end) = path.find(']') {
-                    if end > start {
-                        let ext_name = &path[start + 1..end];
-                        if !ext_name.is_empty() && ext_name != "+" && ext_name != "=" {
-                            debug!(
-                                "Found nested extension name from path '{}': '{}'",
-                                path, ext_name
-                            );
-                            return Some(ext_name.to_string());
-                        }
-                    }
-                }
+        if path.starts_with("extension[")
+            && path.contains(']')
+            && let Some(start) = path.find('[')
+            && let Some(end) = path.find(']')
+            && end > start
+        {
+            let ext_name = &path[start + 1..end];
+            if !ext_name.is_empty() && ext_name != "+" && ext_name != "=" {
+                debug!(
+                    "Found nested extension name from path '{}': '{}'",
+                    path, ext_name
+                );
+                return Some(ext_name.to_string());
             }
         }
         None
@@ -1135,7 +1134,7 @@ impl ExtensionExporter {
         debug!("Parsing contains block: '{}'", contains_block);
 
         // Clean up the text - remove extra whitespace and newlines
-        let cleaned = contains_block.replace('\n', " ").replace('\r', " ");
+        let cleaned = contains_block.replace(['\n', '\r'], " ");
         let cleaned = cleaned.trim();
 
         // Split by "and" to get individual extension definitions
@@ -1174,7 +1173,7 @@ impl ExtensionExporter {
         debug!("Extracting extension names from text: '{}'", text);
 
         // Clean up the text - remove newlines and extra whitespace
-        let cleaned_text = text.replace('\n', " ").replace('\r', " ");
+        let cleaned_text = text.replace(['\n', '\r'], " ");
         let cleaned_text = cleaned_text.trim();
 
         // Split by "and" and extract extension names
@@ -1420,7 +1419,10 @@ impl ExtensionExporter {
             .cardinality()
             .ok_or_else(|| ExportError::InvalidCardinality("missing".to_string()))?;
 
-        trace!("Applying cardinality rule: {} {}", path_str, cardinality_node);
+        trace!(
+            "Applying cardinality rule: {} {}",
+            path_str, cardinality_node
+        );
 
         // Use structured cardinality access
         let min = cardinality_node
@@ -1617,12 +1619,11 @@ impl ExtensionExporter {
         path: &str,
     ) -> Result<String, ExportError> {
         // If path already includes resource type, use as-is
-        if path.contains('.') {
-            if let Some(first_segment) = path.split('.').next() {
-                if first_segment == structure_def.type_field {
-                    return Ok(path.to_string());
-                }
-            }
+        if path.contains('.')
+            && let Some(first_segment) = path.split('.').next()
+            && first_segment == structure_def.type_field
+        {
+            return Ok(path.to_string());
         }
 
         // For Extension, prepend "Extension."

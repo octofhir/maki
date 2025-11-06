@@ -6,6 +6,9 @@
 //! - Properties and designations support
 //! - Complex filter expression parsing
 
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use maki_core::canonical::DefinitionSession;
 use maki_core::cst::ast::Document;
 use maki_core::cst::parse_fsh;

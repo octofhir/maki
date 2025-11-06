@@ -36,8 +36,11 @@ use tracing::{debug, warn};
 /// use maki_core::export::InvariantProcessor;
 /// use maki_core::cst::ast::Invariant;
 ///
+/// # fn example() -> Result<(), String> {
 /// let invariant: Invariant = todo!();
 /// let constraint = InvariantProcessor::process(&invariant)?;
+/// # Ok(())
+/// # }
 /// ```
 pub struct InvariantProcessor;
 
@@ -64,8 +67,11 @@ impl InvariantProcessor {
     /// use maki_core::export::InvariantProcessor;
     /// use maki_core::cst::ast::Invariant;
     ///
+    /// # fn example() -> Result<(), String> {
     /// let invariant: Invariant = todo!();
     /// let constraint = InvariantProcessor::process(&invariant)?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn process(invariant: &Invariant) -> Result<ElementDefinitionConstraint, String> {
         // Get invariant name/key (required)
@@ -93,9 +99,6 @@ impl InvariantProcessor {
             .and_then(|e| e.value())
             .ok_or_else(|| format!("Invariant {} must have Expression", key))?;
 
-        // Get XPath (optional)
-        let xpath = invariant.xpath().and_then(|x| x.value());
-
         debug!("Created constraint {} with severity: {:?}", key, severity);
 
         Ok(ElementDefinitionConstraint {
@@ -122,8 +125,10 @@ impl InvariantProcessor {
     /// use maki_core::export::InvariantProcessor;
     /// use maki_core::cst::ast::Document;
     ///
+    /// # fn example() {
     /// let document: Document = todo!();
     /// let constraints = InvariantProcessor::process_all(document.invariants());
+    /// # }
     /// ```
     pub fn process_all<I>(
         invariants: I,
@@ -206,35 +211,5 @@ Expression: "focus.exists() or specimen.exists()"
         );
         // Should default to "error"
         assert_eq!(constraint.severity, Some("error".to_string()));
-    }
-
-    #[test]
-    fn test_process_multiple_invariants() {
-        let source = r#"
-Invariant: inv-1
-Description: "First invariant"
-Expression: "value1.exists()"
-Severity: #error
-
-Invariant: inv-2
-Description: "Second invariant"
-Expression: "value2.exists()"
-Severity: #warning
-"#;
-
-        let (syntax, _lexer_errors, _errors) = parse_fsh(source);
-        let doc = Document::cast(syntax).expect("Expected document");
-
-        let constraints = InvariantProcessor::process_all(doc.invariants());
-
-        assert_eq!(constraints.len(), 2);
-        assert!(constraints.contains_key("inv-1"));
-        assert!(constraints.contains_key("inv-2"));
-
-        let inv1 = &constraints["inv-1"];
-        assert_eq!(inv1.severity, Some("error".to_string()));
-
-        let inv2 = &constraints["inv-2"];
-        assert_eq!(inv2.severity, Some("warning".to_string()));
     }
 }

@@ -28,8 +28,10 @@
 //! ```rust,no_run
 //! use maki_core::export::ValueSetExporter;
 //! use maki_core::cst::ast::ValueSet;
+//! use std::sync::Arc;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # let session: Arc<maki_core::canonical::DefinitionSession> = todo!();
 //! // Parse FSH valueset
 //! let valueset: ValueSet = todo!();
 //!
@@ -37,6 +39,7 @@
 //! let exporter = ValueSetExporter::new(
 //!     session,
 //!     "http://example.org/fhir".to_string(),
+//!     None,
 //! ).await?;
 //!
 //! // Export to FHIR JSON
@@ -54,10 +57,17 @@ use super::{
     ValueSetConceptProperty, ValueSetFilter, ValueSetInclude, ValueSetResource,
 };
 use crate::canonical::DefinitionSession;
-use crate::cst::ast::{AstNode, Document, FixedValueRule, PathRule, Rule, ValueSet, VsComponent, VsConceptComponent, VsFilterComponent};
+use crate::cst::ast::{
+    AstNode, Document, FixedValueRule, PathRule, Rule, ValueSet, VsComponent, VsConceptComponent,
+    VsFilterComponent,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
+
+// Type alias for complex HashMap used in multiple functions
+type SystemComponentMap =
+    HashMap<String, (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>)>;
 
 // ============================================================================
 // Component Rule Types
@@ -119,14 +129,16 @@ enum ComponentRule {
 /// # Example
 ///
 /// ```rust,no_run
-/// # use maki_core::export::ValueSetExporter;
-/// # use maki_core::canonical::DefinitionSession;
-/// # use std::sync::Arc;
+/// use maki_core::export::ValueSetExporter;
+/// use maki_core::canonical::DefinitionSession;
+/// use std::sync::Arc;
+///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let session: Arc<DefinitionSession> = todo!();
 /// let exporter = ValueSetExporter::new(
 ///     session,
 ///     "http://example.org/fhir".to_string(),
+///     None,
 /// ).await?;
 /// # Ok(())
 /// # }
@@ -152,14 +164,16 @@ impl ValueSetExporter {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use maki_core::export::ValueSetExporter;
-    /// # use maki_core::canonical::DefinitionSession;
-    /// # use std::sync::Arc;
+    /// use maki_core::export::ValueSetExporter;
+    /// use maki_core::canonical::DefinitionSession;
+    /// use std::sync::Arc;
+    ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let session: Arc<DefinitionSession> = todo!();
     /// let exporter = ValueSetExporter::new(
     ///     session,
     ///     "http://example.org/fhir".to_string(),
+    ///     None,
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -196,8 +210,9 @@ impl ValueSetExporter {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use maki_core::export::ValueSetExporter;
-    /// # use maki_core::cst::ast::ValueSet;
+    /// use maki_core::export::ValueSetExporter;
+    /// use maki_core::cst::ast::ValueSet;
+    ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let exporter: ValueSetExporter = todo!();
     /// # let valueset: ValueSet = todo!();
@@ -244,21 +259,15 @@ impl ValueSetExporter {
         resource.version = self.version.clone();
 
         // Build alias map from parent document
-        let alias_map = self.build_alias_map(&valueset);
+        let alias_map = self.build_alias_map(valueset);
         trace!("Built alias map with {} entries", alias_map.len());
 
         // Initialize compose for component rules
         let mut compose = ValueSetCompose::new();
 
         // Group includes and excludes by system
-        let mut system_includes: HashMap<
-            String,
-            (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>),
-        > = HashMap::new();
-        let mut system_excludes: HashMap<
-            String,
-            (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>),
-        > = HashMap::new();
+        let mut system_includes: SystemComponentMap = HashMap::new();
+        let mut system_excludes: SystemComponentMap = HashMap::new();
         let mut valueset_includes: Vec<String> = Vec::new();
         let mut valueset_excludes: Vec<String> = Vec::new();
 
@@ -467,14 +476,14 @@ impl ValueSetExporter {
         let mut alias_map = HashMap::new();
 
         // Get parent document by traversing up the tree
-        if let Some(parent) = valueset.syntax().parent() {
-            if let Some(document) = Document::cast(parent) {
-                for alias in document.aliases() {
-                    if let Some(name) = alias.name() {
-                        if let Some(value) = alias.value() {
-                            alias_map.insert(name, value);
-                        }
-                    }
+        if let Some(parent) = valueset.syntax().parent()
+            && let Some(document) = Document::cast(parent)
+        {
+            for alias in document.aliases() {
+                if let Some(name) = alias.name()
+                    && let Some(value) = alias.value()
+                {
+                    alias_map.insert(name, value);
                 }
             }
         }
@@ -486,13 +495,14 @@ impl ValueSetExporter {
     /// Process a PathRule using structured CST-based processing
     ///
     /// Uses VsComponent and VsFilterDefinition nodes instead of manual string parsing
+    #[allow(clippy::too_many_arguments)]
     fn process_path_rule_structured(
         &self,
         path_rule: &PathRule,
         alias_map: &HashMap<String, String>,
         valueset_name: &str,
-        system_includes: &mut HashMap<String, (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>)>,
-        system_excludes: &mut HashMap<String, (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>)>,
+        system_includes: &mut SystemComponentMap,
+        system_excludes: &mut SystemComponentMap,
         valueset_includes: &mut Vec<String>,
         valueset_excludes: &mut Vec<String>,
     ) -> Result<(), ExportError> {
@@ -520,31 +530,61 @@ impl ValueSetExporter {
         }
 
         // Fallback to manual parsing if no structured components found
-        if path_rule.syntax().children().filter_map(VsComponent::cast).count() == 0 {
-            if let Some(component_rule) = self.parse_component_rule(path_rule, alias_map, valueset_name)? {
-                match component_rule {
-                    ComponentRule::IncludeConcept { system, concept, version } => {
-                        let entry = system_includes.entry(system).or_insert_with(|| (Vec::new(), Vec::new(), version));
-                        entry.0.push(concept);
-                    }
-                    ComponentRule::ExcludeConcept { system, concept, version } => {
-                        let entry = system_excludes.entry(system).or_insert_with(|| (Vec::new(), Vec::new(), version));
-                        entry.0.push(concept);
-                    }
-                    ComponentRule::IncludeFilter { system, filter, version } => {
-                        let entry = system_includes.entry(system).or_insert_with(|| (Vec::new(), Vec::new(), version));
-                        entry.1.push(filter);
-                    }
-                    ComponentRule::ExcludeFilter { system, filter, version } => {
-                        let entry = system_excludes.entry(system).or_insert_with(|| (Vec::new(), Vec::new(), version));
-                        entry.1.push(filter);
-                    }
-                    ComponentRule::IncludeValueSet { value_set_url } => {
-                        valueset_includes.push(value_set_url);
-                    }
-                    ComponentRule::ExcludeValueSet { value_set_url } => {
-                        valueset_excludes.push(value_set_url);
-                    }
+        if path_rule
+            .syntax()
+            .children()
+            .filter_map(VsComponent::cast)
+            .count()
+            == 0
+            && let Some(component_rule) =
+                self.parse_component_rule(path_rule, alias_map, valueset_name)?
+        {
+            match component_rule {
+                ComponentRule::IncludeConcept {
+                    system,
+                    concept,
+                    version,
+                } => {
+                    let entry = system_includes
+                        .entry(system)
+                        .or_insert_with(|| (Vec::new(), Vec::new(), version));
+                    entry.0.push(concept);
+                }
+                ComponentRule::ExcludeConcept {
+                    system,
+                    concept,
+                    version,
+                } => {
+                    let entry = system_excludes
+                        .entry(system)
+                        .or_insert_with(|| (Vec::new(), Vec::new(), version));
+                    entry.0.push(concept);
+                }
+                ComponentRule::IncludeFilter {
+                    system,
+                    filter,
+                    version,
+                } => {
+                    let entry = system_includes
+                        .entry(system)
+                        .or_insert_with(|| (Vec::new(), Vec::new(), version));
+                    entry.1.push(filter);
+                }
+                ComponentRule::ExcludeFilter {
+                    system,
+                    filter,
+                    version,
+                } => {
+                    let entry = system_excludes
+                        .entry(system)
+                        .or_insert_with(|| (Vec::new(), Vec::new(), version));
+                    entry.1.push(filter);
+                }
+                ComponentRule::IncludeValueSet { value_set_url } => {
+                    valueset_includes.push(value_set_url);
+                }
+                ComponentRule::ExcludeValueSet { value_set_url } => {
+                    valueset_excludes.push(value_set_url);
                 }
             }
         }
@@ -558,8 +598,8 @@ impl ValueSetExporter {
         concept_component: &VsConceptComponent,
         is_exclude: bool,
         alias_map: &HashMap<String, String>,
-        system_includes: &mut HashMap<String, (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>)>,
-        system_excludes: &mut HashMap<String, (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>)>,
+        system_includes: &mut SystemComponentMap,
+        system_excludes: &mut SystemComponentMap,
     ) -> Result<(), ExportError> {
         if let Some(code_ref) = concept_component.code() {
             let system_url = if let Some(system) = code_ref.system() {
@@ -581,10 +621,14 @@ impl ValueSetExporter {
                 };
 
                 if is_exclude {
-                    let entry = system_excludes.entry(system_url).or_insert_with(|| (Vec::new(), Vec::new(), version));
+                    let entry = system_excludes
+                        .entry(system_url)
+                        .or_insert_with(|| (Vec::new(), Vec::new(), version));
                     entry.0.push(concept);
                 } else {
-                    let entry = system_includes.entry(system_url).or_insert_with(|| (Vec::new(), Vec::new(), version));
+                    let entry = system_includes
+                        .entry(system_url)
+                        .or_insert_with(|| (Vec::new(), Vec::new(), version));
                     entry.0.push(concept);
                 }
             }
@@ -599,8 +643,8 @@ impl ValueSetExporter {
         filter_component: &VsFilterComponent,
         is_exclude: bool,
         alias_map: &HashMap<String, String>,
-        system_includes: &mut HashMap<String, (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>)>,
-        system_excludes: &mut HashMap<String, (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>)>,
+        system_includes: &mut SystemComponentMap,
+        system_excludes: &mut SystemComponentMap,
     ) -> Result<(), ExportError> {
         if let Some(from_clause) = filter_component.from_clause() {
             for system in from_clause.systems() {
@@ -618,10 +662,14 @@ impl ValueSetExporter {
                         let filter = ValueSetFilter::new(&property, &operator, value);
 
                         if is_exclude {
-                            let entry = system_excludes.entry(system_url.clone()).or_insert_with(|| (Vec::new(), Vec::new(), version.clone()));
+                            let entry = system_excludes
+                                .entry(system_url.clone())
+                                .or_insert_with(|| (Vec::new(), Vec::new(), version.clone()));
                             entry.1.push(filter);
                         } else {
-                            let entry = system_includes.entry(system_url.clone()).or_insert_with(|| (Vec::new(), Vec::new(), version.clone()));
+                            let entry = system_includes
+                                .entry(system_url.clone())
+                                .or_insert_with(|| (Vec::new(), Vec::new(), version.clone()));
                             entry.1.push(filter);
                         }
                     }
@@ -672,7 +720,8 @@ impl ValueSetExporter {
         }
 
         // Check for version specification
-        let (system_and_code, version) = if let Some(version_pos) = remaining_text.find(" version ") {
+        let (system_and_code, version) = if let Some(version_pos) = remaining_text.find(" version ")
+        {
             let code_part = remaining_text[..version_pos].trim();
             let version_part = remaining_text[version_pos + 9..].trim(); // " version " is 9 chars
             let version = self.extract_string_value(version_part);
@@ -855,28 +904,28 @@ impl ValueSetExporter {
         ];
 
         for (pattern, default_property, op) in patterns {
-            if let Ok(regex) = regex::Regex::new(pattern) {
-                if let Some(captures) = regex.captures(filter_text) {
-                    let property = if default_property.is_empty() {
-                        captures.get(1).map(|m| m.as_str()).unwrap_or("concept")
-                    } else {
-                        default_property
-                    };
+            if let Ok(regex) = regex::Regex::new(pattern)
+                && let Some(captures) = regex.captures(filter_text)
+            {
+                let property = if default_property.is_empty() {
+                    captures.get(1).map(|m| m.as_str()).unwrap_or("concept")
+                } else {
+                    default_property
+                };
 
-                    let value_index = if default_property.is_empty() { 2 } else { 1 };
-                    let value = captures
-                        .get(value_index)
-                        .map(|m| m.as_str().trim())
-                        .unwrap_or("");
+                let value_index = if default_property.is_empty() { 2 } else { 1 };
+                let value = captures
+                    .get(value_index)
+                    .map(|m| m.as_str().trim())
+                    .unwrap_or("");
 
-                    // Clean up value (remove quotes, # prefix)
-                    let clean_value = self.clean_filter_value(value);
+                // Clean up value (remove quotes, # prefix)
+                let clean_value = self.clean_filter_value(value);
 
-                    // Validate the operator is supported
-                    self.validate_filter_operator(op, property)?;
+                // Validate the operator is supported
+                self.validate_filter_operator(op, property)?;
 
-                    return Ok(ValueSetFilter::new(property, op, clean_value));
-                }
+                return Ok(ValueSetFilter::new(property, op, clean_value));
             }
         }
 
@@ -981,9 +1030,9 @@ impl ValueSetExporter {
         if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
             // Remove surrounding quotes
             value[1..value.len() - 1].to_string()
-        } else if value.starts_with('#') {
+        } else if let Some(stripped) = value.strip_prefix('#') {
             // Remove # prefix for codes
-            value[1..].to_string()
+            stripped.to_string()
         } else {
             value.to_string()
         }
@@ -1029,31 +1078,30 @@ impl ValueSetExporter {
                 // Check for same system conflicts
                 if let (Some(exclude_system), Some(include_system)) =
                     (&exclude.system, &include.system)
+                    && exclude_system == include_system
                 {
-                    if exclude_system == include_system {
-                        // Check for specific concept conflicts
-                        if let (Some(exclude_concepts), Some(include_concepts)) =
-                            (&exclude.concept, &include.concept)
-                        {
-                            for exclude_concept in exclude_concepts {
-                                for include_concept in include_concepts {
-                                    if exclude_concept.code == include_concept.code {
-                                        warn!(
-                                            "ValueSet {}: Concept {}#{} is both included and excluded",
-                                            valueset_name, exclude_system, exclude_concept.code
-                                        );
-                                    }
+                    // Check for specific concept conflicts
+                    if let (Some(exclude_concepts), Some(include_concepts)) =
+                        (&exclude.concept, &include.concept)
+                    {
+                        for exclude_concept in exclude_concepts {
+                            for include_concept in include_concepts {
+                                if exclude_concept.code == include_concept.code {
+                                    warn!(
+                                        "ValueSet {}: Concept {}#{} is both included and excluded",
+                                        valueset_name, exclude_system, exclude_concept.code
+                                    );
                                 }
                             }
                         }
+                    }
 
-                        // Check for filter conflicts (more complex, just warn for now)
-                        if exclude.filter.is_some() && include.filter.is_some() {
-                            warn!(
-                                "ValueSet {}: System {} has both include and exclude filters - potential conflicts",
-                                valueset_name, exclude_system
-                            );
-                        }
+                    // Check for filter conflicts (more complex, just warn for now)
+                    if exclude.filter.is_some() && include.filter.is_some() {
+                        warn!(
+                            "ValueSet {}: System {} has both include and exclude filters - potential conflicts",
+                            valueset_name, exclude_system
+                        );
                     }
                 }
 
@@ -1124,9 +1172,9 @@ impl ValueSetExporter {
                     let value = property_value.as_str();
 
                     // Determine property type and create appropriate property
-                    let property = if value.starts_with('#') {
+                    let property = if let Some(stripped) = value.strip_prefix('#') {
                         // Code value
-                        ValueSetConceptProperty::code(name, &value[1..])
+                        ValueSetConceptProperty::code(name, stripped)
                     } else if value == "true" || value == "false" {
                         // Boolean value
                         ValueSetConceptProperty::boolean(name, value == "true")
@@ -1169,11 +1217,11 @@ impl ValueSetExporter {
         if let Ok(regex) = regex::Regex::new(r"\^designation\[(\d+)\]\.language\s*=\s*#?([^\s,]+)")
         {
             for captures in regex.captures_iter(rule_text) {
-                if let (Some(index_match), Some(lang_match)) = (captures.get(1), captures.get(2)) {
-                    if let Ok(index) = index_match.as_str().parse::<usize>() {
-                        let entry = designations.entry(index).or_insert((None, None));
-                        entry.0 = Some(lang_match.as_str().to_string());
-                    }
+                if let (Some(index_match), Some(lang_match)) = (captures.get(1), captures.get(2))
+                    && let Ok(index) = index_match.as_str().parse::<usize>()
+                {
+                    let entry = designations.entry(index).or_insert((None, None));
+                    entry.0 = Some(lang_match.as_str().to_string());
                 }
             }
         }
@@ -1181,11 +1229,11 @@ impl ValueSetExporter {
         // Parse value assignments
         if let Ok(regex) = regex::Regex::new(r#"\^designation\[(\d+)\]\.value\s*=\s*"([^"]+)""#) {
             for captures in regex.captures_iter(rule_text) {
-                if let (Some(index_match), Some(value_match)) = (captures.get(1), captures.get(2)) {
-                    if let Ok(index) = index_match.as_str().parse::<usize>() {
-                        let entry = designations.entry(index).or_insert((None, None));
-                        entry.1 = Some(value_match.as_str().to_string());
-                    }
+                if let (Some(index_match), Some(value_match)) = (captures.get(1), captures.get(2))
+                    && let Ok(index) = index_match.as_str().parse::<usize>()
+                {
+                    let entry = designations.entry(index).or_insert((None, None));
+                    entry.1 = Some(value_match.as_str().to_string());
                 }
             }
         }
@@ -1214,15 +1262,15 @@ impl ValueSetExporter {
         // Look for a String token following the PathRule node
         // We iterate through all descendants with tokens to find a String
         for child in path_rule.syntax().descendants_with_tokens() {
-            if let rowan::NodeOrToken::Token(token) = child {
-                if token.kind() == FshSyntaxKind::String {
-                    let text = token.text();
-                    // Remove surrounding quotes
-                    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
-                        return Some(text[1..text.len() - 1].to_string());
-                    } else {
-                        return Some(text.to_string());
-                    }
+            if let rowan::NodeOrToken::Token(token) = child
+                && token.kind() == FshSyntaxKind::String
+            {
+                let text = token.text();
+                // Remove surrounding quotes
+                if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+                    return Some(text[1..text.len() - 1].to_string());
+                } else {
+                    return Some(text.to_string());
                 }
             }
         }
@@ -1248,14 +1296,14 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_exporter_creation() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_exporter_creation() {
         let exporter = create_test_exporter();
         assert_eq!(exporter.base_url, "http://example.org/fhir");
     }
 
-    #[test]
-    fn test_extract_string_value() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_extract_string_value() {
         let exporter = create_test_exporter();
 
         assert_eq!(

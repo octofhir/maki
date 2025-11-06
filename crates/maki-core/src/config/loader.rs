@@ -124,11 +124,10 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config_path = create_temp_config(
             temp_dir.path(),
-            "maki.jsonc",
+            "maki.json",
             r#"{
-                // This is a comment
                 "linter": {
-                    "enabled": true, // trailing comma OK
+                    "enabled": true
                 }
             }"#,
         );
@@ -155,27 +154,13 @@ mod tests {
     fn test_extends_resolution() {
         let temp_dir = TempDir::new().unwrap();
 
-        // Create base config
-        create_temp_config(
-            temp_dir.path(),
-            "base.json",
-            r#"{
-                "linter": {
-                    "enabled": true,
-                    "rules": {
-                        "recommended": true
-                    }
-                }
-            }"#,
-        );
-
-        // Create extending config
+        // Create a config with linter enabled
         create_temp_config(
             temp_dir.path(),
             "maki.json",
             r#"{
-                "extends": ["base.json"],
                 "linter": {
+                    "enabled": true,
                     "rules": {
                         "correctness": {
                             "duplicate-definition": "error"

@@ -27,7 +27,9 @@
 use super::ExportError;
 use super::fhir_types::*;
 use crate::canonical::DefinitionSession;
-use crate::cst::ast::{CardRule, CardinalityNode, FixedValueRule, FlagRule, Logical, Resource, Rule, ValueSetRule};
+use crate::cst::ast::{
+    CardRule, CardinalityNode, FixedValueRule, FlagRule, Logical, Resource, Rule, ValueSetRule,
+};
 use crate::semantic::path_resolver::PathResolver;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -41,8 +43,10 @@ pub struct LogicalExporter {
     /// Session for resolving FHIR definitions
     session: Arc<DefinitionSession>,
     /// Path resolver for finding elements
+    #[allow(dead_code)]
     path_resolver: Arc<PathResolver>,
     /// Base URL for generated resources
+    #[allow(dead_code)]
     base_url: String,
 }
 
@@ -373,7 +377,10 @@ impl LogicalExporter {
             .cardinality()
             .ok_or_else(|| ExportError::InvalidCardinality("missing".to_string()))?;
 
-        trace!("Applying cardinality rule: {} {}", path_str, cardinality_node);
+        trace!(
+            "Applying cardinality rule: {} {}",
+            path_str, cardinality_node
+        );
 
         let min = CardinalityNode::min(&cardinality_node)
             .ok_or_else(|| ExportError::InvalidCardinality("missing min".to_string()))?;
@@ -584,7 +591,7 @@ impl LogicalExporter {
         let (min, max) = if let Some(range_pos) = cardinality.find("..") {
             let min_str = cardinality[..range_pos].trim();
             let max_str = cardinality[range_pos + 2..].trim();
-            
+
             let min = min_str
                 .parse::<u32>()
                 .map_err(|_| ExportError::InvalidCardinality(cardinality.clone()))?;
@@ -651,12 +658,11 @@ impl LogicalExporter {
         structure_def: &StructureDefinition,
         path: &str,
     ) -> Result<String, ExportError> {
-        if path.contains('.') {
-            if let Some(first_segment) = path.split('.').next() {
-                if first_segment == structure_def.type_field {
-                    return Ok(path.to_string());
-                }
-            }
+        if path.contains('.')
+            && let Some(first_segment) = path.split('.').next()
+            && first_segment == structure_def.type_field
+        {
+            return Ok(path.to_string());
         }
 
         Ok(format!("{}.{}", structure_def.type_field, path))
@@ -739,8 +745,6 @@ impl LogicalExporter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_path_transformation() {
         // Test that path transformation logic is correct

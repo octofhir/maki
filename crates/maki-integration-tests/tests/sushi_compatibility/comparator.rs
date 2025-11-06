@@ -4,10 +4,13 @@
 //! from MAKI and SUSHI, identifying differences, and determining
 //! if differences are acceptable.
 
+#![allow(dead_code)]
+
 use serde_json::Value;
 
 /// Difference types between MAKI and SUSHI outputs
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub enum Difference {
     /// File exists in SUSHI output but not in MAKI
     MissingInMaki(String),
@@ -77,24 +80,36 @@ pub fn compare_json(file: &str, maki: &Value, sushi: &Value) -> Vec<Difference> 
 }
 
 /// Compare two JSON values for semantic equivalence
-pub fn compare_semantic_equivalence(file: &str, maki: &Value, sushi: &Value) -> SemanticComparisonResult {
+pub fn compare_semantic_equivalence(
+    file: &str,
+    maki: &Value,
+    sushi: &Value,
+) -> SemanticComparisonResult {
     let mut differences = Vec::new();
     let mut semantic_issues = Vec::new();
-    
+
     compare_json_recursive(file, "", maki, sushi, &mut differences);
-    
+
     // Analyze differences for semantic significance
     for diff in &differences {
         match diff {
             Difference::AcceptableDifference { .. } => {
                 // These don't affect semantic equivalence
             }
-            Difference::ContentDifference { path, maki_value, sushi_value, .. } => {
+            Difference::ContentDifference {
+                path,
+                maki_value,
+                sushi_value,
+                ..
+            } => {
                 if is_semantically_significant(path, maki_value, sushi_value) {
                     semantic_issues.push(SemanticIssue {
                         path: path.clone(),
                         issue_type: SemanticIssueType::ContentMismatch,
-                        description: format!("Semantic difference: {} vs {}", maki_value, sushi_value),
+                        description: format!(
+                            "Semantic difference: {} vs {}",
+                            maki_value, sushi_value
+                        ),
                         severity: get_semantic_severity(path),
                     });
                 }
@@ -117,9 +132,9 @@ pub fn compare_semantic_equivalence(file: &str, maki: &Value, sushi: &Value) -> 
             }
         }
     }
-    
+
     let equivalence_score = calculate_semantic_equivalence_score(&semantic_issues);
-    
+
     SemanticComparisonResult {
         file: file.to_string(),
         is_equivalent: semantic_issues.is_empty(),
@@ -251,10 +266,10 @@ pub fn calculate_compatibility(differences: &[Difference]) -> f64 {
 /// Check if a difference is semantically significant
 fn is_semantically_significant(path: &str, _maki_value: &str, _sushi_value: &str) -> bool {
     // Skip metadata fields that don't affect semantic meaning
-    if is_acceptable_field(path.split('.').last().unwrap_or(path)) {
+    if is_acceptable_field(path.split('.').next_back().unwrap_or(path)) {
         return false;
     }
-    
+
     // Check for FHIR-specific semantic equivalence
     match path {
         // Resource type must match exactly
@@ -288,13 +303,13 @@ fn get_semantic_severity(path: &str) -> SemanticSeverity {
         p if p.ends_with("id") => SemanticSeverity::High,
         p if p.ends_with("url") => SemanticSeverity::High,
         p if p.contains("type") => SemanticSeverity::High,
-        
+
         // Important paths that affect validation
         p if p.ends_with("status") => SemanticSeverity::Medium,
         p if p.contains("min") || p.contains("max") => SemanticSeverity::Medium,
         p if p.contains("binding") => SemanticSeverity::Medium,
         p if p.contains("slicing") => SemanticSeverity::Medium,
-        
+
         // Less critical paths
         _ => SemanticSeverity::Low,
     }
@@ -305,16 +320,17 @@ fn calculate_semantic_equivalence_score(issues: &[SemanticIssue]) -> f64 {
     if issues.is_empty() {
         return 1.0;
     }
-    
+
     let total_weight = issues.len() as f64;
-    let weighted_issues: f64 = issues.iter().map(|issue| {
-        match issue.severity {
+    let weighted_issues: f64 = issues
+        .iter()
+        .map(|issue| match issue.severity {
             SemanticSeverity::High => 1.0,
             SemanticSeverity::Medium => 0.6,
             SemanticSeverity::Low => 0.2,
-        }
-    }).sum();
-    
+        })
+        .sum();
+
     (total_weight - weighted_issues) / total_weight
 }
 
@@ -353,7 +369,7 @@ pub fn format_differences(differences: &[Difference]) -> String {
 /// Format semantic comparison results
 pub fn format_semantic_results(results: &[SemanticComparisonResult]) -> String {
     let mut output = String::new();
-    
+
     let total = results.len();
     let equivalent = results.iter().filter(|r| r.is_equivalent).count();
     let avg_score = if total > 0 {
@@ -361,7 +377,7 @@ pub fn format_semantic_results(results: &[SemanticComparisonResult]) -> String {
     } else {
         1.0
     };
-    
+
     output.push_str(&format!(
         "Semantic Equivalence Summary\n\
          ============================\n\
@@ -370,26 +386,32 @@ pub fn format_semantic_results(results: &[SemanticComparisonResult]) -> String {
          Average Equivalence Score: {:.2}\n\n",
         total, equivalent, avg_score
     ));
-    
+
     // Show files with semantic issues
     for result in results.iter().filter(|r| !r.is_equivalent) {
-        output.push_str(&format!("File: {} (Score: {:.2})\n", result.file, result.equivalence_score));
-        
+        output.push_str(&format!(
+            "File: {} (Score: {:.2})\n",
+            result.file, result.equivalence_score
+        ));
+
         for issue in &result.semantic_issues {
             let severity_icon = match issue.severity {
                 SemanticSeverity::High => "🔴",
-                SemanticSeverity::Medium => "🟡", 
+                SemanticSeverity::Medium => "🟡",
                 SemanticSeverity::Low => "🟢",
             };
-            
+
             output.push_str(&format!(
                 "  {} {} @ {}: {}\n",
-                severity_icon, issue.issue_type_str(), issue.path, issue.description
+                severity_icon,
+                issue.issue_type_str(),
+                issue.path,
+                issue.description
             ));
         }
         output.push('\n');
     }
-    
+
     output
 }
 

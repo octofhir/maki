@@ -3,7 +3,6 @@
 //! Coordinates all exporters to generate a complete FHIR IG package.
 //! Implements SUSHI-compatible build pipeline with progress reporting.
 
-use crate::config::SushiConfiguration;
 use crate::cst::FshSyntaxNode;
 use crate::cst::TextRange;
 use crate::cst::ast::{CodeSystem, Extension, Instance, Profile, ValueSet};
@@ -315,6 +314,7 @@ impl BuildOrchestrator {
         // Parse FHIR version from config
         eprintln!("[DEBUG MAKI BUILD] About to parse FHIR versions");
         info!("Step 2: Parsing FHIR versions from config...");
+        #[allow(clippy::unnecessary_filter_map)]
         let fhir_releases: Vec<FhirRelease> = self
             .build_config()
             .fhir_version
@@ -466,7 +466,7 @@ impl BuildOrchestrator {
         eprintln!("[DEBUG MAKI BUILD] Creating package");
         let package = Arc::new(RwLock::new(Package::new()));
         eprintln!("[DEBUG MAKI BUILD] Creating FishingContext");
-        let fishing_ctx = Arc::new(FishingContext::new(
+        let _fishing_ctx = Arc::new(FishingContext::new(
             session.clone(),
             tank.clone(),
             package.clone(),
@@ -569,12 +569,8 @@ impl BuildOrchestrator {
 
         // Recreate fishing context with alias table for profile resolution
         let fishing_ctx = Arc::new(
-            FishingContext::new(
-                session.clone(),
-                tank.clone(),
-                package.clone(),
-            )
-            .with_alias_table(Arc::new(alias_table.clone()))
+            FishingContext::new(session.clone(), tank.clone(), package.clone())
+                .with_alias_table(Arc::new(alias_table.clone())),
         );
         eprintln!("[DEBUG MAKI BUILD] Recreated FishingContext with alias table");
 
@@ -712,7 +708,7 @@ impl BuildOrchestrator {
         }
 
         // Phase 1b: Expand all InsertRule statements
-        let expanded_rules = match ruleset_processor.expand_all_inserts(&parsed_files) {
+        let _expanded_rules = match ruleset_processor.expand_all_inserts(&parsed_files) {
             Ok(rules) => rules,
             Err(e) => {
                 warn!("Failed to expand InsertRules: {}", e);
@@ -798,10 +794,8 @@ impl BuildOrchestrator {
             if self.options.show_progress {
                 info!("  ✓ package.json");
             }
-        } else {
-            if self.options.show_progress {
-                info!("📝 FSHOnly mode: Skipping ImplementationGuide and package.json");
-            }
+        } else if self.options.show_progress {
+            info!("📝 FSHOnly mode: Skipping ImplementationGuide and package.json");
         }
 
         // Step 9: Load predefined resources
@@ -948,10 +942,10 @@ impl BuildOrchestrator {
 
                 // Log first 3 errors for debugging
                 for (i, err) in lexer_errors.iter().take(3).enumerate() {
-                    eprintln!("  [LEXER ERROR {}] {:?}", i+1, err);
+                    eprintln!("  [LEXER ERROR {}] {:?}", i + 1, err);
                 }
                 for (i, err) in parse_errors.iter().take(3).enumerate() {
-                    eprintln!("  [PARSE ERROR {}] {:?}", i+1, err);
+                    eprintln!("  [PARSE ERROR {}] {:?}", i + 1, err);
                 }
             }
 
@@ -967,7 +961,7 @@ impl BuildOrchestrator {
         &self,
         parsed_files: &[(PathBuf, FshSyntaxNode)],
     ) -> std::result::Result<crate::semantic::AliasTable, BuildError> {
-        use crate::cst::ast::{AstNode, Alias as AstAlias};
+        use crate::cst::ast::{Alias as AstAlias, AstNode};
         use crate::semantic::{Alias, AliasTable};
 
         let mut alias_table = AliasTable::new();
@@ -998,7 +992,10 @@ impl BuildOrchestrator {
             }
         }
 
-        eprintln!("[DEBUG ALIAS] ✅ Total extracted: {} aliases", alias_table.len());
+        eprintln!(
+            "[DEBUG ALIAS] ✅ Total extracted: {} aliases",
+            alias_table.len()
+        );
         info!("✅ Extracted {} aliases from FSH files", alias_table.len());
         Ok(alias_table)
     }
@@ -1090,7 +1087,11 @@ impl BuildOrchestrator {
             + codesystems.len()
             + instances.len();
 
-        eprintln!("[DEBUG EXTRACTION] Extracted {} instances from {} files", instances.len(), parsed_files.len());
+        eprintln!(
+            "[DEBUG EXTRACTION] Extracted {} instances from {} files",
+            instances.len(),
+            parsed_files.len()
+        );
 
         info!(
             "✅ EXTRACTED {} TOTAL RESOURCES from {} FSH files:",
@@ -1145,28 +1146,29 @@ impl BuildOrchestrator {
                 // parent_rule.value() returns Option<String>
                 if let Some(parent_name) = parent_rule.value() {
                     // Resolve alias to get actual parent name
-                    let resolved_parent = if let Some(canonical_url) = alias_table.resolve(&parent_name)
-                    {
-                        // If it's a canonical URL, extract profile name from it
-                        if canonical_url.starts_with("http://") || canonical_url.starts_with("https://")
-                        {
-                            // Try to extract last segment as name
-                            canonical_url
-                                .rsplit('/')
-                                .next()
-                                .unwrap_or(&parent_name)
-                                .to_string()
+                    let resolved_parent =
+                        if let Some(canonical_url) = alias_table.resolve(&parent_name) {
+                            // If it's a canonical URL, extract profile name from it
+                            if canonical_url.starts_with("http://")
+                                || canonical_url.starts_with("https://")
+                            {
+                                // Try to extract last segment as name
+                                canonical_url
+                                    .rsplit('/')
+                                    .next()
+                                    .unwrap_or(&parent_name)
+                                    .to_string()
+                            } else {
+                                canonical_url.to_string()
+                            }
                         } else {
-                            canonical_url.to_string()
-                        }
-                    } else {
-                        parent_name.clone()
-                    };
+                            parent_name.clone()
+                        };
 
-                // Check if parent is a local profile (exists in our profiles list)
-                let is_local_profile = profiles
-                    .iter()
-                    .any(|p| p.resource.name().as_deref() == Some(&resolved_parent));
+                    // Check if parent is a local profile (exists in our profiles list)
+                    let is_local_profile = profiles
+                        .iter()
+                        .any(|p| p.resource.name().as_deref() == Some(&resolved_parent));
 
                     if is_local_profile {
                         // Add edge: this profile depends on parent profile
@@ -1200,6 +1202,7 @@ impl BuildOrchestrator {
     }
 
     /// Export profiles and extensions
+    #[allow(clippy::too_many_arguments)]
     async fn export_profiles_and_extensions(
         &self,
         session: Arc<crate::canonical::DefinitionSession>,
@@ -1231,7 +1234,7 @@ impl BuildOrchestrator {
             self.build_config().version.clone(),
             self.build_config().status.clone(),
             publisher_name.clone(),
-            alias_table, // Move alias_table here
+            alias_table,     // Move alias_table here
             package.clone(), // Pass package for local profile lookup
         )
         .await
@@ -1255,7 +1258,8 @@ impl BuildOrchestrator {
 
         // Build dependency graph for profiles and sort by dependencies
         eprintln!("[DEBUG EXPORT] Building profile dependency graph...");
-        let dep_graph = self.build_profile_dependency_graph(&resources.profiles, &alias_table_for_deps);
+        let dep_graph =
+            self.build_profile_dependency_graph(&resources.profiles, &alias_table_for_deps);
 
         // Get processing batches (profiles grouped by dependency level)
         let profile_batches = dep_graph.get_processing_batches();
@@ -1280,11 +1284,10 @@ impl BuildOrchestrator {
 
         // Create name-to-profile map for fast lookup
         let profile_map: std::collections::HashMap<String, &SourceTrackedResource<Profile>> =
-            resources.profiles
+            resources
+                .profiles
                 .iter()
-                .filter_map(|tracked| {
-                    tracked.resource.name().map(|name| (name, tracked))
-                })
+                .filter_map(|tracked| tracked.resource.name().map(|name| (name, tracked)))
                 .collect();
 
         // Assign each profile to its batch
@@ -1414,17 +1417,17 @@ impl BuildOrchestrator {
                                     });
 
                                     // ⚡ ADD TO PACKAGE ⚡
-                                    if !structure_def.url.is_empty() {
-                                        if let Ok(json) = serde_json::to_value(&structure_def) {
-                                            package
-                                                .write()
-                                                .await
-                                                .add_resource(structure_def.url.clone(), json);
-                                            debug!(
-                                                "Added profile {} to Package",
-                                                structure_def.url
-                                            );
-                                        }
+                                    if !structure_def.url.is_empty()
+                                        && let Ok(json) = serde_json::to_value(&structure_def)
+                                    {
+                                        package
+                                            .write()
+                                            .await
+                                            .add_resource(structure_def.url.clone(), json);
+                                        debug!(
+                                            "Added profile {} to Package",
+                                            structure_def.url
+                                        );
                                     }
 
                                     let elapsed = start_time.elapsed();
@@ -1597,17 +1600,14 @@ impl BuildOrchestrator {
                                     });
 
                                     // ⚡ ADD TO PACKAGE ⚡
-                                    if !structure_def.url.is_empty() {
-                                        if let Ok(json) = serde_json::to_value(&structure_def) {
-                                            package
-                                                .write()
-                                                .await
-                                                .add_resource(structure_def.url.clone(), json);
-                                            debug!(
-                                                "Added extension {} to Package",
-                                                structure_def.url
-                                            );
-                                        }
+                                    if !structure_def.url.is_empty()
+                                        && let Ok(json) = serde_json::to_value(&structure_def)
+                                    {
+                                        package
+                                            .write()
+                                            .await
+                                            .add_resource(structure_def.url.clone(), json);
+                                        debug!("Added extension {} to Package", structure_def.url);
                                     }
 
                                     debug!("Successfully exported extension: {}", extension_name);
@@ -1657,6 +1657,7 @@ impl BuildOrchestrator {
     }
 
     /// Export instances
+    #[allow(clippy::too_many_arguments)]
     async fn export_instances(
         &self,
         session: Arc<crate::canonical::DefinitionSession>,
@@ -1673,7 +1674,7 @@ impl BuildOrchestrator {
         use tokio::sync::Mutex; // Use async-aware Mutex
 
         // Create instance exporter with fishing context for profile resolution
-        let mut instance_exporter =
+        let instance_exporter =
             InstanceExporter::new(session, self.build_config().canonical.clone())
                 .await
                 .map_err(|e| {
@@ -1695,6 +1696,7 @@ impl BuildOrchestrator {
         };
 
         // Declare exported_instances vec
+        #[allow(unused_assignments)]
         let mut exported_instances: Vec<(
             String,
             String,
@@ -1985,17 +1987,14 @@ impl BuildOrchestrator {
                                     });
 
                                     // ⚡ ADD TO PACKAGE ⚡
-                                    if !resource_json.url.is_empty() {
-                                        if let Ok(json) = serde_json::to_value(&resource_json) {
-                                            package
-                                                .write()
-                                                .await
-                                                .add_resource(resource_json.url.clone(), json);
-                                            debug!(
-                                                "Added ValueSet {} to Package",
-                                                resource_json.url
-                                            );
-                                        }
+                                    if !resource_json.url.is_empty()
+                                        && let Ok(json) = serde_json::to_value(&resource_json)
+                                    {
+                                        package
+                                            .write()
+                                            .await
+                                            .add_resource(resource_json.url.clone(), json);
+                                        debug!("Added ValueSet {} to Package", resource_json.url);
                                     }
 
                                     debug!("Successfully exported ValueSet: {}", name);
@@ -2119,17 +2118,14 @@ impl BuildOrchestrator {
                                     });
 
                                     // ⚡ ADD TO PACKAGE ⚡
-                                    if !resource_json.url.is_empty() {
-                                        if let Ok(json) = serde_json::to_value(&resource_json) {
-                                            package
-                                                .write()
-                                                .await
-                                                .add_resource(resource_json.url.clone(), json);
-                                            debug!(
-                                                "Added CodeSystem {} to Package",
-                                                resource_json.url
-                                            );
-                                        }
+                                    if !resource_json.url.is_empty()
+                                        && let Ok(json) = serde_json::to_value(&resource_json)
+                                    {
+                                        package
+                                            .write()
+                                            .await
+                                            .add_resource(resource_json.url.clone(), json);
+                                        debug!("Added CodeSystem {} to Package", resource_json.url);
                                     }
 
                                     debug!("Successfully exported CodeSystem: {}", name);
@@ -2386,7 +2382,7 @@ impl BuildOrchestrator {
     }
 
     /// Get relative path from input directory
-    fn relative_path_from_input(&self, file_path: &PathBuf) -> String {
+    fn relative_path_from_input(&self, file_path: &std::path::Path) -> String {
         file_path
             .strip_prefix(&self.options.input_dir)
             .unwrap_or(file_path)
@@ -2402,7 +2398,7 @@ mod tests {
 
     fn create_test_config() -> crate::config::UnifiedConfig {
         let mut config = crate::config::UnifiedConfig::default();
-        config.build = Some(SushiConfiguration {
+        config.build = Some(crate::config::SushiConfiguration {
             id: Some("test.ig".to_string()),
             canonical: "http://example.org/fhir/test".to_string(),
             name: Some("TestIG".to_string()),
@@ -2427,10 +2423,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_stats() {
-        let mut stats = BuildStats::default();
-        stats.profiles = 5;
-        stats.extensions = 3;
-        stats.instances = 10;
+        let mut stats = BuildStats {
+            profiles: 5,
+            extensions: 3,
+            instances: 10,
+            ..Default::default()
+        };
 
         assert_eq!(stats.total_resources(), 18);
         assert!(!stats.has_errors());

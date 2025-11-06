@@ -114,7 +114,7 @@ fn test_compiler_assignment() {
 #[test]
 fn test_cst_integration_parse_simple_profile() {
     let source = "Profile: MyPatient\nParent: Patient\nTitle: \"My Patient Profile\"";
-    let (cst, errors) = parse_fsh(source);
+    let (cst, _, errors) = parse_fsh(source);
 
     assert!(errors.is_empty(), "Parse errors: {errors:?}");
 
@@ -127,7 +127,7 @@ fn test_cst_integration_parse_simple_profile() {
 #[test]
 fn test_cst_tree_creation() {
     let source = "Profile: TestProfile\nParent: Patient";
-    let (cst, errors) = parse_fsh(source);
+    let (cst, _, errors) = parse_fsh(source);
 
     assert!(errors.is_empty());
 
@@ -139,7 +139,7 @@ fn test_cst_tree_creation() {
 #[test]
 fn test_resolved_pattern_from_node_binding() {
     let source = "Profile: TestProfile";
-    let (cst, _) = parse_fsh(source);
+    let (cst, _, _) = parse_fsh(source);
     let tree = FshGritTree::new(cst, source.to_string());
     let node = tree.root_node();
 
@@ -168,7 +168,7 @@ fn test_resolved_pattern_from_constant() {
 #[test]
 fn test_binding_from_node() {
     let source = "Profile: TestProfile";
-    let (cst, _) = parse_fsh(source);
+    let (cst, _, _) = parse_fsh(source);
     let tree = FshGritTree::new(cst, source.to_string());
     let node = tree.root_node();
 
@@ -361,7 +361,7 @@ fn test_resolved_pattern_text() {
 #[test]
 fn test_cst_adapter_node_methods() {
     let source = "Profile: TestProfile\nParent: Patient";
-    let (cst, _) = parse_fsh(source);
+    let (cst, _, _) = parse_fsh(source);
     let tree = FshGritTree::new(cst, source.to_string());
     let node = tree.root_node();
 
@@ -381,7 +381,7 @@ fn test_comprehensive_fsh_parse_and_tree_creation() {
     ];
 
     for (idx, source) in fsh_samples.iter().enumerate() {
-        let (cst, errors) = parse_fsh(source);
+        let (cst, _, errors) = parse_fsh(source);
         assert!(
             errors.is_empty(),
             "Parse errors for sample {idx}: {errors:?}"

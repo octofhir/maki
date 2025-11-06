@@ -24,8 +24,8 @@ fn workspace_root() -> PathBuf {
 #[test]
 #[ignore] // Only run when SUSHI reference files are available
 fn test_sushi_official_reference_files() {
-    let mut harness = SushiCompatibilityHarness::with_threshold(95.0)
-        .expect("Failed to create test harness");
+    let mut harness =
+        SushiCompatibilityHarness::with_threshold(95.0).expect("Failed to create test harness");
 
     // Try to load SUSHI reference files from common locations
     let possible_locations = vec![
@@ -36,12 +36,12 @@ fn test_sushi_official_reference_files() {
 
     let mut loaded = false;
     for location in possible_locations {
-        if location.exists() {
-            if let Ok(()) = harness.load_reference_files(&location) {
-                loaded = true;
-                println!("Loaded SUSHI reference files from: {:?}", location);
-                break;
-            }
+        if location.exists()
+            && let Ok(()) = harness.load_reference_files(&location)
+        {
+            loaded = true;
+            println!("Loaded SUSHI reference files from: {:?}", location);
+            break;
         }
     }
 
@@ -83,11 +83,12 @@ fn test_sushi_official_reference_files() {
 /// Test parsing compatibility with all example files
 #[test]
 fn test_examples_parsing_compatibility() {
-    let mut harness = SushiCompatibilityHarness::with_threshold(85.0)
-        .expect("Failed to create test harness");
+    let mut harness =
+        SushiCompatibilityHarness::with_threshold(85.0).expect("Failed to create test harness");
 
     // Load all example files as test cases
-    harness.load_examples_as_tests()
+    harness
+        .load_examples_as_tests()
         .expect("Failed to load example files");
 
     let results = harness.run_all_tests();
@@ -102,7 +103,7 @@ fn test_examples_parsing_compatibility() {
         let compatibility = (passed as f64 / total as f64) * 100.0;
 
         println!("Examples Compatibility: {:.2}%", compatibility);
-        
+
         // Don't fail the test for examples, just report
         if compatibility < 85.0 {
             println!("⚠️  Examples compatibility below 85% - this may be expected for test files");
@@ -115,13 +116,13 @@ fn test_examples_parsing_compatibility() {
 /// Test specific edge cases that are known to be challenging
 #[test]
 fn test_edge_case_patterns() {
-    let mut harness = SushiCompatibilityHarness::with_threshold(90.0)
-        .expect("Failed to create test harness");
+    let mut harness =
+        SushiCompatibilityHarness::with_threshold(90.0).expect("Failed to create test harness");
 
     // Add specific edge case test files
     let edge_cases = vec![
         "test-parameterized-rulesets.fsh",
-        "test-canonical-references.fsh", 
+        "test-canonical-references.fsh",
         "valueset-examples.fsh",
         "comprehensive-test.fsh",
         "test-code-caret-rules.fsh",
@@ -129,7 +130,7 @@ fn test_edge_case_patterns() {
     ];
 
     let examples_dir = workspace_root().join("examples");
-    
+
     for edge_case in edge_cases {
         let file_path = examples_dir.join(edge_case);
         if file_path.exists() {
@@ -161,11 +162,11 @@ fn test_edge_case_patterns() {
 #[test]
 #[ignore] // Only run when performance testing is needed
 fn test_performance_comparison() {
-    let mut harness = SushiCompatibilityHarness::new()
-        .expect("Failed to create test harness");
+    let mut harness = SushiCompatibilityHarness::new().expect("Failed to create test harness");
 
     // Load a subset of files for performance testing
-    harness.load_examples_as_tests()
+    harness
+        .load_examples_as_tests()
         .expect("Failed to load example files");
 
     let results = harness.run_all_tests();
@@ -173,7 +174,8 @@ fn test_performance_comparison() {
     if !results.is_empty() {
         // Calculate performance metrics
         let maki_times: Vec<_> = results.iter().map(|r| r.maki_time.as_millis()).collect();
-        let sushi_times: Vec<_> = results.iter()
+        let sushi_times: Vec<_> = results
+            .iter()
             .filter_map(|r| r.sushi_time.map(|t| t.as_millis()))
             .collect();
 
@@ -202,28 +204,36 @@ fn test_performance_comparison() {
 /// Test that validates Maki accepts all constructs SUSHI accepts
 #[test]
 fn test_construct_acceptance_parity() {
-    let mut harness = SushiCompatibilityHarness::with_threshold(100.0)
-        .expect("Failed to create test harness");
+    let mut harness =
+        SushiCompatibilityHarness::with_threshold(100.0).expect("Failed to create test harness");
 
     // Create test cases for specific FSH constructs
     let construct_tests = vec![
-        ("canonical_with_version", "Canonical: http://example.com|1.0.0"),
+        (
+            "canonical_with_version",
+            "Canonical: http://example.com|1.0.0",
+        ),
         ("reference_with_or", "Reference: Patient or Practitioner"),
         ("codeable_reference", "CodeableReference: Condition"),
-        ("parameterized_ruleset", "RuleSet: Test(param)\n* ^version = {param}"),
+        (
+            "parameterized_ruleset",
+            "RuleSet: Test(param)\n* ^version = {param}",
+        ),
         ("flag_rule_all", "* element MS SU TU N D ?!"),
         ("code_caret_rule", "* #code ^display = \"Test\""),
         ("code_insert_rule", "* #code insert TestRuleSet"),
-        ("vs_filter_complex", "* include codes from system http://loinc.org where concept is-a #123 and property = value"),
+        (
+            "vs_filter_complex",
+            "* include codes from system http://loinc.org where concept is-a #123 and property = value",
+        ),
     ];
 
     for (name, fsh_content) in construct_tests {
         // Create temporary FSH file
-        let temp_file = tempfile::NamedTempFile::with_suffix(".fsh")
-            .expect("Failed to create temp file");
-        
-        std::fs::write(temp_file.path(), fsh_content)
-            .expect("Failed to write test content");
+        let temp_file =
+            tempfile::NamedTempFile::with_suffix(".fsh").expect("Failed to create temp file");
+
+        std::fs::write(temp_file.path(), fsh_content).expect("Failed to write test content");
 
         let test_case = TestCase {
             name: format!("construct_{}", name),
@@ -231,7 +241,7 @@ fn test_construct_acceptance_parity() {
             config_file: None,
             expected_outputs: vec![],
         };
-        
+
         harness.add_test_case(test_case);
     }
 
@@ -242,7 +252,8 @@ fn test_construct_acceptance_parity() {
         println!("{}", report);
 
         // All construct tests should pass
-        let failed_constructs: Vec<_> = results.iter()
+        let failed_constructs: Vec<_> = results
+            .iter()
             .filter(|r| !r.passed)
             .map(|r| &r.test_name)
             .collect();

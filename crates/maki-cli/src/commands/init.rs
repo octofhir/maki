@@ -24,6 +24,7 @@ struct ProjectMetadata {
     status: String,
     version: String,
     publisher_name: String,
+    #[allow(dead_code)]
     publisher_url: String,
 }
 

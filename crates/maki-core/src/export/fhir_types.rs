@@ -373,6 +373,7 @@ pub enum BindingStrength {
 
 impl BindingStrength {
     /// Parse from string
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "required" => Some(Self::Required),
@@ -1091,6 +1092,7 @@ impl CodeSystemResource {
     }
 
     /// Recursively count all concepts including children
+    #[allow(clippy::only_used_in_recursion)]
     fn count_concepts_recursive(&self, concepts: &[CodeSystemConcept]) -> u32 {
         concepts
             .iter()

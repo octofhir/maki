@@ -89,7 +89,7 @@ fn test_valueset_concept_with_properties() {
     // Check boolean property
     assert_eq!(properties[1].code, "inactive");
     match &properties[1].value {
-        ValueSetConceptPropertyValue::Boolean(val) => assert_eq!(*val, false),
+        ValueSetConceptPropertyValue::Boolean(val) => assert!(!(*val)),
         _ => panic!("Expected boolean property"),
     }
 

@@ -204,11 +204,7 @@ impl MakiError {
     }
 
     /// Create an invalid grammar construct error
-    pub fn invalid_grammar_construct(
-        construct: impl Into<String>,
-        line: u32,
-        col: u32,
-    ) -> Self {
+    pub fn invalid_grammar_construct(construct: impl Into<String>, line: u32, col: u32) -> Self {
         Self::InvalidGrammarConstruct {
             construct: construct.into(),
             line,
@@ -217,11 +213,7 @@ impl MakiError {
     }
 
     /// Create a malformed escape sequence error
-    pub fn malformed_escape_sequence(
-        sequence: impl Into<String>,
-        line: u32,
-        col: u32,
-    ) -> Self {
+    pub fn malformed_escape_sequence(sequence: impl Into<String>, line: u32, col: u32) -> Self {
         Self::MalformedEscapeSequence {
             sequence: sequence.into(),
             line,

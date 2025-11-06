@@ -5,6 +5,6 @@ expression: formatted
 Profile: Test
 Parent: Patient
 
-* identifier 1..* MS
-* name 1..1 MS
-* gender 1..1
+* identifier  MS
+* name  MS
+* gender

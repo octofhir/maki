@@ -114,24 +114,24 @@ impl FshTank {
     /// Returns true if found, which signals that we should NOT use external definitions
     pub fn contains(&self, identifier: &str, resource_types: &[ResourceType]) -> bool {
         // Try ID lookup
-        if let Some(resource) = self.resources_by_id.get(identifier) {
-            if resource_types.is_empty() || resource_types.contains(&resource.resource_type) {
-                return true;
-            }
+        if let Some(resource) = self.resources_by_id.get(identifier)
+            && (resource_types.is_empty() || resource_types.contains(&resource.resource_type))
+        {
+            return true;
         }
 
         // Try URL lookup
-        if let Some(resource) = self.resources_by_url.get(identifier) {
-            if resource_types.is_empty() || resource_types.contains(&resource.resource_type) {
-                return true;
-            }
+        if let Some(resource) = self.resources_by_url.get(identifier)
+            && (resource_types.is_empty() || resource_types.contains(&resource.resource_type))
+        {
+            return true;
         }
 
         // Try name lookup
-        if let Some(resource) = self.resources_by_name.get(identifier) {
-            if resource_types.is_empty() || resource_types.contains(&resource.resource_type) {
-                return true;
-            }
+        if let Some(resource) = self.resources_by_name.get(identifier)
+            && (resource_types.is_empty() || resource_types.contains(&resource.resource_type))
+        {
+            return true;
         }
 
         false
@@ -140,24 +140,24 @@ impl FshTank {
     /// Fish for a resource in the tank
     pub fn fish(&self, identifier: &str, resource_types: &[ResourceType]) -> Option<&FhirResource> {
         // Try ID lookup
-        if let Some(resource) = self.resources_by_id.get(identifier) {
-            if resource_types.is_empty() || resource_types.contains(&resource.resource_type) {
-                return Some(resource);
-            }
+        if let Some(resource) = self.resources_by_id.get(identifier)
+            && (resource_types.is_empty() || resource_types.contains(&resource.resource_type))
+        {
+            return Some(resource);
         }
 
         // Try URL lookup
-        if let Some(resource) = self.resources_by_url.get(identifier) {
-            if resource_types.is_empty() || resource_types.contains(&resource.resource_type) {
-                return Some(resource);
-            }
+        if let Some(resource) = self.resources_by_url.get(identifier)
+            && (resource_types.is_empty() || resource_types.contains(&resource.resource_type))
+        {
+            return Some(resource);
         }
 
         // Try name lookup
-        if let Some(resource) = self.resources_by_name.get(identifier) {
-            if resource_types.is_empty() || resource_types.contains(&resource.resource_type) {
-                return Some(resource);
-            }
+        if let Some(resource) = self.resources_by_name.get(identifier)
+            && (resource_types.is_empty() || resource_types.contains(&resource.resource_type))
+        {
+            return Some(resource);
         }
 
         None
@@ -316,10 +316,10 @@ impl FishingContext {
         trace!("Fishing for StructureDefinition: {}", identifier);
 
         // Check package first
-        if let Some(json) = self.fish_in_package(identifier).await? {
-            if let Ok(sd) = serde_json::from_value((*json).clone()) {
-                return Ok(Some(sd));
-            }
+        if let Some(json) = self.fish_in_package(identifier).await?
+            && let Ok(sd) = serde_json::from_value((*json).clone())
+        {
+            return Ok(Some(sd));
         }
 
         // Check tank
@@ -376,12 +376,18 @@ impl FishingContext {
 
         match result {
             Ok(resource) => {
-                eprintln!("[DEBUG] Found {} in canonical after {:?}", identifier, elapsed);
+                eprintln!(
+                    "[DEBUG] Found {} in canonical after {:?}",
+                    identifier, elapsed
+                );
                 debug!("Found {} in canonical", identifier);
                 Ok(Some(Arc::new((*resource.content).clone())))
             }
             Err(e) => {
-                eprintln!("[DEBUG] Not found {} in canonical after {:?}: {}", identifier, elapsed, e);
+                eprintln!(
+                    "[DEBUG] Not found {} in canonical after {:?}: {}",
+                    identifier, elapsed, e
+                );
                 // Not found in canonical
                 Ok(None)
             }

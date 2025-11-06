@@ -3,7 +3,6 @@
 //! Provides caching of parsed CSTs and file hashes to enable faster rebuilds
 //! by only re-processing files that have changed since the last build.
 
-use crate::cst::FshSyntaxNode;
 use crate::export::run_blocking_io;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -103,11 +102,11 @@ impl BuildCache {
         let metadata = run_blocking_io(|| fs::metadata(path))?;
         let current_mtime = metadata.modified()?;
 
-        if let Some(&cached_mtime) = self.file_mtimes.get(path) {
-            if current_mtime <= cached_mtime {
-                // File hasn't been modified since last build
-                return Ok(false);
-            }
+        if let Some(&cached_mtime) = self.file_mtimes.get(path)
+            && current_mtime <= cached_mtime
+        {
+            // File hasn't been modified since last build
+            return Ok(false);
         }
 
         // Slower check: content hash

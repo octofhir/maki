@@ -538,7 +538,10 @@ impl DefinitionSession {
         resource_type: &str,
         name: &str,
     ) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
-        eprintln!("[DEBUG] >>> resource_by_type_and_name: direct SQL lookup for {}:{}", resource_type, name);
+        eprintln!(
+            "[DEBUG] >>> resource_by_type_and_name: direct SQL lookup for {}:{}",
+            resource_type, name
+        );
         let search_start = std::time::Instant::now();
 
         let results = self
@@ -547,7 +550,11 @@ impl DefinitionSession {
             .find_by_type_and_name(resource_type, name)
             .await?;
 
-        eprintln!("[DEBUG]     find_by_type_and_name() returned {} results after {:?}", results.len(), search_start.elapsed());
+        eprintln!(
+            "[DEBUG]     find_by_type_and_name() returned {} results after {:?}",
+            results.len(),
+            search_start.elapsed()
+        );
 
         if results.is_empty() {
             return Ok(None);
@@ -558,7 +565,13 @@ impl DefinitionSession {
         let canonical_url = resource_index.canonical_url.clone();
 
         // Load the actual resource content from CAS
-        let resource = self.facade.manager.storage().package_storage().get_resource(resource_index).await?;
+        let resource = self
+            .facade
+            .manager
+            .storage()
+            .package_storage()
+            .get_resource(resource_index)
+            .await?;
 
         let resolved = Arc::new(DefinitionResource {
             canonical_url: canonical_url.clone(),
@@ -571,7 +584,10 @@ impl DefinitionSession {
             content: Arc::new(resource.content),
         });
 
-        eprintln!("[DEBUG]     Found and cached resource by name: {}", canonical_url);
+        eprintln!(
+            "[DEBUG]     Found and cached resource by name: {}",
+            canonical_url
+        );
 
         self.facade
             .global_cache
@@ -590,7 +606,10 @@ impl DefinitionSession {
         resource_type: &str,
         id: &str,
     ) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
-        eprintln!("[DEBUG] >>> resource_by_type_and_id: direct SQL lookup for {}:{}", resource_type, id);
+        eprintln!(
+            "[DEBUG] >>> resource_by_type_and_id: direct SQL lookup for {}:{}",
+            resource_type, id
+        );
         let search_start = std::time::Instant::now();
 
         // Use fast direct SQL lookup instead of slow text search
@@ -600,28 +619,38 @@ impl DefinitionSession {
             .find_by_type_and_id(resource_type, id)
             .await?;
 
-        eprintln!("[DEBUG]     find_by_type_and_id() returned {} results after {:?}", results.len(), search_start.elapsed());
+        eprintln!(
+            "[DEBUG]     find_by_type_and_id() returned {} results after {:?}",
+            results.len(),
+            search_start.elapsed()
+        );
 
         // Get the primary FHIR version for filtering
         let fhir_version_filter = self.releases.first().map(|r| r.to_version_string());
 
         for resource_index in results {
             // Filter by FHIR version if configured
-            if let Some(expected_version) = &fhir_version_filter {
-                if &resource_index.fhir_version != expected_version {
-                    debug!(
-                        "Skipping resource {} from FHIR version {}, expecting {}",
-                        id, resource_index.fhir_version, expected_version
-                    );
-                    continue;
-                }
+            if let Some(expected_version) = &fhir_version_filter
+                && &resource_index.fhir_version != expected_version
+            {
+                debug!(
+                    "Skipping resource {} from FHIR version {}, expecting {}",
+                    id, resource_index.fhir_version, expected_version
+                );
+                continue;
             }
 
             // The SQL query already filtered by ID, so we can use the first match
             let canonical_url = resource_index.canonical_url.clone();
 
             // Load the actual resource content from CAS
-            let resource = self.facade.manager.storage().package_storage().get_resource(&resource_index).await?;
+            let resource = self
+                .facade
+                .manager
+                .storage()
+                .package_storage()
+                .get_resource(&resource_index)
+                .await?;
 
             let resolved = Arc::new(DefinitionResource {
                 canonical_url: canonical_url.clone(),
@@ -644,7 +673,10 @@ impl DefinitionSession {
             return Ok(Some(resolved));
         }
 
-        eprintln!("[DEBUG]     No matching resource found for {}:{}", resource_type, id);
+        eprintln!(
+            "[DEBUG]     No matching resource found for {}:{}",
+            resource_type, id
+        );
         Ok(None)
     }
 

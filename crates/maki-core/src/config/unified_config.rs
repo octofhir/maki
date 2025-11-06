@@ -150,7 +150,10 @@ impl UnifiedConfig {
     /// use maki_core::config::UnifiedConfig;
     /// use std::path::Path;
     ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = UnifiedConfig::load(Path::new("maki.yaml"))?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn load(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let content = fs::read_to_string(path)?;
@@ -231,10 +234,10 @@ impl UnifiedConfig {
         let mut deps = HashMap::new();
 
         // First, add build section dependencies
-        if let Some(build) = &self.build {
-            if let Some(build_deps) = &build.dependencies {
-                deps.extend(build_deps.clone());
-            }
+        if let Some(build) = &self.build
+            && let Some(build_deps) = &build.dependencies
+        {
+            deps.extend(build_deps.clone());
         }
 
         // Then, overlay top-level dependencies (these take precedence)

@@ -79,7 +79,7 @@ fn create_mock_semantic_model() -> SemanticModel {
     use maki_core::cst::parse_fsh;
 
     let source = "Profile: Test\nParent: Patient".to_string();
-    let (cst, _) = parse_fsh(&source);
+    let (cst, _, _) = parse_fsh(&source);
 
     SemanticModel {
         source_file: PathBuf::from("test.fsh"),
@@ -90,6 +90,7 @@ fn create_mock_semantic_model() -> SemanticModel {
         symbols: SymbolTable::default(),
         aliases: maki_core::semantic::AliasTable::new(),
         references: Vec::new(),
+        deferred_rules: maki_core::DeferredRuleQueue::new(),
     }
 }
 

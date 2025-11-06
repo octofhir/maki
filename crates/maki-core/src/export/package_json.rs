@@ -213,6 +213,57 @@ impl PackageJson {
     }
 }
 
+// Need to implement Default for SushiConfiguration for tests
+#[cfg(test)]
+#[allow(clippy::derivable_impls)]
+impl Default for SushiConfiguration {
+    fn default() -> Self {
+        Self {
+            canonical: String::new(),
+            fhir_version: Vec::new(),
+            id: None,
+            name: None,
+            title: None,
+            version: None,
+            status: None,
+            experimental: None,
+            date: None,
+            publisher: None,
+            contact: None,
+            description: None,
+            use_context: None,
+            jurisdiction: None,
+            copyright: None,
+            copyright_label: None,
+            version_algorithm_string: None,
+            version_algorithm_coding: None,
+            package_id: None,
+            license: None,
+            dependencies: None,
+            global: None,
+            groups: None,
+            resources: None,
+            pages: None,
+            index_page_content: None,
+            parameters: None,
+            templates: None,
+            menu: None,
+            fsh_only: None,
+            apply_extension_metadata_to_root: None,
+            instance_options: None,
+            meta: None,
+            implicit_rules: None,
+            language: None,
+            text: None,
+            contained: None,
+            extension: None,
+            modifier_extension: None,
+            url: None,
+            definition: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,55 +404,5 @@ mod tests {
         // Should use fallback values
         assert_eq!(pkg.name, "unknown"); // Falls back when no id/packageId
         assert_eq!(pkg.version, "0.1.0"); // Default version
-    }
-}
-
-// Need to implement Default for SushiConfiguration for tests
-#[cfg(test)]
-impl Default for SushiConfiguration {
-    fn default() -> Self {
-        Self {
-            canonical: String::new(),
-            fhir_version: Vec::new(),
-            id: None,
-            name: None,
-            title: None,
-            version: None,
-            status: None,
-            experimental: None,
-            date: None,
-            publisher: None,
-            contact: None,
-            description: None,
-            use_context: None,
-            jurisdiction: None,
-            copyright: None,
-            copyright_label: None,
-            version_algorithm_string: None,
-            version_algorithm_coding: None,
-            package_id: None,
-            license: None,
-            dependencies: None,
-            global: None,
-            groups: None,
-            resources: None,
-            pages: None,
-            index_page_content: None,
-            parameters: None,
-            templates: None,
-            menu: None,
-            fsh_only: None,
-            apply_extension_metadata_to_root: None,
-            instance_options: None,
-            meta: None,
-            implicit_rules: None,
-            language: None,
-            text: None,
-            contained: None,
-            extension: None,
-            modifier_extension: None,
-            url: None,
-            definition: None,
-        }
     }
 }

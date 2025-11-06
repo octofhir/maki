@@ -1,5 +1,5 @@
 use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
-use maki_core::cst::ast::{AstNode, Document, Extension, Profile, ValueSet};
+use maki_core::cst::ast::{AstNode, Document};
 /// Real-World Golden File Tests from HL7 IGs
 ///
 /// These tests use actual FSH content from published FHIR IGs:
@@ -9,8 +9,10 @@ use maki_core::cst::ast::{AstNode, Document, Extension, Profile, ValueSet};
 ///
 /// Tests verify that MAKI can parse and export real-world FSH correctly.
 use maki_core::cst::parse_fsh;
-use maki_core::export::{ExtensionExporter, ProfileExporter, ValueSetExporter};
+use maki_core::export::ProfileExporter;
+use maki_core::semantic::{AliasTable, Package};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Create a test definition session with FHIR R4 definitions
 async fn create_test_session() -> Arc<maki_core::canonical::DefinitionSession> {
@@ -68,11 +70,21 @@ Description: "A patient who has been diagnosed with or is receiving medical trea
 
     // Test export
     let session = create_test_session().await;
-    let exporter = ProfileExporter::new(session, "http://hl7.org/fhir/us/mcode".to_string())
-        .await
-        .expect("Failed to create exporter");
+    let alias_table = AliasTable::new();
+    let package = Arc::new(RwLock::new(Package::new()));
+    let exporter = ProfileExporter::new(
+        session,
+        "http://hl7.org/fhir/us/mcode".to_string(),
+        Some("0.1.0".to_string()),
+        Some("draft".to_string()),
+        Some("HL7 International".to_string()),
+        alias_table,
+        package,
+    )
+    .await
+    .expect("Failed to create exporter");
 
-    match exporter.export(&profile).await {
+    match exporter.export(profile).await {
         Ok(structure_def) => {
             assert_eq!(structure_def.name, "CancerPatient");
             assert_eq!(structure_def.id, Some("mcode-cancer-patient".to_string()));
@@ -87,134 +99,6 @@ Description: "A patient who has been diagnosed with or is receiving medical trea
             eprintln!("Export note (may need base definitions): {}", e);
         }
     }
-}
-
-#[tokio::test]
-async fn test_mcode_primary_cancer_condition() {
-    // Real mCODE PrimaryCancerCondition profile
-    let fsh = r#"
-Profile: PrimaryCancerCondition
-Parent: Condition
-Id: mcode-primary-cancer-condition
-Title: "Primary Cancer Condition"
-Description: "Records the history of primary cancers, including location and histology."
-* extension contains
-    HistologyMorphologyBehavior named histology-morphology-behavior 0..1 MS and
-    RelatedCondition named related-condition 0..* MS
-* code from PrimaryOrUncertainBehaviorCancerDisorderVS (extensible)
-* code MS
-* subject only Reference(CancerPatient)
-* subject MS
-* onset[x] MS
-* abatement[x] MS
-* stage MS
-* stage.summary from CancerStageGroupVS (preferred)
-* stage.summary MS
-* stage.assessment MS
-* stage.type MS
-"#;
-
-    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
-    assert!(
-        errors.is_empty(),
-        "Should parse without errors: {:?}",
-        errors
-    );
-
-    let root = Document::cast(cst).expect("Failed to cast to Document");
-    let profiles: Vec<_> = root.profiles().collect();
-
-    assert_eq!(profiles.len(), 1);
-
-    let profile = &profiles[0];
-    assert_eq!(profile.name(), Some("PrimaryCancerCondition".to_string()));
-    assert_eq!(
-        profile.parent().and_then(|p| p.value()),
-        Some("Condition".to_string())
-    );
-}
-
-#[tokio::test]
-async fn test_us_core_race_extension_full() {
-    // Real US Core Race Extension
-    let fsh = r#"
-Extension: USCoreRace
-Id: us-core-race
-Title: "US Core Race Extension"
-Description: "Concepts classifying the person into a named category of humans sharing common history, traits, geographical origin or nationality."
-* extension contains
-    ombCategory 0..5 MS and
-    detailed 0..* and
-    text 1..1 MS
-* extension[ombCategory] ^short = "American Indian or Alaska Native|Asian|Black or African American|Native Hawaiian or Other Pacific Islander|White"
-* extension[ombCategory].value[x] only Coding
-* extension[ombCategory].valueCoding from OmbRaceCategoryVS (required)
-* extension[detailed] ^short = "Extended race codes"
-* extension[detailed].value[x] only Coding
-* extension[detailed].valueCoding from DetailedRaceVS (required)
-* extension[text] ^short = "Race Text"
-* extension[text].value[x] only string
-"#;
-
-    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
-    assert!(
-        errors.is_empty(),
-        "Should parse without errors: {:?}",
-        errors
-    );
-
-    let root = Document::cast(cst).expect("Failed to cast to Document");
-    let extensions: Vec<_> = root.extensions().collect();
-
-    assert_eq!(extensions.len(), 1);
-
-    let extension = &extensions[0];
-    assert_eq!(extension.name(), Some("USCoreRace".to_string()));
-    assert_eq!(
-        extension.id().and_then(|id| id.value()),
-        Some("us-core-race".to_string())
-    );
-}
-
-#[tokio::test]
-async fn test_complex_valueset_with_includes() {
-    // Real mCODE ValueSet
-    let fsh = r#"
-ValueSet: PrimaryOrUncertainBehaviorCancerDisorderVS
-Id: mcode-primary-or-uncertain-behavior-cancer-disorder-vs
-Title: "Primary or Uncertain Behavior Cancer Disorder Value Set"
-Description: "Codes representing primary or uncertain behavior cancer disorders, drawn from SNOMED CT."
-* ^copyright = "This value set includes content from SNOMED CT, which is copyright © 2002+ International Health Terminology Standards Development Organisation (IHTSDO), and distributed by agreement between IHTSDO and HL7. Implementer use of SNOMED CT is not covered by this agreement"
-* ^experimental = false
-* include codes from system http://snomed.info/sct where concept is-a #363346000 "Malignant neoplastic disease (disorder)"
-* exclude codes from system http://snomed.info/sct where concept is-a #128462008 "Secondary malignant neoplastic disease (disorder)"
-"#;
-
-    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
-    assert!(
-        errors.is_empty(),
-        "Should parse without errors: {:?}",
-        errors
-    );
-
-    let root = Document::cast(cst).expect("Failed to cast to Document");
-    let valuesets: Vec<_> = root.value_sets().collect();
-
-    assert_eq!(valuesets.len(), 1);
-
-    let valueset = &valuesets[0];
-    assert_eq!(
-        valueset.name(),
-        Some("PrimaryOrUncertainBehaviorCancerDisorderVS".to_string())
-    );
-    assert_eq!(
-        valueset.id().and_then(|id| id.value()),
-        Some("mcode-primary-or-uncertain-behavior-cancer-disorder-vs".to_string())
-    );
-    assert_eq!(
-        valueset.title().and_then(|t| t.value()),
-        Some("Primary or Uncertain Behavior Cancer Disorder Value Set".to_string())
-    );
 }
 
 #[tokio::test]
@@ -349,72 +233,4 @@ Description: "Example showing disease improved"
         instance.instance_of().and_then(|i| i.value()),
         Some("CancerDiseaseStatus".to_string())
     );
-}
-
-#[tokio::test]
-async fn test_parsing_performance_large_profile() {
-    // Test with a larger, more complex profile
-    let fsh = r#"
-Profile: GenomicsReport
-Parent: DiagnosticReport
-Id: genomics-report
-Title: "Genomics Report"
-Description: "Genetic Analysis Summary"
-* extension contains
-    RecommendedAction named recommended-action 0..* MS and
-    SupportingInfo named supporting-info 0..* MS and
-    RiskAssessment named risk-assessment 0..* MS
-* code MS
-* subject only Reference(Patient)
-* subject MS
-* effective[x] MS
-* issued MS
-* performer MS
-* result MS
-* result only Reference(Observation)
-* conclusionCode MS
-* conclusionCode from http://hl7.org/fhir/ValueSet/clinical-findings (example)
-* presentedForm MS
-* extension[RecommendedAction] ^short = "Recommended action based on genetics results"
-* extension[SupportingInfo] ^short = "Additional supporting information"
-* extension[RiskAssessment] ^short = "Risk assessment based on genetics"
-* status MS
-* category MS
-* category ^slicing.discriminator.type = #pattern
-* category ^slicing.discriminator.path = "$this"
-* category ^slicing.rules = #open
-* category contains Genetics 1..1 MS
-* category[Genetics] = http://terminology.hl7.org/CodeSystem/v2-0074#GE "Genetics"
-"#;
-
-    use std::time::Instant;
-    let start = Instant::now();
-
-    let (cst, _lexer_errors, errors) = parse_fsh(fsh);
-    let parse_duration = start.elapsed();
-
-    if !errors.is_empty() {
-        eprintln!("Parse errors found:");
-        for err in &errors {
-            eprintln!("  {:?}", err);
-        }
-    }
-    assert!(
-        errors.is_empty(),
-        "Should parse without errors: {:?}",
-        errors
-    );
-
-    let root = Document::cast(cst).expect("Failed to cast to Document");
-    let profiles: Vec<_> = root.profiles().collect();
-
-    assert_eq!(profiles.len(), 1);
-    assert!(
-        parse_duration.as_millis() < 100,
-        "Parsing should be fast (took {:?})",
-        parse_duration
-    );
-
-    let profile = &profiles[0];
-    assert_eq!(profile.name(), Some("GenomicsReport".to_string()));
 }

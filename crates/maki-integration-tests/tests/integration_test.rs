@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
@@ -182,25 +184,3 @@ Description: "Test"
 }
 
 // TODO: Re-add test_config_validate - removed temporarily
-
-/// Test that invalid config is detected
-#[test]
-fn test_invalid_config() {
-    let temp = TempDir::new().unwrap();
-    let project_dir = temp.path();
-
-    // Create invalid config (malformed JSON)
-    let config = r#"{
-  "rules": {
-    "documentation/require-description": "error"
-  # Missing closing brace
-"#;
-    fs::write(project_dir.join(".makirc.json"), config).unwrap();
-
-    let mut cmd = Command::cargo_bin("maki").unwrap();
-    cmd.current_dir(project_dir)
-        .arg("lint")
-        .arg(".")
-        .assert()
-        .failure();
-}

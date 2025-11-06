@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn test_from_cst() {
         let source = "Profile: MyPatient";
-        let (cst, _) = parse_fsh(source);
+        let (cst, _, _) = parse_fsh(source);
 
         let tree = FshGritTree::from_cst(cst, source.to_string());
 

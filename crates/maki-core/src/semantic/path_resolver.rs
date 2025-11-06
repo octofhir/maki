@@ -16,21 +16,22 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use maki_core::semantic::PathResolver;
+//! use maki_core::semantic::path_resolver::{PathResolver, ResolutionContext};
 //! use std::sync::Arc;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! # let session = todo!();
+//! # let session: Arc<maki_core::canonical::DefinitionSession> = todo!();
+//! # let context: ResolutionContext = todo!();
 //! let resolver = PathResolver::new(session);
 //!
 //! // Resolve simple path
-//! let element = resolver.resolve_path("Patient", "name.given").await?;
+//! let element = resolver.resolve_path("name.given", &context).await?;
 //!
 //! // Resolve with choice type
-//! let deceased = resolver.resolve_path("Patient", "deceased[x]").await?;
+//! let deceased = resolver.resolve_path("deceased[x]", &context).await?;
 //!
 //! // Resolve with slice
-//! let component = resolver.resolve_path("Observation", "component[systolic]").await?;
+//! let component = resolver.resolve_path("component[systolic]", &context).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -399,7 +400,7 @@ impl SliceRegistry {
     pub fn register_slice(&mut self, slice: SliceDefinition) {
         self.slices
             .entry(slice.element_path.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(slice);
     }
 
@@ -660,8 +661,9 @@ impl PathResolver {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use maki_core::semantic::{PathResolver, ResolutionContext};
-    /// # use std::sync::Arc;
+    /// use maki_core::semantic::path_resolver::{PathResolver, ResolutionContext};
+    /// use std::sync::Arc;
+    ///
     /// # async fn example(resolver: PathResolver, context: ResolutionContext) -> Result<(), Box<dyn std::error::Error>> {
     /// let resolved = resolver.resolve_path("name.given", &context).await?;
     /// println!("Resolved path: {}", resolved.fhir_path);
@@ -1246,16 +1248,15 @@ impl PathResolver {
         };
 
         // Validate slice name if registry has slices for this path
-        if self.slice_registry.has_slices(base_path) {
-            if let Err(validation_error) = self
+        if self.slice_registry.has_slices(base_path)
+            && let Err(validation_error) = self
                 .slice_registry
                 .validate_slice_name(base_path, slice_name)
-            {
-                return Err(PathError::NotFound {
-                    path: format!("{}:{}", base_path, slice_part),
-                    base_type: validation_error,
-                });
-            }
+        {
+            return Err(PathError::NotFound {
+                path: format!("{}:{}", base_path, slice_part),
+                base_type: validation_error,
+            });
         }
 
         // Look for the slice in the registry
@@ -1380,16 +1381,15 @@ impl PathResolver {
         );
 
         // Validate extension URL if registry has extensions
-        if !self.extension_registry.get_extension_urls().is_empty() {
-            if let Err(validation_error) = self
+        if !self.extension_registry.get_extension_urls().is_empty()
+            && let Err(validation_error) = self
                 .extension_registry
                 .validate_extension_url(extension_url)
-            {
-                return Err(PathError::NotFound {
-                    path: format!("extension[{}]", extension_url),
-                    base_type: validation_error,
-                });
-            }
+        {
+            return Err(PathError::NotFound {
+                path: format!("extension[{}]", extension_url),
+                base_type: validation_error,
+            });
         }
 
         // Look for the extension in the registry
@@ -1427,7 +1427,7 @@ impl PathResolver {
             if !ext_def.value_types.is_empty() && !value_path.is_empty() {
                 let value_type_valid = ext_def.value_types.iter().any(|vt| {
                     value_path.starts_with(&format!("value{}", vt))
-                        || value_path == format!("value[x]")
+                        || value_path == "value[x]"
                         || value_path.starts_with("value[x]")
                 });
 
@@ -1480,9 +1480,7 @@ impl PathResolver {
                 let remaining = &fsh_path[bracket_end + 1..];
 
                 // Handle nested extension paths like extension[url1].extension[url2].valueString
-                if remaining.starts_with('.') {
-                    let value_path = &remaining[1..];
-
+                if let Some(value_path) = remaining.strip_prefix('.') {
                     // Check if this is a nested extension
                     if value_path.starts_with("extension[") {
                         // This is a nested extension - handle recursively
@@ -1645,7 +1643,7 @@ impl PathResolver {
     pub fn validate_path_with_suggestions(
         &self,
         fsh_path: &str,
-        context: &ResolutionContext,
+        _context: &ResolutionContext,
     ) -> Result<(), Vec<String>> {
         let mut errors = Vec::new();
 
@@ -1953,8 +1951,8 @@ mod tests {
         assert_eq!(extension.unwrap().sub_extensions.len(), 1);
     }
 
-    #[test]
-    fn test_path_validation() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_path_validation() {
         use crate::canonical::DefinitionSession;
         use std::sync::Arc;
 
@@ -2018,8 +2016,8 @@ mod tests {
         assert!(errors.iter().any(|e| e.contains("extension[url]")));
     }
 
-    #[test]
-    fn test_choice_type_resolution() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_choice_type_resolution() {
         use crate::canonical::DefinitionSession;
         use std::sync::Arc;
 
@@ -2045,8 +2043,8 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn test_parse_path_with_slices() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_path_with_slices() {
         use crate::canonical::DefinitionSession;
         use std::sync::Arc;
 
@@ -2060,8 +2058,8 @@ mod tests {
         assert_eq!(segments[1].base, "system");
     }
 
-    #[test]
-    fn test_parse_path_with_extensions() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_path_with_extensions() {
         use crate::canonical::DefinitionSession;
         use std::sync::Arc;
 
@@ -2078,8 +2076,8 @@ mod tests {
         assert_eq!(segments[1].base, "valueString");
     }
 
-    #[test]
-    fn test_parse_path_with_choice_types() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_path_with_choice_types() {
         use crate::canonical::DefinitionSession;
         use std::sync::Arc;
 
@@ -2093,8 +2091,8 @@ mod tests {
         assert!(matches!(segments[0].bracket, Some(Bracket::ChoiceType)));
     }
 
-    #[test]
-    fn test_parse_path_complex() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_path_complex() {
         use crate::canonical::DefinitionSession;
         use std::sync::Arc;
 
@@ -2112,8 +2110,8 @@ mod tests {
         assert!(matches!(segments[1].bracket, Some(Bracket::ChoiceType)));
     }
 
-    #[test]
-    fn test_parse_bracket_content() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_bracket_content() {
         use crate::canonical::DefinitionSession;
         use std::sync::Arc;
 
@@ -2147,8 +2145,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_cache_functionality() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_cache_functionality() {
         use crate::canonical::DefinitionSession;
         use std::sync::Arc;
 
@@ -2158,7 +2156,8 @@ mod tests {
         // Test cache stats
         let (size, capacity) = resolver.cache_stats();
         assert_eq!(size, 0);
-        assert!(capacity >= 0);
+        // Note: capacity is usize, always >= 0
+        let _ = capacity; // Use the variable
 
         // Test cache clearing
         resolver.clear_cache();

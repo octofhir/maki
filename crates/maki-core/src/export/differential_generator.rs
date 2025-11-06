@@ -20,6 +20,8 @@
 //! use std::sync::Arc;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # let session: Arc<maki_core::canonical::DefinitionSession> = todo!();
+//! # let path_resolver: Arc<maki_core::semantic::PathResolver> = todo!();
 //! let generator = DifferentialGenerator::new(
 //!     session.clone(),
 //!     path_resolver.clone(),
@@ -314,26 +316,24 @@ impl DifferentialGenerator {
             }
 
             // Validate cardinality if present
-            if let (Some(min), Some(max)) = (&element.min, &element.max) {
-                if max != "*" {
-                    if let Ok(max_val) = max.parse::<u32>() {
-                        if *min > max_val {
-                            return Err(DifferentialError::InvalidCardinality {
-                                cardinality: format!("{}..{}", min, max),
-                                path: element.path.clone(),
-                            });
-                        }
-                    }
-                }
+            if let (Some(min), Some(max)) = (&element.min, &element.max)
+                && max != "*"
+                && let Ok(max_val) = max.parse::<u32>()
+                && *min > max_val
+            {
+                return Err(DifferentialError::InvalidCardinality {
+                    cardinality: format!("{}..{}", min, max),
+                    path: element.path.clone(),
+                });
             }
 
             // Validate binding if present
-            if let Some(binding) = &element.binding {
-                if binding.value_set.is_none() {
-                    return Err(DifferentialError::InvalidBindingStrength {
-                        strength: "binding without value_set".to_string(),
-                    });
-                }
+            if let Some(binding) = &element.binding
+                && binding.value_set.is_none()
+            {
+                return Err(DifferentialError::InvalidBindingStrength {
+                    strength: "binding without value_set".to_string(),
+                });
             }
 
             // Validate type constraints if present
@@ -423,10 +423,13 @@ impl DifferentialGenerator {
 /// ElementDefinition entries in the differential.
 pub struct RuleProcessor {
     /// Session for resolving FHIR definitions
+    #[allow(dead_code)]
     canonical_session: Arc<DefinitionSession>,
     /// Path resolver for FSH to FHIR path conversion
+    #[allow(dead_code)]
     path_resolver: Arc<PathResolver>,
     /// Base URL for generating canonical URLs
+    #[allow(dead_code)]
     base_url: String,
 }
 
@@ -491,15 +494,14 @@ impl RuleProcessor {
         let max = parts[1].to_string();
 
         // Validate cardinality constraints
-        if max != "*" {
-            if let Ok(max_val) = max.parse::<u32>() {
-                if min > max_val {
-                    return Err(DifferentialError::InvalidCardinality {
-                        cardinality,
-                        path: path_str,
-                    });
-                }
-            }
+        if max != "*"
+            && let Ok(max_val) = max.parse::<u32>()
+            && min > max_val
+        {
+            return Err(DifferentialError::InvalidCardinality {
+                cardinality,
+                path: path_str,
+            });
         }
 
         // Resolve full FHIR path
@@ -509,21 +511,21 @@ impl RuleProcessor {
         let element = self.find_or_create_element(&mut context.current_differential, &full_path);
 
         // Apply cardinality with conflict detection
-        if let Some(existing_min) = element.min {
-            if existing_min != min {
-                warn!(
-                    "Cardinality conflict on {}: existing min={}, new min={}",
-                    full_path, existing_min, min
-                );
-            }
+        if let Some(existing_min) = element.min
+            && existing_min != min
+        {
+            warn!(
+                "Cardinality conflict on {}: existing min={}, new min={}",
+                full_path, existing_min, min
+            );
         }
-        if let Some(ref existing_max) = element.max {
-            if existing_max != &max {
-                warn!(
-                    "Cardinality conflict on {}: existing max={}, new max={}",
-                    full_path, existing_max, max
-                );
-            }
+        if let Some(ref existing_max) = element.max
+            && existing_max != &max
+        {
+            warn!(
+                "Cardinality conflict on {}: existing max={}, new max={}",
+                full_path, existing_max, max
+            );
         }
 
         element.min = Some(min);
@@ -587,7 +589,11 @@ impl RuleProcessor {
             self.apply_flag_to_element_with_merging(element, &flag, &full_path)?;
         }
 
-        debug!("Applied flags {:?} to {}", rule.flags_as_strings(), full_path);
+        debug!(
+            "Applied flags {:?} to {}",
+            rule.flags_as_strings(),
+            full_path
+        );
 
         Ok(())
     }
@@ -696,35 +702,35 @@ impl RuleProcessor {
     ) -> Result<(), DifferentialError> {
         match flag.to_uppercase().as_str() {
             "MS" => {
-                if let Some(existing) = element.must_support {
-                    if !existing {
-                        warn!(
-                            "Flag conflict on {}: mustSupport was false, setting to true",
-                            path
-                        );
-                    }
+                if let Some(existing) = element.must_support
+                    && !existing
+                {
+                    warn!(
+                        "Flag conflict on {}: mustSupport was false, setting to true",
+                        path
+                    );
                 }
                 element.must_support = Some(true);
             }
             "SU" => {
-                if let Some(existing) = element.is_summary {
-                    if !existing {
-                        warn!(
-                            "Flag conflict on {}: isSummary was false, setting to true",
-                            path
-                        );
-                    }
+                if let Some(existing) = element.is_summary
+                    && !existing
+                {
+                    warn!(
+                        "Flag conflict on {}: isSummary was false, setting to true",
+                        path
+                    );
                 }
                 element.is_summary = Some(true);
             }
             "?!" => {
-                if let Some(existing) = element.is_modifier {
-                    if !existing {
-                        warn!(
-                            "Flag conflict on {}: isModifier was false, setting to true",
-                            path
-                        );
-                    }
+                if let Some(existing) = element.is_modifier
+                    && !existing
+                {
+                    warn!(
+                        "Flag conflict on {}: isModifier was false, setting to true",
+                        path
+                    );
                 }
                 element.is_modifier = Some(true);
             }
@@ -802,21 +808,22 @@ impl RuleProcessor {
         };
 
         // Check for existing binding conflict
-        if let Some(ref existing_binding) = element.binding {
-            if let Some(ref existing_vs) = existing_binding.value_set {
-                if existing_vs != &value_set_url {
-                    warn!(
-                        "Binding conflict on {}: existing ValueSet={}, new ValueSet={}",
-                        full_path, existing_vs, value_set_url
-                    );
-                }
-            }
-            if existing_binding.strength != strength {
-                warn!(
-                    "Binding strength conflict on {}: existing={:?}, new={:?}",
-                    full_path, existing_binding.strength, strength
-                );
-            }
+        if let Some(ref existing_binding) = element.binding
+            && let Some(ref existing_vs) = existing_binding.value_set
+            && existing_vs != &value_set_url
+        {
+            warn!(
+                "Binding conflict on {}: existing ValueSet={}, new ValueSet={}",
+                full_path, existing_vs, value_set_url
+            );
+        }
+        if let Some(ref existing_binding) = element.binding
+            && existing_binding.strength != strength
+        {
+            warn!(
+                "Binding strength conflict on {}: existing={:?}, new={:?}",
+                full_path, existing_binding.strength, strength
+            );
         }
 
         // Set binding
@@ -874,21 +881,21 @@ impl RuleProcessor {
         let (pattern_key, pattern_value) = self.parse_fixed_value(&value, &full_path)?;
 
         // Check for existing pattern/fixed value conflicts
-        if let Some(ref existing_pattern) = element.pattern {
-            if existing_pattern.contains_key(&pattern_key) {
-                warn!(
-                    "Pattern conflict on {}: existing value for {}, overwriting",
-                    full_path, pattern_key
-                );
-            }
+        if let Some(ref existing_pattern) = element.pattern
+            && existing_pattern.contains_key(&pattern_key)
+        {
+            warn!(
+                "Pattern conflict on {}: existing value for {}, overwriting",
+                full_path, pattern_key
+            );
         }
-        if let Some(ref existing_fixed) = element.fixed {
-            if existing_fixed.contains_key(&pattern_key) {
-                warn!(
-                    "Fixed value conflict on {}: existing value for {}, overwriting",
-                    full_path, pattern_key
-                );
-            }
+        if let Some(ref existing_fixed) = element.fixed
+            && existing_fixed.contains_key(&pattern_key)
+        {
+            warn!(
+                "Fixed value conflict on {}: existing value for {}, overwriting",
+                full_path, pattern_key
+            );
         }
 
         // Use pattern instead of fixed for flexibility (SUSHI approach)
@@ -1166,7 +1173,7 @@ impl RuleProcessor {
     pub async fn process_path_rule(
         &self,
         rule: &PathRule,
-        context: &mut RuleContext,
+        _context: &mut RuleContext,
     ) -> Result<(), DifferentialError> {
         let path_str = rule
             .path()
@@ -1287,7 +1294,6 @@ impl RuleProcessor {
 mod tests {
     use super::*;
     use crate::export::fhir_types::StructureDefinitionKind;
-    use std::collections::HashMap;
 
     fn create_test_base_definition() -> StructureDefinition {
         StructureDefinition::new(
@@ -1416,7 +1422,7 @@ mod tests {
         let value = "true";
         if value == "true" || value == "false" {
             let bool_val = value == "true";
-            assert_eq!(bool_val, true);
+            assert!(bool_val);
         }
 
         // Integer value
@@ -1477,10 +1483,10 @@ mod tests {
         let min = 2u32;
         let max = "1";
 
-        if max != "*" {
-            if let Ok(max_val) = max.parse::<u32>() {
-                assert!(min > max_val); // This should be invalid
-            }
+        if max != "*"
+            && let Ok(max_val) = max.parse::<u32>()
+        {
+            assert!(min > max_val); // This should be invalid
         }
     }
 

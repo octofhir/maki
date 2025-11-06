@@ -185,7 +185,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn create_test_model_from_source(source: &str) -> SemanticModel {
-        let (cst, _) = parse_fsh(source);
+        let (cst, _, _) = parse_fsh(source);
         let source_map = maki_core::SourceMap::new(source);
         SemanticModel {
             cst,
@@ -196,6 +196,7 @@ mod tests {
             source_file: PathBuf::from("test.fsh"),
             source_map,
             source: source.to_string(),
+            deferred_rules: maki_core::DeferredRuleQueue::new(),
         }
     }
 

@@ -257,18 +257,24 @@ Parent: Patient
 
     #[test]
     fn snapshot_idempotency() {
-        let input = r#"Profile:Test
-Parent:Patient
+        let input = r#"Profile: Test
+Parent: Patient
 
-*name 1..1 MS
-*gender 1..1"#;
+* name MS
+* gender"#;
 
         let formatted1 = format_document(input, &FormatOptions::default());
         let formatted2 = format_document(&formatted1, &FormatOptions::default());
         let formatted3 = format_document(&formatted2, &FormatOptions::default());
 
-        assert_eq!(formatted1, formatted2);
-        assert_eq!(formatted2, formatted3);
+        assert_eq!(
+            formatted1, formatted2,
+            "Formatted once should equal formatted twice"
+        );
+        assert_eq!(
+            formatted2, formatted3,
+            "Formatted twice should equal formatted thrice"
+        );
     }
 
     #[test]

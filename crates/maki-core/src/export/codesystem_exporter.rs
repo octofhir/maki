@@ -36,9 +36,11 @@
 //! let codesystem: CodeSystem = todo!();
 //!
 //! // Create exporter
+//! let session: std::sync::Arc<maki_core::canonical::DefinitionSession> = todo!();
 //! let exporter = CodeSystemExporter::new(
 //!     session,
 //!     "http://example.org/fhir".to_string(),
+//!     None,
 //! ).await?;
 //!
 //! // Export to FHIR JSON
@@ -90,6 +92,7 @@ use tracing::{debug, trace, warn};
 /// let exporter = CodeSystemExporter::new(
 ///     session,
 ///     "http://example.org/fhir".to_string(),
+///     None,
 /// ).await?;
 /// # Ok(())
 /// # }
@@ -123,6 +126,7 @@ impl CodeSystemExporter {
     /// let exporter = CodeSystemExporter::new(
     ///     session,
     ///     "http://example.org/fhir".to_string(),
+    ///     None,
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -426,15 +430,15 @@ impl CodeSystemExporter {
         // Look for a String token following the PathRule node
         // We iterate through all descendants with tokens to find a String
         for child in path_rule.syntax().descendants_with_tokens() {
-            if let rowan::NodeOrToken::Token(token) = child {
-                if token.kind() == FshSyntaxKind::String {
-                    let text = token.text();
-                    // Remove surrounding quotes
-                    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
-                        return Some(text[1..text.len() - 1].to_string());
-                    } else {
-                        return Some(text.to_string());
-                    }
+            if let rowan::NodeOrToken::Token(token) = child
+                && token.kind() == FshSyntaxKind::String
+            {
+                let text = token.text();
+                // Remove surrounding quotes
+                if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+                    return Some(text[1..text.len() - 1].to_string());
+                } else {
+                    return Some(text.to_string());
                 }
             }
         }
@@ -460,14 +464,14 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_exporter_creation() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_exporter_creation() {
         let exporter = create_test_exporter();
         assert_eq!(exporter.base_url, "http://example.org/fhir");
     }
 
-    #[test]
-    fn test_extract_string_value() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_extract_string_value() {
         let exporter = create_test_exporter();
 
         assert_eq!(

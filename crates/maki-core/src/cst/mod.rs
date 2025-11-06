@@ -65,14 +65,14 @@ pub mod trivia;
 
 pub use builder::{CstBuilder, build_cst_from_tokens, parse_fsh_simple};
 pub use formatter::{FormatOptions, format_document};
+pub use incremental::{EditUtils, IncrementalUpdater, TextEdit, UpdateMetrics, UpdateResult};
 pub use language::FshLanguage;
-pub use lexer::{CstLexResult, CstToken, lex_with_trivia, LexerError};
+pub use lexer::{CstLexResult, CstToken, LexerError, lex_with_trivia};
 pub use nodes::*;
-pub use parser::{parse_fsh, ParseError, ParseErrorKind};
-pub use round_trip::{RoundTripValidator, ValidationResult, SemanticDifference, DifferenceKind};
+pub use parser::{ParseError, ParseErrorKind, parse_fsh};
+pub use round_trip::{DifferenceKind, RoundTripValidator, SemanticDifference, ValidationResult};
 pub use syntax_kind::FshSyntaxKind;
-pub use trivia::{TriviaCollector, TriviaPreserver, TriviaInfo, TriviaToken, TriviaFormatter};
-pub use incremental::{IncrementalUpdater, TextEdit, UpdateResult, UpdateMetrics, EditUtils};
+pub use trivia::{TriviaCollector, TriviaFormatter, TriviaInfo, TriviaPreserver, TriviaToken};
 
 #[cfg(test)]
 mod tests;

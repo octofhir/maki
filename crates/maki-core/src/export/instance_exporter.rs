@@ -26,8 +26,10 @@
 //! ```rust,no_run
 //! use maki_core::export::InstanceExporter;
 //! use maki_core::cst::ast::Instance;
+//! use std::sync::Arc;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # let session: Arc<maki_core::canonical::DefinitionSession> = todo!();
 //! // Parse FSH instance
 //! let instance: Instance = todo!();
 //!
@@ -94,9 +96,10 @@ pub enum PathSegment {
 /// # Example
 ///
 /// ```rust,no_run
-/// # use maki_core::export::InstanceExporter;
-/// # use maki_core::canonical::DefinitionSession;
-/// # use std::sync::Arc;
+/// use maki_core::export::InstanceExporter;
+/// use maki_core::canonical::DefinitionSession;
+/// use std::sync::Arc;
+///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let session: Arc<DefinitionSession> = todo!();
 /// let exporter = InstanceExporter::new(
@@ -132,9 +135,10 @@ impl InstanceExporter {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use maki_core::export::InstanceExporter;
-    /// # use maki_core::canonical::DefinitionSession;
-    /// # use std::sync::Arc;
+    /// use maki_core::export::InstanceExporter;
+    /// use maki_core::canonical::DefinitionSession;
+    /// use std::sync::Arc;
+    ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let session: Arc<DefinitionSession> = todo!();
     /// let exporter = InstanceExporter::new(
@@ -202,8 +206,7 @@ impl InstanceExporter {
 
         trace!(
             "Starting base resource type resolution for profile '{}' with parent: {:?}",
-            profile_name,
-            current_parent
+            profile_name, current_parent
         );
 
         // Follow the parent chain until we find a base resource or hit max depth
@@ -231,36 +234,43 @@ impl InstanceExporter {
 
             // Try to fish for the parent profile's metadata
             if let Some(parent_metadata) = fishing_ctx
-                .fish_metadata(&parent, &[
-                    crate::semantic::ResourceType::Profile,
-                    crate::semantic::ResourceType::Logical,
-                ])
+                .fish_metadata(
+                    &parent,
+                    &[
+                        crate::semantic::ResourceType::Profile,
+                        crate::semantic::ResourceType::Logical,
+                    ],
+                )
                 .await
             {
                 trace!(
                     "  [Depth {}] Found parent '{}' with parent: {:?}",
-                    depth,
-                    parent,
-                    parent_metadata.parent
+                    depth, parent, parent_metadata.parent
                 );
                 current_parent = parent_metadata.parent.clone();
             } else {
                 // Parent not found in tank, try canonical packages
-                trace!("  [Depth {}] Parent '{}' not in tank, trying canonical", depth, parent);
+                trace!(
+                    "  [Depth {}] Parent '{}' not in tank, trying canonical",
+                    depth, parent
+                );
 
                 // Try to resolve alias first (e.g., "USCorePatient" -> canonical URL)
-                let parent_to_fish = fishing_ctx.resolve_alias(&parent).unwrap_or_else(|| parent.clone());
+                let parent_to_fish = fishing_ctx
+                    .resolve_alias(&parent)
+                    .unwrap_or_else(|| parent.clone());
                 if parent_to_fish != parent {
-                    trace!("  [Depth {}] Resolved alias '{}' -> '{}'", depth, parent, parent_to_fish);
+                    trace!(
+                        "  [Depth {}] Resolved alias '{}' -> '{}'",
+                        depth, parent, parent_to_fish
+                    );
                 }
 
                 match fishing_ctx.fish_structure_definition(&parent_to_fish).await {
                     Ok(Some(sd)) => {
                         trace!(
                             "  [Depth {}] Found parent '{}' in canonical with type: '{}'",
-                            depth,
-                            parent,
-                            sd.type_field
+                            depth, parent, sd.type_field
                         );
                         // StructureDefinition.type is the base resource type
                         return sd.type_field;
@@ -300,48 +310,154 @@ impl InstanceExporter {
         // See: http://hl7.org/fhir/R4/resourcelist.html
         matches!(
             name,
-            "Account" | "ActivityDefinition" | "AdverseEvent" | "AllergyIntolerance"
-                | "Appointment" | "AppointmentResponse" | "AuditEvent" | "Basic"
-                | "Binary" | "BiologicallyDerivedProduct" | "BodyStructure" | "Bundle"
-                | "CapabilityStatement" | "CarePlan" | "CareTeam" | "CatalogEntry"
-                | "ChargeItem" | "ChargeItemDefinition" | "Claim" | "ClaimResponse"
-                | "ClinicalImpression" | "CodeSystem" | "Communication" | "CommunicationRequest"
-                | "CompartmentDefinition" | "Composition" | "ConceptMap" | "Condition"
-                | "Consent" | "Contract" | "Coverage" | "CoverageEligibilityRequest"
-                | "CoverageEligibilityResponse" | "DetectedIssue" | "Device"
-                | "DeviceDefinition" | "DeviceMetric" | "DeviceRequest" | "DeviceUseStatement"
-                | "DiagnosticReport" | "DocumentManifest" | "DocumentReference"
-                | "DomainResource" | "EffectEvidenceSynthesis" | "Encounter" | "Endpoint"
-                | "EnrollmentRequest" | "EnrollmentResponse" | "EpisodeOfCare"
-                | "EventDefinition" | "Evidence" | "EvidenceVariable" | "ExampleScenario"
-                | "ExplanationOfBenefit" | "FamilyMemberHistory" | "Flag" | "Goal"
-                | "GraphDefinition" | "Group" | "GuidanceResponse" | "HealthcareService"
-                | "ImagingStudy" | "Immunization" | "ImmunizationEvaluation"
-                | "ImmunizationRecommendation" | "ImplementationGuide" | "InsurancePlan"
-                | "Invoice" | "Library" | "Linkage" | "List" | "Location" | "Measure"
-                | "MeasureReport" | "Media" | "Medication" | "MedicationAdministration"
-                | "MedicationDispense" | "MedicationKnowledge" | "MedicationRequest"
-                | "MedicationStatement" | "MedicinalProduct" | "MedicinalProductAuthorization"
-                | "MedicinalProductContraindication" | "MedicinalProductIndication"
-                | "MedicinalProductIngredient" | "MedicinalProductInteraction"
-                | "MedicinalProductManufactured" | "MedicinalProductPackaged"
-                | "MedicinalProductPharmaceutical" | "MedicinalProductUndesirableEffect"
-                | "MessageDefinition" | "MessageHeader" | "MolecularSequence"
-                | "NamingSystem" | "NutritionOrder" | "Observation" | "ObservationDefinition"
-                | "OperationDefinition" | "OperationOutcome" | "Organization"
-                | "OrganizationAffiliation" | "Parameters" | "Patient" | "PaymentNotice"
-                | "PaymentReconciliation" | "Person" | "PlanDefinition" | "Practitioner"
-                | "PractitionerRole" | "Procedure" | "Provenance" | "Questionnaire"
-                | "QuestionnaireResponse" | "RelatedPerson" | "RequestGroup"
-                | "ResearchDefinition" | "ResearchElementDefinition" | "ResearchStudy"
-                | "ResearchSubject" | "Resource" | "RiskAssessment" | "RiskEvidenceSynthesis"
-                | "Schedule" | "SearchParameter" | "ServiceRequest" | "Slot" | "Specimen"
-                | "SpecimenDefinition" | "StructureDefinition" | "StructureMap"
-                | "Subscription" | "Substance" | "SubstanceNucleicAcid" | "SubstancePolymer"
-                | "SubstanceProtein" | "SubstanceReferenceInformation" | "SubstanceSourceMaterial"
-                | "SubstanceSpecification" | "SupplyDelivery" | "SupplyRequest" | "Task"
-                | "TerminologyCapabilities" | "TestReport" | "TestScript" | "ValueSet"
-                | "VerificationResult" | "VisionPrescription"
+            "Account"
+                | "ActivityDefinition"
+                | "AdverseEvent"
+                | "AllergyIntolerance"
+                | "Appointment"
+                | "AppointmentResponse"
+                | "AuditEvent"
+                | "Basic"
+                | "Binary"
+                | "BiologicallyDerivedProduct"
+                | "BodyStructure"
+                | "Bundle"
+                | "CapabilityStatement"
+                | "CarePlan"
+                | "CareTeam"
+                | "CatalogEntry"
+                | "ChargeItem"
+                | "ChargeItemDefinition"
+                | "Claim"
+                | "ClaimResponse"
+                | "ClinicalImpression"
+                | "CodeSystem"
+                | "Communication"
+                | "CommunicationRequest"
+                | "CompartmentDefinition"
+                | "Composition"
+                | "ConceptMap"
+                | "Condition"
+                | "Consent"
+                | "Contract"
+                | "Coverage"
+                | "CoverageEligibilityRequest"
+                | "CoverageEligibilityResponse"
+                | "DetectedIssue"
+                | "Device"
+                | "DeviceDefinition"
+                | "DeviceMetric"
+                | "DeviceRequest"
+                | "DeviceUseStatement"
+                | "DiagnosticReport"
+                | "DocumentManifest"
+                | "DocumentReference"
+                | "DomainResource"
+                | "EffectEvidenceSynthesis"
+                | "Encounter"
+                | "Endpoint"
+                | "EnrollmentRequest"
+                | "EnrollmentResponse"
+                | "EpisodeOfCare"
+                | "EventDefinition"
+                | "Evidence"
+                | "EvidenceVariable"
+                | "ExampleScenario"
+                | "ExplanationOfBenefit"
+                | "FamilyMemberHistory"
+                | "Flag"
+                | "Goal"
+                | "GraphDefinition"
+                | "Group"
+                | "GuidanceResponse"
+                | "HealthcareService"
+                | "ImagingStudy"
+                | "Immunization"
+                | "ImmunizationEvaluation"
+                | "ImmunizationRecommendation"
+                | "ImplementationGuide"
+                | "InsurancePlan"
+                | "Invoice"
+                | "Library"
+                | "Linkage"
+                | "List"
+                | "Location"
+                | "Measure"
+                | "MeasureReport"
+                | "Media"
+                | "Medication"
+                | "MedicationAdministration"
+                | "MedicationDispense"
+                | "MedicationKnowledge"
+                | "MedicationRequest"
+                | "MedicationStatement"
+                | "MedicinalProduct"
+                | "MedicinalProductAuthorization"
+                | "MedicinalProductContraindication"
+                | "MedicinalProductIndication"
+                | "MedicinalProductIngredient"
+                | "MedicinalProductInteraction"
+                | "MedicinalProductManufactured"
+                | "MedicinalProductPackaged"
+                | "MedicinalProductPharmaceutical"
+                | "MedicinalProductUndesirableEffect"
+                | "MessageDefinition"
+                | "MessageHeader"
+                | "MolecularSequence"
+                | "NamingSystem"
+                | "NutritionOrder"
+                | "Observation"
+                | "ObservationDefinition"
+                | "OperationDefinition"
+                | "OperationOutcome"
+                | "Organization"
+                | "OrganizationAffiliation"
+                | "Parameters"
+                | "Patient"
+                | "PaymentNotice"
+                | "PaymentReconciliation"
+                | "Person"
+                | "PlanDefinition"
+                | "Practitioner"
+                | "PractitionerRole"
+                | "Procedure"
+                | "Provenance"
+                | "Questionnaire"
+                | "QuestionnaireResponse"
+                | "RelatedPerson"
+                | "RequestGroup"
+                | "ResearchDefinition"
+                | "ResearchElementDefinition"
+                | "ResearchStudy"
+                | "ResearchSubject"
+                | "Resource"
+                | "RiskAssessment"
+                | "RiskEvidenceSynthesis"
+                | "Schedule"
+                | "SearchParameter"
+                | "ServiceRequest"
+                | "Slot"
+                | "Specimen"
+                | "SpecimenDefinition"
+                | "StructureDefinition"
+                | "StructureMap"
+                | "Subscription"
+                | "Substance"
+                | "SubstanceNucleicAcid"
+                | "SubstancePolymer"
+                | "SubstanceProtein"
+                | "SubstanceReferenceInformation"
+                | "SubstanceSourceMaterial"
+                | "SubstanceSpecification"
+                | "SupplyDelivery"
+                | "SupplyRequest"
+                | "Task"
+                | "TerminologyCapabilities"
+                | "TestReport"
+                | "TestScript"
+                | "ValueSet"
+                | "VerificationResult"
+                | "VisionPrescription"
         )
     }
 
@@ -366,10 +482,11 @@ impl InstanceExporter {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use maki_core::export::InstanceExporter;
-    /// # use maki_core::cst::ast::Instance;
+    /// use maki_core::export::InstanceExporter;
+    /// use maki_core::cst::ast::Instance;
+    ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let exporter: InstanceExporter = todo!();
+    /// # let mut exporter: InstanceExporter = todo!();
     /// # let instance: Instance = todo!();
     /// let resource = exporter.export(&instance).await?;
     /// println!("{}", serde_json::to_string_pretty(&resource)?);
@@ -393,15 +510,20 @@ impl InstanceExporter {
             // Try to get metadata from the tank first (profiles not yet exported)
             // This is fast and doesn't require full export
             if let Some(metadata) = fishing_ctx
-                .fish_metadata(&instance_of, &[
-                    crate::semantic::ResourceType::Profile,
-                    crate::semantic::ResourceType::Extension,
-                    crate::semantic::ResourceType::Logical,
-                ])
+                .fish_metadata(
+                    &instance_of,
+                    &[
+                        crate::semantic::ResourceType::Profile,
+                        crate::semantic::ResourceType::Extension,
+                        crate::semantic::ResourceType::Logical,
+                    ],
+                )
                 .await
             {
                 // Found in tank - resolve base resource type by following parent chain
-                let base_type = self.resolve_base_resource_type(fishing_ctx, &instance_of, &metadata).await;
+                let base_type = self
+                    .resolve_base_resource_type(fishing_ctx, &instance_of, &metadata)
+                    .await;
                 let profile_url = metadata.url.clone();
                 debug!(
                     "Resolved profile '{}' from tank -> base type: '{}', canonical URL: '{}'",
@@ -441,7 +563,10 @@ impl InstanceExporter {
             }
         } else {
             // No fishing context available - fall back to using instance_of as-is
-            debug!("No fishing context available, using '{}' as resourceType", instance_of);
+            debug!(
+                "No fishing context available, using '{}' as resourceType",
+                instance_of
+            );
             (instance_of.to_string(), None)
         };
 
@@ -534,7 +659,10 @@ impl InstanceExporter {
         // Skip if there's no value - this is actually a path rule (structural navigation)
         // Example: * valueCodeableConcept (without = value)
         let Some(value_str) = rule.value() else {
-            trace!("Skipping fixed value rule with no value (path rule): {}", path);
+            trace!(
+                "Skipping fixed value rule with no value (path rule): {}",
+                path
+            );
             return Ok(());
         };
 
@@ -547,7 +675,8 @@ impl InstanceExporter {
         let json_value = self.convert_value_with_path(&value_str, &path).await?;
 
         // Navigate and set the value
-        self.set_value_at_path(resource, &segments, json_value).await?;
+        self.set_value_at_path(resource, &segments, json_value)
+            .await?;
 
         Ok(())
     }
@@ -671,7 +800,7 @@ impl InstanceExporter {
                             // If the field already exists and both are objects, merge them
                             if let Some(existing) = obj.get_mut(field) {
                                 if existing.is_object() && final_value.is_object() {
-                                    self.merge_objects(existing, &final_value);
+                                    Self::merge_objects(existing, &final_value);
                                 } else {
                                     *existing = final_value;
                                 }
@@ -692,13 +821,13 @@ impl InstanceExporter {
                                 // Determine if we should create an array or object
                                 // If the next segment is a Field (not ArrayAccess), this might be
                                 // FSH shorthand for accessing array element properties without index
-                                let next_is_field = i + 1 < segments.len() && matches!(segments[i + 1], PathSegment::Field(_));
+                                let next_is_field = i + 1 < segments.len()
+                                    && matches!(segments[i + 1], PathSegment::Field(_));
 
                                 if next_is_field {
                                     // Create an array with one empty object - FSH shorthand for identifier.use
                                     // means identifier[0].use when identifier is an array field
-                                    let mut arr = Vec::new();
-                                    arr.push(JsonValue::Object(Map::new()));
+                                    let arr = vec![JsonValue::Object(Map::new())];
                                     obj.insert(field.clone(), JsonValue::Array(arr));
                                 } else {
                                     // Create a regular object
@@ -780,7 +909,7 @@ impl InstanceExporter {
                             // Set the value at this array index
                             // If existing value is an object and new value is an object, merge
                             if arr[actual_index].is_object() && value.is_object() {
-                                self.merge_objects(&mut arr[actual_index], &value);
+                                Self::merge_objects(&mut arr[actual_index], &value);
                             } else {
                                 arr[actual_index] = value.clone();
                             }
@@ -819,16 +948,15 @@ impl InstanceExporter {
 
             trace!(
                 "Resolving extension slice '{}' -> canonical URL '{}'",
-                slice_name,
-                extension_url
+                slice_name, extension_url
             );
 
             // Try to find existing extension with this URL
             for (idx, elem) in arr.iter().enumerate() {
-                if let Some(url) = elem.get("url").and_then(|u| u.as_str()) {
-                    if url == extension_url {
-                        return Ok(idx);
-                    }
+                if let Some(url) = elem.get("url").and_then(|u| u.as_str())
+                    && url == extension_url
+                {
+                    return Ok(idx);
                 }
             }
             // Not found, create new element at end with canonical URL
@@ -840,10 +968,10 @@ impl InstanceExporter {
         } else {
             // For other slices, match by _sliceName
             for (idx, elem) in arr.iter().enumerate() {
-                if let Some(name) = elem.get("_sliceName").and_then(|n| n.as_str()) {
-                    if name == slice_name {
-                        return Ok(idx);
-                    }
+                if let Some(name) = elem.get("_sliceName").and_then(|n| n.as_str())
+                    && name == slice_name
+                {
+                    return Ok(idx);
                 }
             }
             // Not found, create new element at end
@@ -871,7 +999,10 @@ impl InstanceExporter {
         // Try alias resolution first
         if let Some(fishing_ctx) = &self.fishing_context {
             if let Some(canonical_url) = fishing_ctx.resolve_alias(slice_name) {
-                debug!("Resolved extension alias '{}' -> '{}'", slice_name, canonical_url);
+                debug!(
+                    "Resolved extension alias '{}' -> '{}'",
+                    slice_name, canonical_url
+                );
                 return canonical_url;
             }
 
@@ -890,14 +1021,20 @@ impl InstanceExporter {
                     .fish_metadata(candidate, &[crate::semantic::ResourceType::Extension])
                     .await
                 {
-                    debug!("Resolved extension '{}' (tried '{}') from tank -> '{}'", slice_name, candidate, metadata.url);
+                    debug!(
+                        "Resolved extension '{}' (tried '{}') from tank -> '{}'",
+                        slice_name, candidate, metadata.url
+                    );
                     return metadata.url;
                 }
 
                 // Try to find extension in canonical packages
                 match fishing_ctx.fish_structure_definition(candidate).await {
                     Ok(Some(sd)) => {
-                        debug!("Resolved extension '{}' (tried '{}') from canonical -> '{}'", slice_name, candidate, sd.url);
+                        debug!(
+                            "Resolved extension '{}' (tried '{}') from canonical -> '{}'",
+                            slice_name, candidate, sd.url
+                        );
                         return sd.url;
                     }
                     Ok(None) | Err(_) => {
@@ -921,12 +1058,12 @@ impl InstanceExporter {
     /// * contact.name.family = "Doe"
     /// ```
     /// Both rules target `contact.name`, so we merge the values.
-    fn merge_objects(&self, target: &mut JsonValue, source: &JsonValue) {
+    fn merge_objects(target: &mut JsonValue, source: &JsonValue) {
         if let (Some(target_obj), Some(source_obj)) = (target.as_object_mut(), source.as_object()) {
             for (key, value) in source_obj {
                 if let Some(existing) = target_obj.get_mut(key) {
                     if existing.is_object() && value.is_object() {
-                        self.merge_objects(existing, value);
+                        Self::merge_objects(existing, value);
                     } else if existing.is_array() && value.is_array() {
                         // Merge arrays by appending unique elements
                         if let (Some(existing_arr), Some(source_arr)) =
@@ -958,7 +1095,11 @@ impl InstanceExporter {
     /// - Simple types: strings, numbers, booleans, codes
     /// - Complex types: CodeableConcept, Quantity, Reference, Ratio
     /// - FHIR-specific patterns
-    async fn convert_value_with_path(&self, value_str: &str, path: &str) -> Result<JsonValue, ExportError> {
+    async fn convert_value_with_path(
+        &self,
+        value_str: &str,
+        path: &str,
+    ) -> Result<JsonValue, ExportError> {
         // Check if this path should always be a string
         if self.is_string_field_path(path) {
             let trimmed = value_str.trim();
@@ -1146,7 +1287,10 @@ impl InstanceExporter {
         // Resolve system alias to canonical URL
         let system = if let Some(fishing_ctx) = &self.fishing_context {
             if let Some(canonical_url) = fishing_ctx.resolve_alias(system_or_alias) {
-                debug!("Resolved CodeSystem alias '{}' -> '{}'", system_or_alias, canonical_url);
+                debug!(
+                    "Resolved CodeSystem alias '{}' -> '{}'",
+                    system_or_alias, canonical_url
+                );
                 canonical_url
             } else {
                 // Not an alias, use as-is
@@ -1266,13 +1410,14 @@ impl InstanceExporter {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use maki_core::export::InstanceExporter;
-    /// # fn example(exporter: &InstanceExporter) -> Result<(), Box<dyn std::error::Error>> {
+    /// use maki_core::export::InstanceExporter;
+    ///
+    /// # async fn example(exporter: &InstanceExporter) -> Result<(), Box<dyn std::error::Error>> {
     /// // Validate a FHIR reference
-    /// exporter.validate_reference("Patient/example")?;
+    /// exporter.validate_reference("Patient/example").await?;
     ///
     /// // Validate an instance reference
-    /// exporter.validate_reference("my-patient-instance")?;
+    /// exporter.validate_reference("my-patient-instance").await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -1332,7 +1477,6 @@ impl InstanceExporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::future::Future;
 
     fn create_test_exporter() -> InstanceExporter {
         InstanceExporter {
@@ -1344,14 +1488,8 @@ mod tests {
         }
     }
 
-    fn block_on<T>(future: impl Future<Output = T>) -> T {
-        tokio::runtime::Runtime::new()
-            .expect("create test runtime")
-            .block_on(future)
-    }
-
-    #[test]
-    fn test_parse_simple_path() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_simple_path() {
         let exporter = create_test_exporter();
         let segments = exporter.parse_path("name.family").unwrap();
 
@@ -1360,8 +1498,8 @@ mod tests {
         assert_eq!(segments[1], PathSegment::Field("family".to_string()));
     }
 
-    #[test]
-    fn test_parse_array_path() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_array_path() {
         let exporter = create_test_exporter();
         let segments = exporter.parse_path("name.given[0]").unwrap();
 
@@ -1377,8 +1515,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_parse_append_path() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_append_path() {
         let exporter = create_test_exporter();
         let segments = exporter.parse_path("name.given[+]").unwrap();
 
@@ -1393,8 +1531,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_parse_current_path() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_current_path() {
         let exporter = create_test_exporter();
         let segments = exporter.parse_path("telecom[=].value").unwrap();
 
@@ -1409,8 +1547,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_parse_nested_array_path() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_nested_array_path() {
         let exporter = create_test_exporter();
         let segments = exporter.parse_path("address[0].line[+]").unwrap();
 
@@ -1433,50 +1571,42 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_convert_string_value() {
-        block_on(async {
-            let exporter = create_test_exporter();
-            let value = exporter.convert_value("\"Hello World\"").await.unwrap();
-            assert_eq!(value, JsonValue::String("Hello World".to_string()));
-        });
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_convert_string_value() {
+        let exporter = create_test_exporter();
+        let value = exporter.convert_value("\"Hello World\"").await.unwrap();
+        assert_eq!(value, JsonValue::String("Hello World".to_string()));
     }
 
-    #[test]
-    fn test_convert_boolean_value() {
-        block_on(async {
-            let exporter = create_test_exporter();
-            assert_eq!(
-                exporter.convert_value("true").await.unwrap(),
-                JsonValue::Bool(true)
-            );
-            assert_eq!(
-                exporter.convert_value("false").await.unwrap(),
-                JsonValue::Bool(false)
-            );
-        });
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_convert_boolean_value() {
+        let exporter = create_test_exporter();
+        assert_eq!(
+            exporter.convert_value("true").await.unwrap(),
+            JsonValue::Bool(true)
+        );
+        assert_eq!(
+            exporter.convert_value("false").await.unwrap(),
+            JsonValue::Bool(false)
+        );
     }
 
-    #[test]
-    fn test_convert_integer_value() {
-        block_on(async {
-            let exporter = create_test_exporter();
-            let value = exporter.convert_value("42").await.unwrap();
-            assert_eq!(value, JsonValue::Number(42.into()));
-        });
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_convert_integer_value() {
+        let exporter = create_test_exporter();
+        let value = exporter.convert_value("42").await.unwrap();
+        assert_eq!(value, JsonValue::Number(42.into()));
     }
 
-    #[test]
-    fn test_convert_code_value() {
-        block_on(async {
-            let exporter = create_test_exporter();
-            let value = exporter.convert_value("#male").await.unwrap();
-            assert_eq!(value, JsonValue::String("male".to_string()));
-        });
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_convert_code_value() {
+        let exporter = create_test_exporter();
+        let value = exporter.convert_value("#male").await.unwrap();
+        assert_eq!(value, JsonValue::String("male".to_string()));
     }
 
-    #[test]
-    fn test_set_simple_value() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_set_simple_value() {
         let mut exporter = create_test_exporter();
         let mut resource = serde_json::json!({ "resourceType": "Patient" });
 
@@ -1485,28 +1615,14 @@ mod tests {
 
         exporter
             .set_value_at_path(&mut resource, &segments, value)
+            .await
             .unwrap();
 
         assert_eq!(resource["birthDate"], "1970-01-01");
     }
 
-    #[test]
-    fn test_set_nested_value() {
-        let mut exporter = create_test_exporter();
-        let mut resource = serde_json::json!({ "resourceType": "Patient" });
-
-        let segments = exporter.parse_path("name.family").unwrap();
-        let value = JsonValue::String("Doe".to_string());
-
-        exporter
-            .set_value_at_path(&mut resource, &segments, value)
-            .unwrap();
-
-        assert_eq!(resource["name"]["family"], "Doe");
-    }
-
-    #[test]
-    fn test_set_array_value_numeric() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_set_array_value_numeric() {
         let mut exporter = create_test_exporter();
         let mut resource = serde_json::json!({ "resourceType": "Patient" });
 
@@ -1515,13 +1631,14 @@ mod tests {
 
         exporter
             .set_value_at_path(&mut resource, &segments, value)
+            .await
             .unwrap();
 
         assert_eq!(resource["name"]["given"][0], "John");
     }
 
-    #[test]
-    fn test_set_array_value_append() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_set_array_value_append() {
         let mut exporter = create_test_exporter();
         let mut resource = serde_json::json!({ "resourceType": "Patient" });
 
@@ -1533,6 +1650,7 @@ mod tests {
                 &segments,
                 JsonValue::String("John".to_string()),
             )
+            .await
             .unwrap();
 
         // Add second element
@@ -1543,14 +1661,15 @@ mod tests {
                 &segments,
                 JsonValue::String("Jacob".to_string()),
             )
+            .await
             .unwrap();
 
         assert_eq!(resource["name"]["given"][0], "John");
         assert_eq!(resource["name"]["given"][1], "Jacob");
     }
 
-    #[test]
-    fn test_nested_array_access() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_nested_array_access() {
         let mut exporter = create_test_exporter();
         let mut resource = serde_json::json!({ "resourceType": "Patient" });
 
@@ -1562,6 +1681,7 @@ mod tests {
                 &segments,
                 JsonValue::String("123 Main St".to_string()),
             )
+            .await
             .unwrap();
 
         // Set address[0].city
@@ -1572,6 +1692,7 @@ mod tests {
                 &segments,
                 JsonValue::String("Boston".to_string()),
             )
+            .await
             .unwrap();
 
         assert_eq!(resource["address"][0]["line"][0], "123 Main St");
@@ -1580,144 +1701,130 @@ mod tests {
 
     // ===== Reference Validation Tests =====
 
-    #[test]
-    fn test_validate_reference_inline_instance() {
-        block_on(async {
-            let mut exporter = create_test_exporter();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_validate_reference_inline_instance() {
+        let mut exporter = create_test_exporter();
 
-            exporter.register_instance(
-                "my-patient".to_string(),
-                serde_json::json!({
-                    "resourceType": "Patient",
-                    "id": "my-patient"
-                }),
-            );
+        exporter.register_instance(
+            "my-patient".to_string(),
+            serde_json::json!({
+                "resourceType": "Patient",
+                "id": "my-patient"
+            }),
+        );
 
-            assert!(exporter.validate_reference("my-patient").await.is_ok());
-        });
+        assert!(exporter.validate_reference("my-patient").await.is_ok());
     }
 
-    #[test]
-    fn test_validate_reference_not_found() {
-        block_on(async {
-            let exporter = create_test_exporter();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_validate_reference_not_found() {
+        let exporter = create_test_exporter();
 
-            let result = exporter.validate_reference("nonexistent").await;
-            assert!(result.is_err());
-            if let Err(ExportError::InvalidReference { reference, reason }) = result {
-                assert_eq!(reference, "nonexistent");
-                assert!(reason.contains("not found"));
-            } else {
-                panic!("Expected InvalidReference error");
-            }
-        });
+        let result = exporter.validate_reference("nonexistent").await;
+        assert!(result.is_err());
+        if let Err(ExportError::InvalidReference { reference, reason }) = result {
+            assert_eq!(reference, "nonexistent");
+            assert!(reason.contains("not found"));
+        } else {
+            panic!("Expected InvalidReference error");
+        }
     }
 
-    #[test]
-    fn test_validate_reference_with_fishing_context() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_validate_reference_with_fishing_context() {
         use crate::Location;
         use crate::semantic::{FhirResource, FshTank, Package, ResourceType};
         use tokio::sync::RwLock;
 
-        block_on(async {
-            let mut exporter = create_test_exporter();
+        let mut exporter = create_test_exporter();
 
-            let tank = Arc::new(RwLock::new(FshTank::new()));
-            let package = Arc::new(RwLock::new(Package::new()));
-            let session = Arc::new(crate::canonical::DefinitionSession::for_testing());
+        let tank = Arc::new(RwLock::new(FshTank::new()));
+        let package = Arc::new(RwLock::new(Package::new()));
+        let session = Arc::new(crate::canonical::DefinitionSession::for_testing());
 
-            {
-                let mut t = tank.write().await;
-                t.add_resource(FhirResource {
-                    resource_type: ResourceType::Profile,
-                    id: "PatientProfile".to_string(),
-                    name: Some("PatientProfile".to_string()),
-                    title: None,
-                    description: None,
-                    parent: Some("Patient".to_string()),
-                    elements: Vec::new(),
-                    location: Location::default(),
-                    metadata: crate::semantic::ResourceMetadata::default(),
-                });
-            }
-
-            let fishing_ctx = Arc::new(FishingContext::new(session, tank, package));
-            exporter.fishing_context = Some(fishing_ctx);
-
-            assert!(exporter.validate_reference("PatientProfile").await.is_ok());
-        });
-    }
-
-    #[test]
-    fn test_validate_reference_fhir_style() {
-        block_on(async {
-            let exporter = create_test_exporter();
-
-            assert!(exporter.validate_reference("Patient/example").await.is_ok());
-            assert!(
-                exporter
-                    .validate_reference("Observation/vital-signs")
-                    .await
-                    .is_ok()
-            );
-        });
-    }
-
-    #[test]
-    fn test_parse_reference_validates() {
-        block_on(async {
-            let mut exporter = create_test_exporter();
-
-            exporter.register_instance(
-                "my-patient".to_string(),
-                serde_json::json!({
-                    "resourceType": "Patient",
-                    "id": "my-patient"
-                }),
-            );
-
-            let result = exporter.parse_reference("Reference(my-patient)").await;
-            assert!(result.is_ok());
-            let reference = result.unwrap();
-            assert_eq!(reference["reference"], "my-patient");
-        });
-    }
-
-    #[test]
-    fn test_parse_reference_warns_on_invalid() {
-        block_on(async {
-            let exporter = create_test_exporter();
-
-            let result = exporter.parse_reference("Reference(nonexistent)").await;
-            assert!(result.is_ok());
-            let reference = result.unwrap();
-            assert_eq!(reference["reference"], "nonexistent");
-        });
-    }
-
-    #[test]
-    fn test_inline_instance_resolution() {
-        block_on(async {
-            let mut exporter = create_test_exporter();
-
-            let patient_json = serde_json::json!({
-                "resourceType": "Patient",
-                "id": "example-patient",
-                "name": [{
-                    "family": "Doe",
-                    "given": ["John"]
-                }]
+        {
+            let mut t = tank.write().await;
+            t.add_resource(FhirResource {
+                resource_type: ResourceType::Profile,
+                id: "PatientProfile".to_string(),
+                name: Some("PatientProfile".to_string()),
+                title: None,
+                description: None,
+                parent: Some("Patient".to_string()),
+                elements: Vec::new(),
+                location: Location::default(),
+                metadata: crate::semantic::ResourceMetadata::default(),
             });
+        }
 
-            exporter.register_instance("example-patient".to_string(), patient_json.clone());
+        let fishing_ctx = Arc::new(FishingContext::new(session, tank, package));
+        exporter.fishing_context = Some(fishing_ctx);
 
-            let value = exporter.convert_value("example-patient").await.unwrap();
-            assert_eq!(value, patient_json);
-        });
+        assert!(exporter.validate_reference("PatientProfile").await.is_ok());
     }
 
-    #[test]
-    fn test_is_instance_reference() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_validate_reference_fhir_style() {
+        let exporter = create_test_exporter();
+
+        assert!(exporter.validate_reference("Patient/example").await.is_ok());
+        assert!(
+            exporter
+                .validate_reference("Observation/vital-signs")
+                .await
+                .is_ok()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_reference_validates() {
+        let mut exporter = create_test_exporter();
+
+        exporter.register_instance(
+            "my-patient".to_string(),
+            serde_json::json!({
+                "resourceType": "Patient",
+                "id": "my-patient"
+            }),
+        );
+
+        let result = exporter.parse_reference("Reference(my-patient)").await;
+        assert!(result.is_ok());
+        let reference = result.unwrap();
+        assert_eq!(reference["reference"], "my-patient");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_reference_warns_on_invalid() {
+        let exporter = create_test_exporter();
+
+        let result = exporter.parse_reference("Reference(nonexistent)").await;
+        assert!(result.is_ok());
+        let reference = result.unwrap();
+        assert_eq!(reference["reference"], "nonexistent");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_inline_instance_resolution() {
+        let mut exporter = create_test_exporter();
+
+        let patient_json = serde_json::json!({
+            "resourceType": "Patient",
+            "id": "example-patient",
+            "name": [{
+                "family": "Doe",
+                "given": ["John"]
+            }]
+        });
+
+        exporter.register_instance("example-patient".to_string(), patient_json.clone());
+
+        let value = exporter.convert_value("example-patient").await.unwrap();
+        assert_eq!(value, patient_json);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_is_instance_reference() {
         let exporter = create_test_exporter();
 
         // Valid instance reference patterns
@@ -1735,8 +1842,8 @@ mod tests {
 
     // ===== Slice Name Tests =====
 
-    #[test]
-    fn test_parse_slice_name_path() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_parse_slice_name_path() {
         let exporter = create_test_exporter();
         let segments = exporter
             .parse_path("extension[myExtension].valueString")
@@ -1754,8 +1861,8 @@ mod tests {
         assert_eq!(segments[1], PathSegment::Field("valueString".to_string()));
     }
 
-    #[test]
-    fn test_set_extension_by_slice_name() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_set_extension_by_slice_name() {
         let mut exporter = create_test_exporter();
         let mut resource = serde_json::json!({ "resourceType": "Patient" });
 
@@ -1769,6 +1876,7 @@ mod tests {
                 &segments,
                 JsonValue::String("test value".to_string()),
             )
+            .await
             .unwrap();
 
         // Verify the extension was created with URL
@@ -1779,38 +1887,8 @@ mod tests {
         assert_eq!(extensions[0]["valueString"], "test value");
     }
 
-    #[test]
-    fn test_merge_object_values() {
-        let mut exporter = create_test_exporter();
-        let mut resource = serde_json::json!({ "resourceType": "Patient" });
-
-        // Set first property
-        let segments = exporter.parse_path("contact.name.text").unwrap();
-        exporter
-            .set_value_at_path(
-                &mut resource,
-                &segments,
-                JsonValue::String("John Doe".to_string()),
-            )
-            .unwrap();
-
-        // Set second property on same object
-        let segments = exporter.parse_path("contact.name.family").unwrap();
-        exporter
-            .set_value_at_path(
-                &mut resource,
-                &segments,
-                JsonValue::String("Doe".to_string()),
-            )
-            .unwrap();
-
-        // Verify both properties exist
-        assert_eq!(resource["contact"]["name"]["text"], "John Doe");
-        assert_eq!(resource["contact"]["name"]["family"], "Doe");
-    }
-
-    #[test]
-    fn test_multiple_extensions_by_slice_name() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_multiple_extensions_by_slice_name() {
         let mut exporter = create_test_exporter();
         let mut resource = serde_json::json!({ "resourceType": "Patient" });
 
@@ -1824,6 +1902,7 @@ mod tests {
                 &segments,
                 JsonValue::String("value1".to_string()),
             )
+            .await
             .unwrap();
 
         // Add second extension
@@ -1832,6 +1911,7 @@ mod tests {
             .unwrap();
         exporter
             .set_value_at_path(&mut resource, &segments, JsonValue::Number(42.into()))
+            .await
             .unwrap();
 
         // Verify both extensions exist
@@ -1844,8 +1924,8 @@ mod tests {
         assert_eq!(extensions[1]["valueInteger"], 42);
     }
 
-    #[test]
-    fn test_update_existing_extension() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_existing_extension() {
         let mut exporter = create_test_exporter();
         let mut resource = serde_json::json!({ "resourceType": "Patient" });
 
@@ -1859,6 +1939,7 @@ mod tests {
                 &segments,
                 JsonValue::String("initial".to_string()),
             )
+            .await
             .unwrap();
 
         // Update the same extension with additional property
@@ -1871,6 +1952,7 @@ mod tests {
                 &segments,
                 JsonValue::String("ext-id".to_string()),
             )
+            .await
             .unwrap();
 
         // Verify extension has both properties

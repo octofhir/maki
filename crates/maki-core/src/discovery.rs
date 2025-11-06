@@ -16,7 +16,7 @@ fn get_include_patterns(config: &UnifiedConfig) -> Vec<String> {
         .files
         .as_ref()
         .and_then(|f| f.include.as_ref())
-        .map(|v| v.clone())
+        .cloned()
         .unwrap_or_else(|| vec!["**/*.fsh".to_string()])
 }
 
@@ -25,7 +25,7 @@ fn get_exclude_patterns(config: &UnifiedConfig) -> Vec<String> {
         .files
         .as_ref()
         .and_then(|f| f.exclude.as_ref())
-        .map(|v| v.clone())
+        .cloned()
         .unwrap_or_default()
 }
 
@@ -34,7 +34,7 @@ fn get_ignore_files(config: &UnifiedConfig) -> Vec<String> {
         .files
         .as_ref()
         .and_then(|f| f.ignore_files.as_ref())
-        .map(|v| v.clone())
+        .cloned()
         .unwrap_or_else(|| vec![".fshlintignore".to_string()])
 }
 

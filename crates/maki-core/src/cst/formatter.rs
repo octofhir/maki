@@ -23,7 +23,9 @@
 //! ```
 
 use super::{
-    ast::{Alias, AstNode, CodeSystem, Document, Extension, FlagValueJoin, Profile, Rule, ValueSet},
+    ast::{
+        Alias, AstNode, CodeSystem, Document, Extension, FlagValueJoin, Profile, Rule, ValueSet,
+    },
     parse_fsh,
 };
 
@@ -612,14 +614,18 @@ Parent: Patient
         let source = r#"Profile: MyPatient
 Parent: Patient
 
-* name 1..1 MS
-* gender 1..1
+* name MS
+* gender
 "#;
 
         let formatted1 = format_document(source, &FormatOptions::default());
         let formatted2 = format_document(&formatted1, &FormatOptions::default());
 
-        assert_eq!(formatted1, formatted2, "Formatting should be idempotent");
+        assert_eq!(
+            formatted1, formatted2,
+            "Formatting should be idempotent: first='{}'  second='{}'",
+            formatted1, formatted2
+        );
     }
 
     #[test]

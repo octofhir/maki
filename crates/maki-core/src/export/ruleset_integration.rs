@@ -4,8 +4,8 @@
 //! extracting RuleSets from parsed FSH files and expanding insert statements.
 
 use crate::cst::FshSyntaxNode;
-use crate::cst::ast::{AstNode, CodeSystem, Document, Extension, Instance, Profile, ValueSet};
-use crate::semantic::ruleset::{RuleSet, RuleSetError, RuleSetExpander, RuleSetInsert};
+use crate::cst::ast::{AstNode, Document};
+use crate::semantic::ruleset::{RuleSetError, RuleSetExpander, RuleSetInsert};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -73,7 +73,7 @@ impl RuleSetProcessor {
         // Iterate through all children looking for RuleSet definitions
         for child in document.syntax().children() {
             // Check if this is a RuleSet definition
-            if let Some(ruleset_text) = self.try_parse_ruleset(&child, file_path) {
+            if let Some(_ruleset_text) = self.try_parse_ruleset(&child, file_path) {
                 // For now, we'll store the raw text and parse parameters/rules later
                 // This is a simplified implementation
                 debug!("Found RuleSet in {:?}", file_path);
@@ -85,7 +85,7 @@ impl RuleSetProcessor {
     }
 
     /// Try to parse a RuleSet from a syntax node
-    fn try_parse_ruleset(&self, node: &FshSyntaxNode, file_path: &PathBuf) -> Option<String> {
+    fn try_parse_ruleset(&self, _node: &FshSyntaxNode, _file_path: &PathBuf) -> Option<String> {
         // This is a placeholder - actual implementation would:
         // 1. Check if node is a RuleSet definition (RulesetKw)
         // 2. Extract name and parameters
@@ -117,55 +117,55 @@ impl RuleSetProcessor {
             // Process profiles
             for profile in document.profiles() {
                 let name = profile.name().unwrap_or_else(|| "Unknown".to_string());
-                if let Ok(expanded) = self.expand_entity_inserts(&profile.syntax(), file_path) {
-                    if !expanded.is_empty() {
-                        expanded_rules_map.insert(name.clone(), expanded);
-                        self.inserts_expanded += 1;
-                    }
+                if let Ok(expanded) = self.expand_entity_inserts(profile.syntax(), file_path)
+                    && !expanded.is_empty()
+                {
+                    expanded_rules_map.insert(name.clone(), expanded);
+                    self.inserts_expanded += 1;
                 }
             }
 
             // Process extensions
             for extension in document.extensions() {
                 let name = extension.name().unwrap_or_else(|| "Unknown".to_string());
-                if let Ok(expanded) = self.expand_entity_inserts(&extension.syntax(), file_path) {
-                    if !expanded.is_empty() {
-                        expanded_rules_map.insert(name.clone(), expanded);
-                        self.inserts_expanded += 1;
-                    }
+                if let Ok(expanded) = self.expand_entity_inserts(extension.syntax(), file_path)
+                    && !expanded.is_empty()
+                {
+                    expanded_rules_map.insert(name.clone(), expanded);
+                    self.inserts_expanded += 1;
                 }
             }
 
             // Process instances
             for instance in document.instances() {
                 let name = instance.name().unwrap_or_else(|| "Unknown".to_string());
-                if let Ok(expanded) = self.expand_entity_inserts(&instance.syntax(), file_path) {
-                    if !expanded.is_empty() {
-                        expanded_rules_map.insert(name.clone(), expanded);
-                        self.inserts_expanded += 1;
-                    }
+                if let Ok(expanded) = self.expand_entity_inserts(instance.syntax(), file_path)
+                    && !expanded.is_empty()
+                {
+                    expanded_rules_map.insert(name.clone(), expanded);
+                    self.inserts_expanded += 1;
                 }
             }
 
             // Process value sets
             for valueset in document.value_sets() {
                 let name = valueset.name().unwrap_or_else(|| "Unknown".to_string());
-                if let Ok(expanded) = self.expand_entity_inserts(&valueset.syntax(), file_path) {
-                    if !expanded.is_empty() {
-                        expanded_rules_map.insert(name.clone(), expanded);
-                        self.inserts_expanded += 1;
-                    }
+                if let Ok(expanded) = self.expand_entity_inserts(valueset.syntax(), file_path)
+                    && !expanded.is_empty()
+                {
+                    expanded_rules_map.insert(name.clone(), expanded);
+                    self.inserts_expanded += 1;
                 }
             }
 
             // Process code systems
             for codesystem in document.code_systems() {
                 let name = codesystem.name().unwrap_or_else(|| "Unknown".to_string());
-                if let Ok(expanded) = self.expand_entity_inserts(&codesystem.syntax(), file_path) {
-                    if !expanded.is_empty() {
-                        expanded_rules_map.insert(name.clone(), expanded);
-                        self.inserts_expanded += 1;
-                    }
+                if let Ok(expanded) = self.expand_entity_inserts(codesystem.syntax(), file_path)
+                    && !expanded.is_empty()
+                {
+                    expanded_rules_map.insert(name.clone(), expanded);
+                    self.inserts_expanded += 1;
                 }
             }
         }
@@ -206,7 +206,7 @@ impl RuleSetProcessor {
     }
 
     /// Try to parse an insert statement from a syntax node
-    fn try_parse_insert(&self, node: &FshSyntaxNode) -> Option<RuleSetInsert> {
+    fn try_parse_insert(&self, _node: &FshSyntaxNode) -> Option<RuleSetInsert> {
         // This is a placeholder - actual implementation would:
         // 1. Check if node contains InsertKw
         // 2. Extract RuleSet name

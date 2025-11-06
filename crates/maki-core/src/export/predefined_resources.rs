@@ -195,6 +195,7 @@ impl PredefinedResourcesLoader {
     }
 
     /// Recursively add subdirectories
+    #[allow(clippy::only_used_in_recursion)]
     fn add_recursive_subdirs(&self, base_path: &Path, paths: &mut Vec<PathBuf>) {
         if let Ok(entries) = run_blocking_io(|| fs::read_dir(base_path)) {
             for entry in entries.flatten() {

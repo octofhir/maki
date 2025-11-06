@@ -10,6 +10,7 @@ use tempfile::TempDir;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Helper function to create a test CLI command
+#[allow(deprecated)]
 fn cli() -> Command {
     Command::cargo_bin("maki").unwrap()
 }

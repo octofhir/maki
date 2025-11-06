@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn test_node_wrapping() {
         let source = "Profile: MyPatient\nParent: Patient";
-        let (cst, _errors) = parse_fsh(source);
+        let (cst, _lexer_errors, _parse_errors) = parse_fsh(source);
 
         let grit_node = FshGritNode::new(cst);
 
@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn test_parent_child_navigation() {
         let source = "Profile: MyPatient\nParent: Patient";
-        let (cst, _errors) = parse_fsh(source);
+        let (cst, _lexer_errors, _parse_errors) = parse_fsh(source);
 
         let root = FshGritNode::new(cst);
 
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn test_sibling_navigation() {
         let source = "Profile: Test1\nProfile: Test2";
-        let (cst, _errors) = parse_fsh(source);
+        let (cst, _lexer_errors, _parse_errors) = parse_fsh(source);
 
         let root = FshGritNode::new(cst);
         let children: Vec<_> = root.children().collect();
@@ -237,7 +237,7 @@ mod tests {
     #[test]
     fn test_text_extraction() {
         let source = "Profile: MyPatient";
-        let (cst, _errors) = parse_fsh(source);
+        let (cst, _lexer_errors, _parse_errors) = parse_fsh(source);
 
         let root = FshGritNode::new(cst);
         let text = root.text().unwrap();
@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn test_byte_range() {
         let source = "Profile: MyPatient";
-        let (cst, _errors) = parse_fsh(source);
+        let (cst, _lexer_errors, _parse_errors) = parse_fsh(source);
 
         let root = FshGritNode::new(cst);
         let range = root.byte_range();
@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn test_cursor_navigation() {
         let source = "Profile: MyPatient\nParent: Patient";
-        let (cst, _errors) = parse_fsh(source);
+        let (cst, _lexer_errors, _parse_errors) = parse_fsh(source);
 
         let root = FshGritNode::new(cst);
         let mut cursor = FshGritCursor::new(root.clone());
@@ -281,7 +281,7 @@ mod tests {
     #[test]
     fn test_ancestors_iteration() {
         let source = "Profile: MyPatient\nParent: Patient";
-        let (cst, _errors) = parse_fsh(source);
+        let (cst, _lexer_errors, _parse_errors) = parse_fsh(source);
 
         let root = FshGritNode::new(cst);
 
@@ -294,7 +294,7 @@ mod tests {
     #[test]
     fn test_lossless_property() {
         let source = "Profile: MyPatient  // Important profile\nParent: Patient";
-        let (cst, _errors) = parse_fsh(source);
+        let (cst, _lexer_errors, _parse_errors) = parse_fsh(source);
 
         let root = FshGritNode::new(cst);
         let reconstructed = root.text().unwrap();

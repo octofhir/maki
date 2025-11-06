@@ -16,16 +16,19 @@
 //! ```rust,no_run
 //! use maki_core::export::MappingExporter;
 //! use maki_core::cst::ast::Mapping;
+//! use std::sync::Arc;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # let session: Arc<maki_core::canonical::DefinitionSession> = todo!();
 //! // Parse FSH mapping
 //! let mapping: Mapping = todo!();
 //!
 //! // Create exporter
-//! let exporter = MappingExporter::new(session).await?;
+//! let exporter = MappingExporter::new(session, None).await?;
 //!
 //! // Apply mapping to source StructureDefinition
-//! exporter.apply_mapping(&mapping).await?;
+//! let mut structure_defs = std::collections::HashMap::new();
+//! exporter.apply_mapping(&mapping, &mut structure_defs).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -38,7 +41,7 @@ use crate::export::fhir_types::{
 };
 use crate::semantic::FishingContext;
 use std::sync::Arc;
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 
 // ============================================================================
 // Mapping Exporter
@@ -56,20 +59,22 @@ use tracing::{debug, trace, warn};
 /// # Example
 ///
 /// ```rust,no_run
-/// # use maki_core::export::MappingExporter;
-/// # use maki_core::canonical::DefinitionSession;
-/// # use std::sync::Arc;
+/// use maki_core::export::MappingExporter;
+/// use maki_core::canonical::DefinitionSession;
+/// use std::sync::Arc;
+///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let session: Arc<DefinitionSession> = todo!();
-/// let fishing_context: Arc<FishingContext> = todo!();
-/// let exporter = MappingExporter::new(session, fishing_context).await?;
+/// let exporter = MappingExporter::new(session, None).await?;
 /// # Ok(())
 /// # }
 /// ```
 pub struct MappingExporter {
     /// Session for resolving FHIR definitions
+    #[allow(dead_code)]
     session: Arc<DefinitionSession>,
     /// Fishing context for resolving source StructureDefinitions
+    #[allow(dead_code)]
     fishing_context: Option<Arc<FishingContext>>,
 }
 
@@ -84,9 +89,10 @@ impl MappingExporter {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use maki_core::export::MappingExporter;
-    /// # use maki_core::canonical::DefinitionSession;
-    /// # use std::sync::Arc;
+    /// use maki_core::export::MappingExporter;
+    /// use maki_core::canonical::DefinitionSession;
+    /// use std::sync::Arc;
+    ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let session: Arc<DefinitionSession> = todo!();
     /// let fishing_context = None;
@@ -125,9 +131,10 @@ impl MappingExporter {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use maki_core::export::MappingExporter;
-    /// # use maki_core::cst::ast::Mapping;
-    /// # use std::collections::HashMap;
+    /// use maki_core::export::MappingExporter;
+    /// use maki_core::cst::ast::Mapping;
+    /// use std::collections::HashMap;
+    ///
     /// # async fn example(exporter: MappingExporter, mapping: Mapping) -> Result<(), Box<dyn std::error::Error>> {
     /// let mut structure_defs = HashMap::new();
     /// exporter.apply_mapping(&mapping, &mut structure_defs).await?;
@@ -278,8 +285,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_apply_mapping_metadata() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_apply_mapping_metadata() {
         let source = r#"
 Mapping: PatientToV2
 Id: patient-to-v2
@@ -306,8 +313,9 @@ Description: "Maps FHIR Observation to HL7 V2 OBX segment"
         patient_sd.differential = Some(StructureDefinitionDifferential { element: vec![] });
         structure_defs.insert("Patient".to_string(), patient_sd);
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(exporter.apply_mapping(&mapping, &mut structure_defs))
+        exporter
+            .apply_mapping(&mapping, &mut structure_defs)
+            .await
             .unwrap();
 
         let patient_sd = structure_defs.get("Patient").unwrap();
@@ -322,8 +330,8 @@ Description: "Maps FHIR Observation to HL7 V2 OBX segment"
         );
     }
 
-    #[test]
-    fn test_apply_mapping_with_rules() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_apply_mapping_with_rules() {
         let source = r#"
 Mapping: PatientToV2
 Id: patient-to-v2
@@ -348,9 +356,8 @@ Target: "HL7 V2 PID segment"
             StructureDefinitionKind::Resource,
         );
 
-        let mut name_element =
-            crate::export::fhir_types::ElementDefinition::new("name".to_string());
-        let mut status_element =
+        let name_element = crate::export::fhir_types::ElementDefinition::new("name".to_string());
+        let status_element =
             crate::export::fhir_types::ElementDefinition::new("status".to_string());
 
         patient_sd.differential = Some(StructureDefinitionDifferential {
@@ -358,8 +365,9 @@ Target: "HL7 V2 PID segment"
         });
         structure_defs.insert("TestPatient".to_string(), patient_sd);
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(exporter.apply_mapping(&mapping, &mut structure_defs))
+        exporter
+            .apply_mapping(&mapping, &mut structure_defs)
+            .await
             .unwrap();
 
         let patient_sd = structure_defs.get("TestPatient").unwrap();

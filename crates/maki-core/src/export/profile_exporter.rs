@@ -3,6 +3,8 @@
 //! Exports FSH Profile definitions to FHIR StructureDefinition resources.
 //! This is the core of the FSH-to-FHIR transformation pipeline.
 //!
+
+#![allow(dead_code)]
 //! # Algorithm
 //!
 //! 1. **Get Base Definition**: Resolve parent StructureDefinition from FHIR packages
@@ -21,9 +23,16 @@
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let session: Arc<DefinitionSession> = todo!();
+//! let alias_table = maki_core::semantic::AliasTable::default();
+//! let package = Arc::new(tokio::sync::RwLock::new(maki_core::semantic::Package::new()));
 //! let exporter = ProfileExporter::new(
 //!     session,
 //!     "http://example.org/fhir".to_string(),
+//!     Some("1.0.0".to_string()),
+//!     Some("draft".to_string()),
+//!     Some("Example Org".to_string()),
+//!     alias_table,
+//!     package,
 //! ).await?;
 //!
 //! // Parse profile from FSH
@@ -39,8 +48,8 @@ use super::differential_generator::DifferentialGenerator;
 use super::fhir_types::*;
 use crate::canonical::{CanonicalLoaderError, DefinitionSession};
 use crate::cst::ast::{
-    CardRule, CaretValueRule, ContainsRule, FixedValueRule, FlagRule, FlagValue, ObeysRule, OnlyRule, Profile,
-    Rule, ValueSetRule,
+    CardRule, CaretValueRule, ContainsRule, FixedValueRule, FlagRule, FlagValue, ObeysRule,
+    OnlyRule, Profile, Rule, ValueSetRule,
 };
 use crate::semantic::path_resolver::PathResolver;
 use serde_json::Value as JsonValue;
@@ -150,6 +159,7 @@ pub struct ProfileExporter {
     /// Session for resolving FHIR definitions
     session: Arc<DefinitionSession>,
     /// Path resolver for finding elements
+    #[allow(dead_code)]
     path_resolver: Arc<PathResolver>,
     /// Differential generator for rule-based differential creation
     differential_generator: DifferentialGenerator,
@@ -183,18 +193,22 @@ impl ProfileExporter {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// use maki_core::export::ProfileExporter;
     /// use maki_core::canonical::DefinitionSession;
     /// use std::sync::Arc;
     ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let session: Arc<DefinitionSession> = todo!();
+    /// let alias_table = maki_core::semantic::AliasTable::default();
+    /// let package = Arc::new(tokio::sync::RwLock::new(maki_core::semantic::Package::new()));
     /// let exporter = ProfileExporter::new(
     ///     session,
     ///     "http://example.org/fhir".to_string(),
     ///     Some("1.0.0".to_string()),
     ///     Some("draft".to_string()),
     ///     Some("Example Org".to_string()),
+    ///     alias_table,
+    ///     package,
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -416,7 +430,9 @@ impl ProfileExporter {
         {
             let package = self.package.read().await;
             for (canonical_url, resource_json) in package.all_resources().iter() {
-                if let Ok(sd) = serde_json::from_value::<StructureDefinition>((**resource_json).clone()) {
+                if let Ok(sd) =
+                    serde_json::from_value::<StructureDefinition>((**resource_json).clone())
+                {
                     // Check if name matches parent
                     if sd.name == parent {
                         eprintln!(
@@ -453,7 +469,10 @@ impl ProfileExporter {
                     "[GET_BASE_SD] Step 3: Resolved parent via canonical URL {} → {}",
                     parent_to_resolve, sd.url
                 );
-                debug!("Resolved parent via canonical URL {} → {}", parent_to_resolve, sd.url);
+                debug!(
+                    "Resolved parent via canonical URL {} → {}",
+                    parent_to_resolve, sd.url
+                );
                 return Ok(sd);
             }
 
@@ -475,20 +494,29 @@ impl ProfileExporter {
             parent_to_resolve
         );
 
-        eprintln!("[DEBUG] >>> CRITICAL: About to call session.resolve() for: {}", parent_to_resolve);
+        eprintln!(
+            "[DEBUG] >>> CRITICAL: About to call session.resolve() for: {}",
+            parent_to_resolve
+        );
         let resolve_start = std::time::Instant::now();
 
         let resolve_result = self.session.resolve(parent_to_resolve).await;
         let resolve_elapsed = resolve_start.elapsed();
 
-        eprintln!("[DEBUG] <<< session.resolve() returned after {:?} for: {}", resolve_elapsed, parent_to_resolve);
+        eprintln!(
+            "[DEBUG] <<< session.resolve() returned after {:?} for: {}",
+            resolve_elapsed, parent_to_resolve
+        );
 
         if let Ok(resource) = resolve_result {
             eprintln!(
                 "[GET_BASE_SD] Step 6: Found parent '{}' in canonical packages by name",
                 parent_to_resolve
             );
-            debug!("Found parent '{}' in canonical packages by name", parent_to_resolve);
+            debug!(
+                "Found parent '{}' in canonical packages by name",
+                parent_to_resolve
+            );
             let sd_json = (*resource.content).clone();
             match serde_json::from_value::<StructureDefinition>(sd_json) {
                 Ok(sd) => {
@@ -508,26 +536,41 @@ impl ProfileExporter {
         }
 
         // 3. Try resolving as a FHIR core profile (fast path)
-        eprintln!("[DEBUG] >>> Trying FHIR core canonical for: {}", parent_to_resolve);
+        eprintln!(
+            "[DEBUG] >>> Trying FHIR core canonical for: {}",
+            parent_to_resolve
+        );
         let start_core = std::time::Instant::now();
-        let core_candidate = format!("http://hl7.org/fhir/StructureDefinition/{}", parent_to_resolve);
+        let core_candidate = format!(
+            "http://hl7.org/fhir/StructureDefinition/{}",
+            parent_to_resolve
+        );
         if let Some(sd) = self
             .resolve_structure_definition_from_canonical(&core_candidate)
             .await?
         {
-            eprintln!("[DEBUG] <<< Found via FHIR core after {:?}", start_core.elapsed());
+            eprintln!(
+                "[DEBUG] <<< Found via FHIR core after {:?}",
+                start_core.elapsed()
+            );
             debug!(
                 "Resolved parent {} using FHIR core canonical {}",
                 parent_to_resolve, core_candidate
             );
             return Ok(sd);
         }
-        eprintln!("[DEBUG] <<< FHIR core lookup failed after {:?}", start_core.elapsed());
+        eprintln!(
+            "[DEBUG] <<< FHIR core lookup failed after {:?}",
+            start_core.elapsed()
+        );
 
         // 4. Fallback to searching by ID/name via canonical manager index
         eprintln!("[DEBUG] >>> Searching by ID: {}", parent_to_resolve);
         let start_search = std::time::Instant::now();
-        debug!("Searching for StructureDefinition with name/id: {}", parent_to_resolve);
+        debug!(
+            "Searching for StructureDefinition with name/id: {}",
+            parent_to_resolve
+        );
 
         // Try multiple search strategies:
         // 1. Search by exact ID match (e.g., "us-core-patient")
@@ -561,20 +604,29 @@ impl ProfileExporter {
                 .resource_by_type_and_name("StructureDefinition", parent_to_resolve)
                 .await
             {
-                eprintln!("[DEBUG] <<< Found by exact name after {:?}", start_search.elapsed());
+                eprintln!(
+                    "[DEBUG] <<< Found by exact name after {:?}",
+                    start_search.elapsed()
+                );
                 debug!("Found parent by exact name: {}", parent_to_resolve);
                 resource.canonical_url.clone()
             } else {
                 // Try with "Profile" suffix by name (common US Core pattern: USCoreMedicationRequestProfile)
                 let with_profile_suffix = format!("{}Profile", parent_to_resolve);
-                debug!("Trying with Profile suffix by name: {}", with_profile_suffix);
+                debug!(
+                    "Trying with Profile suffix by name: {}",
+                    with_profile_suffix
+                );
 
                 if let Ok(Some(resource)) = self
                     .session
                     .resource_by_type_and_name("StructureDefinition", &with_profile_suffix)
                     .await
                 {
-                    debug!("Found parent with Profile suffix by name: {}", with_profile_suffix);
+                    debug!(
+                        "Found parent with Profile suffix by name: {}",
+                        with_profile_suffix
+                    );
                     resource.canonical_url.clone()
                 } else {
                     let kebab_case = camel_to_kebab(parent_to_resolve);
@@ -818,7 +870,10 @@ impl ProfileExporter {
             .cardinality()
             .ok_or_else(|| ExportError::InvalidCardinality("missing".to_string()))?;
 
-        trace!("Applying cardinality rule: {} {}", path_str, cardinality_node);
+        trace!(
+            "Applying cardinality rule: {} {}",
+            path_str, cardinality_node
+        );
 
         // Use structured cardinality access instead of string parsing
         let min = cardinality_node
@@ -1670,7 +1725,7 @@ mod tests {
 
         // Create a minimal exporter just for testing differential generation
         // This is safe because generate_differential doesn't use session/path_resolver
-        let base_url = "http://test.org".to_string();
+        let _base_url = "http://test.org".to_string();
         let diff = ProfileExporter::generate_differential_static(&base, &modified);
         assert_eq!(diff.element.len(), 0);
     }
