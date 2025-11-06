@@ -578,8 +578,11 @@ fn test_nested_directories() {
         .success();
 }
 
+#[cfg(unix)]
 #[test]
 fn test_symlinks() {
+    use std::os::unix::fs as unix_fs;
+
     let temp_dir = TempDir::new().unwrap();
 
     // Create a file and a symlink to it (if supported by the OS)
@@ -587,7 +590,7 @@ fn test_symlinks() {
     fs::write(&original_file, "Profile: Original\nParent: Patient\nId: original\nTitle: \"Original\"\nDescription: \"Original profile\"").unwrap();
 
     // Try to create symlink (may fail on some systems)
-    if std::os::unix::fs::symlink(&original_file, temp_dir.path().join("link.fsh")).is_ok() {
+    if unix_fs::symlink(&original_file, temp_dir.path().join("link.fsh")).is_ok() {
         cli()
             .args(["lint", temp_dir.path().to_str().unwrap()])
             .assert()
