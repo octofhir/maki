@@ -97,6 +97,7 @@ fn detect_overly_restrictive(
 /// - Parent 0..5, child 0..1 - significantly reduces upper bound
 ///
 /// Returns (is_too_restrictive, message)
+#[allow(dead_code)]
 fn is_cardinality_too_restrictive(
     parent: &Cardinality,
     child: &Cardinality,
@@ -173,9 +174,9 @@ pub fn check_cardinality(model: &SemanticModel) -> Vec<Diagnostic> {
 ///
 /// When a DefinitionSession is provided (via the rule engine), it will validate
 /// against actual FHIR parent definitions. Otherwise, it performs pattern-based validation.
-pub fn check_cardinality_conflicts(
+pub async fn check_cardinality_conflicts(
     model: &SemanticModel,
-    _session: Option<&maki_core::canonical::DefinitionSession>,
+    session: Option<&maki_core::canonical::DefinitionSession>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -183,35 +184,183 @@ pub fn check_cardinality_conflicts(
         return diagnostics;
     };
 
-    // Check profiles for cardinality conflicts with parent
-    for profile in document.profiles() {
-        let card_rules: Vec<CardRule> = profile
-            .rules()
-            .filter_map(|r| match r {
-                maki_core::cst::ast::Rule::Card(c) => Some(c),
-                _ => None,
-            })
-            .collect();
+    // Collect profiles first to avoid holding CST iterators across await
+    let profiles: Vec<_> = document.profiles().collect();
 
-        for rule in card_rules {
-            let cardinality_text = rule.syntax().text().to_string().trim().to_string();
+    for profile in profiles {
+        diagnostics.extend(check_profile_cardinality_conflicts(&profile, model, session).await);
+    }
 
-            // Parse child cardinality
-            if let Some(child_card) = Cardinality::from_str(&cardinality_text) {
-                let location = model.source_map.node_to_diagnostic_location(
-                    rule.syntax(),
-                    &model.source,
-                    &model.source_file,
-                );
+    diagnostics
+}
 
-                // Check for suspicious patterns that indicate conflicts
-                // Full parent validation will replace this once canonical-manager is integrated
-                diagnostics.extend(detect_conflict_patterns(&child_card, location));
+/// Check a profile for cardinality conflicts with parent
+async fn check_profile_cardinality_conflicts(
+    profile: &maki_core::cst::ast::Profile,
+    model: &SemanticModel,
+    session: Option<&maki_core::canonical::DefinitionSession>,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    // Collect all cardinality rules and their data before any async operations
+    let card_rules: Vec<_> = profile
+        .rules()
+        .filter_map(|r| match r {
+            maki_core::cst::ast::Rule::Card(c) => {
+                let text = c.syntax().text().to_string().trim().to_string();
+                let range = c.syntax().text_range();
+                Some((c, text, range))
             }
+            _ => None,
+        })
+        .collect();
+
+    // If we have a session and parent, try to resolve parent cardinality
+    if let Some(session) = session
+        && let Some(parent) = profile.parent()
+        && let Some(parent_name) = parent.value()
+    {
+        // Resolve parent StructureDefinition asynchronously
+        if let Ok(Some(parent_sd)) = session.resolve_structure_definition(&parent_name).await {
+            // Check each cardinality rule against parent
+            for (rule, cardinality_text, text_range) in card_rules {
+                if let Some(child_card) = Cardinality::from_str(&cardinality_text) {
+                    // Get element path
+                    let path_str = rule
+                        .path()
+                        .map(|p| p.syntax().text().to_string())
+                        .unwrap_or_else(|| "unknown".to_string());
+
+                    // Find parent element cardinality
+                    if let Some(parent_card) = find_element_cardinality(&parent_sd, &path_str) {
+                        // Check if child violates parent constraints
+                        if !child_card.is_valid_refinement(&parent_card) {
+                            let span = text_range.start().into()..text_range.end().into();
+                            let location = model.source_map.span_to_diagnostic_location(
+                                &span,
+                                &model.source,
+                                &model.source_file,
+                            );
+
+                            diagnostics.push(
+                                Diagnostic::new(
+                                    CARDINALITY_CONFLICTS,
+                                    Severity::Error,
+                                    format!(
+                                        "Cardinality {} for element '{}' conflicts with parent '{}' cardinality {}",
+                                        child_card.as_string(),
+                                        path_str,
+                                        parent_name,
+                                        parent_card.as_string()
+                                    ),
+                                    location,
+                                )
+                                .with_code("cardinality-conflict".to_string()),
+                            );
+                        }
+                    } else {
+                        // No parent cardinality found - use heuristic pattern detection
+                        let span = text_range.start().into()..text_range.end().into();
+                        let location = model.source_map.span_to_diagnostic_location(
+                            &span,
+                            &model.source,
+                            &model.source_file,
+                        );
+                        diagnostics.extend(detect_conflict_patterns(&child_card, location));
+                    }
+                }
+            }
+            return diagnostics;
+        }
+    }
+
+    // Fallback: No session or couldn't resolve parent - use heuristic pattern detection
+    for (_, cardinality_text, text_range) in card_rules {
+        if let Some(child_card) = Cardinality::from_str(&cardinality_text) {
+            let span = text_range.start().into()..text_range.end().into();
+            let location = model.source_map.span_to_diagnostic_location(
+                &span,
+                &model.source,
+                &model.source_file,
+            );
+            diagnostics.extend(detect_conflict_patterns(&child_card, location));
         }
     }
 
     diagnostics
+}
+
+/// Find cardinality for a specific element in a StructureDefinition
+fn find_element_cardinality(
+    sd: &maki_core::export::StructureDefinition,
+    element_path: &str,
+) -> Option<Cardinality> {
+    let resource_type: &str = sd.resource_type.as_ref();
+    let full_path = if element_path == "." || element_path.is_empty() {
+        resource_type.to_string()
+    } else {
+        format!("{}.{}", resource_type, element_path)
+    };
+
+    // Look through snapshot elements first
+    if let Some(snapshot) = &sd.snapshot {
+        for element in &snapshot.element {
+            if (element.path == full_path || element.path.ends_with(&format!(".{}", element_path)))
+                && element.min.is_some()
+            {
+                return Some(Cardinality {
+                    min: element.min.unwrap_or(0),
+                    max: element.max.as_deref().and_then(|m| {
+                        if m == "*" {
+                            None
+                        } else {
+                            m.parse().ok()
+                        }
+                    }),
+                });
+            }
+        }
+    }
+
+    // Fall back to differential
+    if let Some(differential) = &sd.differential {
+        for element in &differential.element {
+            if (element.path == full_path || element.path.ends_with(&format!(".{}", element_path)))
+                && element.min.is_some()
+            {
+                return Some(Cardinality {
+                    min: element.min.unwrap_or(0),
+                    max: element.max.as_deref().and_then(|m| {
+                        if m == "*" {
+                            None
+                        } else {
+                            m.parse().ok()
+                        }
+                    }),
+                });
+            }
+        }
+    }
+
+    None
+}
+
+/// Check if a child cardinality is a valid refinement of parent cardinality
+impl Cardinality {
+    fn is_valid_refinement(&self, parent: &Cardinality) -> bool {
+        // Child min must be >= parent min
+        if self.min < parent.min {
+            return false;
+        }
+
+        // Child max must be <= parent max
+        match (self.max, parent.max) {
+            (Some(child_max), Some(parent_max)) => child_max <= parent_max,
+            (Some(_), None) => true,  // Child bounded, parent unbounded: OK
+            (None, Some(_)) => false, // Child unbounded, parent bounded: NOT OK
+            (None, None) => true,     // Both unbounded: OK
+        }
+    }
 }
 
 /// Check for cardinality being overly restrictive (Phase 2: Warning detection)
@@ -263,6 +412,7 @@ struct Cardinality {
 
 impl Cardinality {
     /// Create a cardinality from min and max values
+    #[allow(dead_code)]
     fn new(min: u32, max: Option<u32>) -> Self {
         Self { min, max }
     }
@@ -283,6 +433,7 @@ impl Cardinality {
     /// In FHIR, child cardinality must be more restrictive than parent:
     /// - child_min >= parent_min
     /// - child_max <= parent_max (respecting unbounded)
+    #[allow(dead_code)]
     fn is_subset_of(&self, parent: &Cardinality) -> bool {
         // Child minimum must be >= parent minimum
         if self.min < parent.min {
@@ -303,6 +454,7 @@ impl Cardinality {
     }
 
     /// Convert to string representation for error messages
+    #[allow(dead_code)]
     fn as_string(&self) -> String {
         match self.max {
             Some(max) => format!("{}..{}", self.min, max),
@@ -926,15 +1078,15 @@ Parent: Patient
     }
 
     // Tests for Phase 2 rule functions
-    #[test]
-    fn test_check_cardinality_conflicts_rule() {
+    #[tokio::test]
+    async fn test_check_cardinality_conflicts_rule() {
         let source = r#"
 Profile: MyProfile
 Parent: Patient
 * name 2..*
 "#;
         let model = create_test_model(source);
-        let diagnostics = check_cardinality_conflicts(&model, None);
+        let diagnostics = check_cardinality_conflicts(&model, None).await;
         // Should detect unbounded with high minimum as suspicious
         let has_warning = diagnostics.iter().any(|d| {
             d.rule_id == CARDINALITY_CONFLICTS && d.severity == Severity::Warning
@@ -963,8 +1115,8 @@ Parent: Patient
         assert!(has_restrictive, "Should warn about restrictive cardinality");
     }
 
-    #[test]
-    fn test_cardinality_conflicts_normal_cardinality() {
+    #[tokio::test]
+    async fn test_cardinality_conflicts_normal_cardinality() {
         let source = r#"
 Profile: MyProfile
 Parent: Patient
@@ -972,7 +1124,7 @@ Parent: Patient
 * birthDate 0..*
 "#;
         let model = create_test_model(source);
-        let diagnostics = check_cardinality_conflicts(&model, None);
+        let diagnostics = check_cardinality_conflicts(&model, None).await;
         // Normal cardinality should not trigger conflicts warning
         assert!(diagnostics.is_empty());
     }
@@ -991,8 +1143,8 @@ Parent: Patient
         assert!(diagnostics.is_empty());
     }
 
-    #[test]
-    fn test_phase2_rules_integration() {
+    #[tokio::test]
+    async fn test_phase2_rules_integration() {
         let source = r#"
 Profile: RestrictiveProfile
 Parent: Patient
@@ -1011,7 +1163,7 @@ Parent: Patient
         assert_eq!(phase1_warnings.len(), 1, "Phase 1: Should warn about 0..0");
 
         // Phase 2a: Conflict detection
-        let conflict_diags = check_cardinality_conflicts(&model, None);
+        let conflict_diags = check_cardinality_conflicts(&model, None).await;
         let _has_conflicts = conflict_diags.iter().any(|d| d.rule_id == CARDINALITY_CONFLICTS);
         // May or may not have conflicts depending on patterns
 

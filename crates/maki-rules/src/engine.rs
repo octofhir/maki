@@ -97,6 +97,7 @@ pub struct DefaultRuleEngine {
     registry: RuleRegistry,
     gritql_loader: Option<crate::gritql::GritQLRuleLoader>,
     gritql_compiler: Arc<GritQLCompiler>,
+    session: Option<Arc<maki_core::canonical::DefinitionSession>>,
 }
 
 impl RuleRegistry {
@@ -307,6 +308,7 @@ impl DefaultRuleEngine {
             registry: RuleRegistry::new(),
             gritql_loader: None,
             gritql_compiler: Arc::new(compiler),
+            session: None,
         }
     }
 
@@ -321,6 +323,7 @@ impl DefaultRuleEngine {
             registry: RuleRegistry::with_config(config),
             gritql_loader: None,
             gritql_compiler: Arc::new(compiler),
+            session: None,
         }
     }
 
@@ -348,6 +351,7 @@ impl DefaultRuleEngine {
             registry: RuleRegistry::new(),
             gritql_loader: Some(gritql_loader),
             gritql_compiler: Arc::new(compiler),
+            session: None,
         })
     }
 
@@ -650,7 +654,7 @@ impl DefaultRuleEngine {
     }
 
     /// Execute a single rule against the semantic model
-    fn execute_single_rule(
+    async fn execute_single_rule(
         &self,
         rule: &CompiledRule,
         model: &SemanticModel,
@@ -674,8 +678,9 @@ impl DefaultRuleEngine {
                 }
                 crate::builtin::cardinality::CARDINALITY_CONFLICTS => {
                     diagnostics.extend(crate::builtin::cardinality::check_cardinality_conflicts(
-                        model, None,
-                    ));
+                        model,
+                        self.session.as_ref().map(|s| s.as_ref()),
+                    ).await);
                 }
                 crate::builtin::cardinality::CARDINALITY_TOO_RESTRICTIVE => {
                     diagnostics
@@ -689,7 +694,19 @@ impl DefaultRuleEngine {
                     ));
                 }
                 crate::builtin::binding::BINDING_STRENGTH_PRESENT => {
-                    diagnostics.extend(crate::builtin::binding::check_binding_strength(model));
+                    diagnostics.extend(crate::builtin::binding::check_binding_strength_required(model));
+                }
+                crate::builtin::binding::BINDING_STRENGTH_WEAKENING => {
+                    diagnostics.extend(crate::builtin::binding::check_binding_strength_weakening(
+                        model,
+                        self.session.as_ref().map(|s| s.as_ref()),
+                    ).await);
+                }
+                crate::builtin::binding::BINDING_STRENGTH_INCONSISTENT => {
+                    diagnostics.extend(crate::builtin::binding::check_binding_strength_inconsistent(model));
+                }
+                crate::builtin::binding::BINDING_WITHOUT_VALUESET => {
+                    diagnostics.extend(crate::builtin::binding::check_binding_without_valueset(model));
                 }
                 crate::builtin::metadata::MISSING_METADATA => {
                     diagnostics.extend(crate::builtin::metadata::check_missing_metadata(model));
@@ -701,7 +718,20 @@ impl DefaultRuleEngine {
                     diagnostics.extend(crate::builtin::profile::check_profile_assignments(model));
                 }
                 crate::builtin::profile::EXTENSION_CONTEXT_MISSING => {
-                    diagnostics.extend(crate::builtin::profile::check_extension_context(model));
+                    // Use the enhanced implementation from required_fields with Error severity and autofix
+                    diagnostics.extend(crate::builtin::required_fields::check_extension_context(model));
+                }
+                crate::builtin::required_fields::INSTANCE_REQUIRED_FIELDS_MISSING => {
+                    diagnostics.extend(crate::builtin::required_fields::check_instance_required_fields(model));
+                }
+                crate::builtin::required_fields::REQUIRED_FIELD_OVERRIDE => {
+                    diagnostics.extend(crate::builtin::required_fields::check_required_field_override(
+                        model,
+                        self.session.as_ref().map(|s| s.as_ref()),
+                    ).await);
+                }
+                crate::builtin::required_fields::PROFILE_WITHOUT_EXAMPLES => {
+                    diagnostics.extend(crate::builtin::required_fields::check_profile_without_examples(model));
                 }
                 crate::builtin::naming::NAMING_CONVENTION => {
                     diagnostics.extend(crate::builtin::naming::check_naming_conventions(model));
@@ -784,7 +814,55 @@ impl RuleEngineTrait for DefaultRuleEngine {
         Ok(compiled_rule)
     }
 
-    fn execute_rules(&self, model: &SemanticModel) -> Vec<Diagnostic> {
+    fn execute_rules<'a>(
+        &'a self,
+        model: &'a SemanticModel,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Vec<Diagnostic>> + Send + 'a>> {
+        Box::pin(self.execute_rules_impl(model))
+    }
+
+    fn get_rules(&self) -> &[CompiledRule] {
+        // This is a bit awkward since we need to return a slice, but we have a HashMap
+        // For now, we'll use a static empty slice. In a real implementation,
+        // we might want to change the trait to return an iterator or Vec
+        &[]
+    }
+
+    fn get_rule(&self, id: &str) -> Option<&CompiledRule> {
+        self.registry.get(id)
+    }
+
+    fn validate_rule(&self, rule: &Rule) -> Result<()> {
+        // First run the rule's own validation
+        rule.validate()?;
+
+        // Additional validation specific to the engine
+        if self.registry.get(&rule.id).is_some() {
+            return Err(MakiError::rule_error(
+                &rule.id,
+                "Rule with this ID is already registered",
+            ));
+        }
+
+        // Validate GritQL pattern syntax (only for non-AST rules)
+        if !rule.is_ast_rule && rule.gritql_pattern.trim().is_empty() {
+            return Err(MakiError::rule_error(
+                &rule.id,
+                "GritQL pattern cannot be empty or whitespace-only for non-AST rules",
+            ));
+        }
+
+        // Validate metadata
+        if rule.metadata.name.trim().is_empty() {
+            return Err(MakiError::rule_error(&rule.id, "Rule name cannot be empty"));
+        }
+
+        Ok(())
+    }
+}
+
+impl DefaultRuleEngine {
+    async fn execute_rules_impl(&self, model: &SemanticModel) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
 
         // Use the pre-initialized GritQL compiler (shared across all files)
@@ -809,7 +887,7 @@ impl RuleEngineTrait for DefaultRuleEngine {
             }
 
             // Execute the rule against each file in the semantic model
-            match self.execute_single_rule(rule, model, compiler) {
+            match self.execute_single_rule(rule, model, compiler).await {
                 Ok(mut rule_diagnostics) => {
                     diagnostics.append(&mut rule_diagnostics);
                 }
@@ -873,47 +951,6 @@ impl RuleEngineTrait for DefaultRuleEngine {
         diagnostics
     }
 
-    fn get_rules(&self) -> &[CompiledRule] {
-        // This is a bit awkward since we need to return a slice, but we have a HashMap
-        // For now, we'll use a static empty slice. In a real implementation,
-        // we might want to change the trait to return an iterator or Vec
-        &[]
-    }
-
-    fn get_rule(&self, id: &str) -> Option<&CompiledRule> {
-        self.registry.get(id)
-    }
-
-    fn validate_rule(&self, rule: &Rule) -> Result<()> {
-        // First run the rule's own validation
-        rule.validate()?;
-
-        // Additional validation specific to the engine
-        if self.registry.get(&rule.id).is_some() {
-            return Err(MakiError::rule_error(
-                &rule.id,
-                "Rule with this ID is already registered",
-            ));
-        }
-
-        // Validate GritQL pattern syntax (only for non-AST rules)
-        if !rule.is_ast_rule && rule.gritql_pattern.trim().is_empty() {
-            return Err(MakiError::rule_error(
-                &rule.id,
-                "GritQL pattern cannot be empty or whitespace-only for non-AST rules",
-            ));
-        }
-
-        // Validate metadata
-        if rule.metadata.name.trim().is_empty() {
-            return Err(MakiError::rule_error(&rule.id, "Rule name cannot be empty"));
-        }
-
-        Ok(())
-    }
-}
-
-impl DefaultRuleEngine {
     /// Set the discovery configuration
     pub fn set_discovery_config(&mut self, config: RuleDiscoveryConfig) {
         self.registry.discovery_config = config;
@@ -932,6 +969,11 @@ impl DefaultRuleEngine {
     /// Set rule precedence configuration
     pub fn set_rule_precedence(&mut self, precedence: Vec<RulePrecedence>) {
         self.registry.discovery_config.precedence = precedence;
+    }
+
+    /// Set the canonical manager session for FHIR resource resolution
+    pub fn set_session(&mut self, session: Arc<maki_core::canonical::DefinitionSession>) {
+        self.session = Some(session);
     }
 
     /// Get statistics about loaded rules and packs

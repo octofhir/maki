@@ -46,6 +46,10 @@ impl BuiltinRules {
             Self::invalid_status_rule(),
             Self::profile_assignment_present_rule(),
             Self::extension_context_missing_rule(),
+            Self::instance_required_fields_rule(),
+            Self::required_field_override_rule(),
+            Self::binding_strength_weakening_rule(),
+            Self::binding_without_valueset_rule(),
         ]
     }
 
@@ -54,6 +58,7 @@ impl BuiltinRules {
         vec![
             Self::trailing_text_rule(),
             Self::inconsistent_metadata_rule(),
+            Self::binding_strength_inconsistent_rule(),
         ]
     }
 
@@ -72,6 +77,7 @@ impl BuiltinRules {
             Self::missing_description_rule(),
             Self::missing_title_rule(),
             Self::missing_publisher_rule(),
+            Self::profile_without_examples_rule(),
         ]
     }
 
@@ -1108,6 +1114,188 @@ impl BuiltinRules {
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
                     "https://octofhir.github.io/maki/rules/style/naming-convention"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
+        }
+    }
+
+    /// Rule for detecting binding strength weakening (child weaker than parent)
+    /// This is a CORRECTNESS rule - requires FHIR definitions
+    fn binding_strength_weakening_rule() -> Rule {
+        Rule {
+            id: binding::BINDING_STRENGTH_WEAKENING.to_string(),
+            severity: Severity::Error,
+            description: "Detects child profiles weakening parent binding strengths".to_string(),
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: binding::BINDING_STRENGTH_WEAKENING.to_string(),
+                name: "Binding Strength Weakening".to_string(),
+                description: "Prevents child profiles from using weaker binding strengths than their parent profiles (e.g., parent required, child preferred is invalid)".to_string(),
+                severity: Severity::Error,
+                category: RuleCategory::Correctness,
+                tags: vec![
+                    "correctness".to_string(),
+                    "binding".to_string(),
+                    "terminology".to_string(),
+                    "semantic".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/maki/rules/correctness/binding-strength-weakening"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
+        }
+    }
+
+    /// Rule for detecting inconsistent binding strengths across similar elements
+    /// This is a BEST PRACTICE rule - informational only
+    fn binding_strength_inconsistent_rule() -> Rule {
+        Rule {
+            id: binding::BINDING_STRENGTH_INCONSISTENT.to_string(),
+            severity: Severity::Info,
+            description: "Detects inconsistent binding strengths for similar elements".to_string(),
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: binding::BINDING_STRENGTH_INCONSISTENT.to_string(),
+                name: "Binding Strength Inconsistent".to_string(),
+                description: "Warns when similar elements (e.g., all 'code' elements) use different binding strengths without clear rationale".to_string(),
+                severity: Severity::Info,
+                category: RuleCategory::Suspicious,
+                tags: vec![
+                    "suspicious".to_string(),
+                    "binding".to_string(),
+                    "terminology".to_string(),
+                    "consistency".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/maki/rules/best-practice/binding-strength-inconsistent"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
+        }
+    }
+
+    /// Rule for detecting bindings to non-existent ValueSets
+    /// This is a CORRECTNESS rule
+    fn binding_without_valueset_rule() -> Rule {
+        Rule {
+            id: binding::BINDING_WITHOUT_VALUESET.to_string(),
+            severity: Severity::Warning,
+            description: "Detects bindings that reference non-existent ValueSets".to_string(),
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: binding::BINDING_WITHOUT_VALUESET.to_string(),
+                name: "Binding Without ValueSet".to_string(),
+                description: "Warns when bindings reference ValueSets that are not defined in the project, FHIR specification, or imported packages".to_string(),
+                severity: Severity::Warning,
+                category: RuleCategory::Correctness,
+                tags: vec![
+                    "correctness".to_string(),
+                    "binding".to_string(),
+                    "terminology".to_string(),
+                    "references".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/maki/rules/correctness/binding-without-valueset"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
+        }
+    }
+
+    /// Rule for detecting instances missing required fields from their profiles
+    fn instance_required_fields_rule() -> Rule {
+        Rule {
+            id: required_fields::INSTANCE_REQUIRED_FIELDS_MISSING.to_string(),
+            severity: Severity::Error,
+            description: "Validates that instances provide all required fields from their profiles".to_string(),
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: required_fields::INSTANCE_REQUIRED_FIELDS_MISSING.to_string(),
+                name: "Instance Required Fields Missing".to_string(),
+                description: "Ensures that instance examples satisfy cardinality requirements (min >= 1) defined in their profiles".to_string(),
+                severity: Severity::Error,
+                category: RuleCategory::Correctness,
+                tags: vec![
+                    "correctness".to_string(),
+                    "instance".to_string(),
+                    "required-fields".to_string(),
+                    "validation".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/maki/rules/correctness/instance-required-fields"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
+        }
+    }
+
+    /// Rule for detecting required field overrides (async with DefinitionSession)
+    fn required_field_override_rule() -> Rule {
+        Rule {
+            id: required_fields::REQUIRED_FIELD_OVERRIDE.to_string(),
+            severity: Severity::Error,
+            description: "Detects when child profiles make parent's required fields optional".to_string(),
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: required_fields::REQUIRED_FIELD_OVERRIDE.to_string(),
+                name: "Required Field Override".to_string(),
+                description: "Validates that child profiles do not weaken parent cardinality constraints by making required fields (min >= 1) optional (min = 0)".to_string(),
+                severity: Severity::Error,
+                category: RuleCategory::Correctness,
+                tags: vec![
+                    "correctness".to_string(),
+                    "cardinality".to_string(),
+                    "inheritance".to_string(),
+                    "validation".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/maki/rules/correctness/required-field-override"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
+        }
+    }
+
+    /// Rule for detecting profiles without example instances
+    fn profile_without_examples_rule() -> Rule {
+        Rule {
+            id: required_fields::PROFILE_WITHOUT_EXAMPLES.to_string(),
+            severity: Severity::Warning,
+            description: "Warns when profiles have no example instances".to_string(),
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: required_fields::PROFILE_WITHOUT_EXAMPLES.to_string(),
+                name: "Profile Without Examples".to_string(),
+                description: "Encourages best practices by warning when profiles lack example instances for documentation and testing".to_string(),
+                severity: Severity::Warning,
+                category: RuleCategory::Documentation,
+                tags: vec![
+                    "documentation".to_string(),
+                    "best-practices".to_string(),
+                    "examples".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/maki/rules/documentation/profile-without-examples"
                         .to_string(),
                 ),
             },

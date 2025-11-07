@@ -25,6 +25,7 @@ grit-util = "0.5.1"
 glob = "0.3"
 
 [dev-dependencies]
+tokio = { workspace = true }
 tokio-test = "0.4"
 tempfile = "3.8"
 insta = { version = "1.40", features = ["yaml"] }

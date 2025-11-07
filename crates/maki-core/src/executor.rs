@@ -437,8 +437,22 @@ impl DefaultExecutor {
 
         match semantic_result {
             Ok(semantic_model) => {
-                // Execute rules against the semantic model
-                let rule_diagnostics = self.rule_engine.execute_rules(&semantic_model);
+                // Execute rules against the semantic model (async)
+                // Try to use existing Tokio runtime, or create a new one if needed
+                let rule_diagnostics = match tokio::runtime::Handle::try_current() {
+                    Ok(handle) => {
+                        // We're in a Tokio runtime - use block_in_place for efficiency
+                        tokio::task::block_in_place(|| {
+                            handle.block_on(self.rule_engine.execute_rules(&semantic_model))
+                        })
+                    }
+                    Err(_) => {
+                        // No runtime available - create a temporary one
+                        let rt = tokio::runtime::Runtime::new()
+                            .expect("Failed to create Tokio runtime");
+                        rt.block_on(self.rule_engine.execute_rules(&semantic_model))
+                    }
+                };
                 diagnostics.extend(rule_diagnostics);
             }
             Err(e) => {

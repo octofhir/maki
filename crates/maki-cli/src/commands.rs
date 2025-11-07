@@ -246,6 +246,12 @@ pub async fn lint_command(
     // Create rule engine
     let mut rule_engine = DefaultRuleEngine::new();
 
+    // Set the canonical manager session if available
+    if let Some(session) = &_session {
+        rule_engine.set_session(session.clone());
+        info!("Canonical manager session configured for rule engine");
+    }
+
     // Collect and compile all built-in rules
     let all_builtin_rules = BuiltinRules::all_rules();
     let mut compiled_rules = Vec::new();
