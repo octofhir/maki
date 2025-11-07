@@ -14,16 +14,18 @@ pub mod build;
 pub mod config;
 pub mod init;
 
-use maki_core::config::UnifiedConfig;
+use maki_core::config::{DependencyVersion, UnifiedConfig};
 use maki_core::{
-    AstFormatter, AutofixEngine, CachedFshParser, ConfigLoader, DefaultAutofixEngine,
-    DefaultExecutor, DefaultFileDiscovery, DefaultSemanticAnalyzer, ExecutionContext, Executor,
-    FileDiscovery, FixConfig, FormatterConfiguration, Result, Rule, RuleCategory, RuleEngine,
+    AstFormatter, AutofixEngine, CachedFshParser, CanonicalFacade, CanonicalOptions, ConfigLoader,
+    DefaultAutofixEngine, DefaultExecutor, DefaultFileDiscovery, DefaultSemanticAnalyzer,
+    DefinitionSession, ExecutionContext, Executor, FhirRelease, FileDiscovery, FixConfig,
+    FormatterConfiguration, PackageCoordinate, Result, Rule, RuleCategory, RuleEngine,
     RuleMetadata,
 };
 use maki_rules::gritql::GritQLRuleLoader;
 use maki_rules::{BuiltinRules, DefaultRuleEngine};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, info};
 
@@ -82,6 +84,96 @@ pub async fn lint_command(
     debug!("Loaded configuration");
 
     let start_time = Instant::now();
+
+    // Step 1: Set up canonical manager if dependencies exist (top-level or build config)
+    // Note: session is prepared but not yet passed to rules - future enhancement
+    let _session: Option<Arc<DefinitionSession>> = if config.dependencies.is_some()
+        || (config.build.is_some() && config.build.as_ref().unwrap().dependencies.is_some())
+    {
+        info!("Setting up FHIR package dependencies from configuration...");
+
+        // Create canonical facade
+        let canonical_options = CanonicalOptions {
+            quick_init: true,
+            ..Default::default()
+        };
+
+        let facade = CanonicalFacade::new(canonical_options)
+            .await
+            .map_err(|e| maki_core::MakiError::ConfigError {
+                message: format!("Failed to create CanonicalFacade: {}", e),
+            })?;
+
+        // Get FHIR versions from build config
+        let fhir_releases: Vec<FhirRelease> = if let Some(build_config) = &config.build {
+            build_config
+                .fhir_version
+                .iter()
+                .filter_map(|v| match v.as_str() {
+                    "4.0.1" => Some(FhirRelease::R4),
+                    "4.3.0" => Some(FhirRelease::R4B),
+                    "5.0.0" => Some(FhirRelease::R5),
+                    _ => {
+                        error!("Unsupported FHIR version: {}", v);
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            // Default to R4 if no build config
+            vec![FhirRelease::R4]
+        };
+
+        if fhir_releases.is_empty() {
+            error!("No valid FHIR versions found in configuration, using R4 as default");
+        }
+
+        let fhir_releases = if fhir_releases.is_empty() {
+            vec![FhirRelease::R4]
+        } else {
+            fhir_releases
+        };
+
+        // Create session
+        let session = Arc::new(
+            facade
+                .session(fhir_releases.clone())
+                .await
+                .map_err(|e| maki_core::MakiError::ConfigError {
+                    message: format!("Failed to create DefinitionSession: {}", e),
+                })?,
+        );
+
+        // Get all dependencies (top-level takes precedence over build section)
+        let all_deps = config.all_dependencies();
+
+        if !all_deps.is_empty() {
+            let coords: Vec<PackageCoordinate> = all_deps
+                .iter()
+                .map(|(name, dep_version)| {
+                    let version = match dep_version {
+                        DependencyVersion::Simple(v) => v.clone(),
+                        DependencyVersion::Complex { version, .. } => version.clone(),
+                    };
+                    PackageCoordinate::new(name, version)
+                })
+                .collect();
+
+            info!("Installing {} FHIR package dependencies...", coords.len());
+            session
+                .ensure_packages(coords)
+                .await
+                .map_err(|e| maki_core::MakiError::ConfigError {
+                    message: format!("Failed to install FHIR packages: {}", e),
+                })?;
+            info!("✓ Dependencies installed successfully");
+        }
+
+        Some(session)
+    } else {
+        debug!("No dependencies found in configuration, skipping FHIR package setup");
+        None
+    };
 
     // Determine which files to lint
     let fsh_files = if paths.is_empty() {

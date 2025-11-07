@@ -401,32 +401,28 @@ impl CompiledGritQLPattern {
         }
 
         // Handle Profile: $name pattern
-        if self.pattern.contains("Profile:") && self.captures.contains(&"name".to_string()) {
-            if let Some(name) = self.extract_identifier_after("Profile:", &node_text) {
+        if self.pattern.contains("Profile:") && self.captures.contains(&"name".to_string())
+            && let Some(name) = self.extract_identifier_after("Profile:", &node_text) {
                 variables.insert("name".to_string(), name);
             }
-        }
 
         // Handle Extension: $name pattern
-        if self.pattern.contains("Extension:") && self.captures.contains(&"name".to_string()) {
-            if let Some(name) = self.extract_identifier_after("Extension:", &node_text) {
+        if self.pattern.contains("Extension:") && self.captures.contains(&"name".to_string())
+            && let Some(name) = self.extract_identifier_after("Extension:", &node_text) {
                 variables.insert("name".to_string(), name);
             }
-        }
 
         // Handle ValueSet: $name pattern
-        if self.pattern.contains("ValueSet:") && self.captures.contains(&"name".to_string()) {
-            if let Some(name) = self.extract_identifier_after("ValueSet:", &node_text) {
+        if self.pattern.contains("ValueSet:") && self.captures.contains(&"name".to_string())
+            && let Some(name) = self.extract_identifier_after("ValueSet:", &node_text) {
                 variables.insert("name".to_string(), name);
             }
-        }
 
         // Handle Parent: $parent pattern
-        if self.pattern.contains("Parent:") && self.captures.contains(&"parent".to_string()) {
-            if let Some(parent) = self.extract_identifier_after("Parent:", &node_text) {
+        if self.pattern.contains("Parent:") && self.captures.contains(&"parent".to_string())
+            && let Some(parent) = self.extract_identifier_after("Parent:", &node_text) {
                 variables.insert("parent".to_string(), parent);
             }
-        }
 
         Ok(variables)
     }

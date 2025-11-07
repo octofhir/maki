@@ -154,12 +154,11 @@ impl FshGritNode {
     fn extract_quoted_string_after_keyword(&self, text: &str, keyword: &str) -> Option<String> {
         if let Some(pos) = text.find(keyword) {
             let after = text[pos + keyword.len()..].trim_start();
-            if after.starts_with('"') {
-                if let Some(end) = after[1..].find('"') {
+            if after.starts_with('"')
+                && let Some(end) = after[1..].find('"') {
                     let quoted = &after[1..end + 1];
                     return Some(quoted.to_string());
                 }
-            }
         }
         None
     }

@@ -34,6 +34,8 @@ impl BuiltinRules {
             Self::missing_profile_id_rule(),
             Self::invalid_identifier_rule(),
             // invalid_cardinality_rule moved to blocking_rules()
+            Self::cardinality_conflicts_rule(),
+            Self::cardinality_too_restrictive_rule(),
             Self::invalid_slicing_rule(),
             // FIXME: duplicate_canonical_url_rule uses custom GritQL functions that hang
             // Self::duplicate_canonical_url_rule(),
@@ -891,6 +893,70 @@ impl BuiltinRules {
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
                     "https://octofhir.github.io/maki/rules/blocking/binding-strength-present"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
+        }
+    }
+
+    /// Rule for detecting cardinality conflicts with parent definitions
+    /// This is a CORRECTNESS rule - implemented directly with AST for FHIR-aware validation
+    fn cardinality_conflicts_rule() -> Rule {
+        Rule {
+            id: cardinality::CARDINALITY_CONFLICTS.to_string(),
+            severity: Severity::Warning,
+            description: "Detects cardinality constraints that may conflict with parent FHIR definitions".to_string(),
+            // Empty GritQL pattern - this rule uses direct AST access
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: cardinality::CARDINALITY_CONFLICTS.to_string(),
+                name: "Cardinality Conflicts".to_string(),
+                description: "Detects cardinality constraints that are suspicious or likely to conflict with parent FHIR element definitions".to_string(),
+                severity: Severity::Warning,
+                category: RuleCategory::Correctness,
+                tags: vec![
+                    "correctness".to_string(),
+                    "cardinality".to_string(),
+                    "constraints".to_string(),
+                    "fhir".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/maki/rules/correctness/cardinality-conflicts"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
+        }
+    }
+
+    /// Rule for detecting overly restrictive cardinality changes
+    /// This is a CORRECTNESS rule - implemented directly with AST for pattern-based detection
+    fn cardinality_too_restrictive_rule() -> Rule {
+        Rule {
+            id: cardinality::CARDINALITY_TOO_RESTRICTIVE.to_string(),
+            severity: Severity::Warning,
+            description: "Detects cardinality constraints that are overly restrictive and may cause interoperability issues".to_string(),
+            // Empty GritQL pattern - this rule uses direct AST access
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: cardinality::CARDINALITY_TOO_RESTRICTIVE.to_string(),
+                name: "Cardinality Too Restrictive".to_string(),
+                description: "Warns about cardinality changes that significantly restrict element usage, such as making optional elements required or reducing maximum cardinality".to_string(),
+                severity: Severity::Warning,
+                category: RuleCategory::Correctness,
+                tags: vec![
+                    "correctness".to_string(),
+                    "cardinality".to_string(),
+                    "constraints".to_string(),
+                    "interoperability".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/maki/rules/correctness/cardinality-too-restrictive"
                         .to_string(),
                 ),
             },

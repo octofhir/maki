@@ -672,6 +672,17 @@ impl DefaultRuleEngine {
                 crate::builtin::cardinality::INVALID_CARDINALITY => {
                     diagnostics.extend(crate::builtin::cardinality::check_cardinality(model));
                 }
+                crate::builtin::cardinality::CARDINALITY_CONFLICTS => {
+                    diagnostics.extend(crate::builtin::cardinality::check_cardinality_conflicts(
+                        model, None,
+                    ));
+                }
+                crate::builtin::cardinality::CARDINALITY_TOO_RESTRICTIVE => {
+                    diagnostics
+                        .extend(crate::builtin::cardinality::check_cardinality_too_restrictive(
+                            model,
+                        ));
+                }
                 crate::builtin::required_fields::REQUIRED_FIELD_PRESENT => {
                     diagnostics.extend(crate::builtin::required_fields::check_required_fields(
                         model,
