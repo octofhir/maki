@@ -714,6 +714,12 @@ impl DefaultRuleEngine {
                 crate::builtin::duplicates::DUPLICATE_DEFINITION => {
                     diagnostics.extend(crate::builtin::duplicates::check_duplicates(model));
                 }
+                crate::builtin::duplicates::DUPLICATE_RULE => {
+                    diagnostics.extend(crate::builtin::duplicates::check_duplicate_rules(model));
+                }
+                crate::builtin::duplicates::DUPLICATE_ALIAS => {
+                    diagnostics.extend(crate::builtin::duplicates::check_duplicate_aliases(model));
+                }
                 crate::builtin::profile::PROFILE_ASSIGNMENT_PRESENT => {
                     diagnostics.extend(crate::builtin::profile::check_profile_assignments(model));
                 }
@@ -735,6 +741,12 @@ impl DefaultRuleEngine {
                 }
                 crate::builtin::naming::NAMING_CONVENTION => {
                     diagnostics.extend(crate::builtin::naming::check_naming_conventions(model));
+                }
+                crate::builtin::profile::SLICE_NAME_COLLISION => {
+                    diagnostics.extend(crate::builtin::profile::check_slice_name_collision(model));
+                }
+                crate::builtin::profile::MUST_SUPPORT_PROPAGATION => {
+                    diagnostics.extend(crate::builtin::profile::check_must_support_propagation(model));
                 }
                 _ => {
                     tracing::warn!(

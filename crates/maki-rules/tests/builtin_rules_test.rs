@@ -56,7 +56,7 @@ fn blocking_rules_validate_critical_requirements() {
 #[test]
 fn correctness_rules_have_required_metadata() {
     let rules = BuiltinRules::correctness_rules();
-    assert_eq!(rules.len(), 17); // Note: 2 rules commented out (duplicate_canonical_url, duplicate_identifier) due to GritQL hang issues. Added 4 rules: binding-strength-weakening, binding-without-valueset, instance-required-fields-missing, required-field-override
+    assert_eq!(rules.len(), 20); // Note: 2 rules commented out (duplicate_canonical_url, duplicate_identifier) due to GritQL hang issues. Added 7 rules: binding-strength-weakening, binding-without-valueset, instance-required-fields-missing, required-field-override, duplicate-rule, duplicate-alias, slice-name-collision
 
     for rule in &rules {
         assert_rule_basics(rule);
@@ -93,7 +93,7 @@ fn correctness_rules_have_required_metadata() {
 #[test]
 fn suspicious_rules_detect_risky_patterns() {
     let rules = BuiltinRules::suspicious_rules();
-    assert_eq!(rules.len(), 3); // Added 1 binding rule: binding-strength-inconsistent
+    assert_eq!(rules.len(), 4); // Added 2 rules: binding-strength-inconsistent, must-support-propagation
 
     for rule in &rules {
         assert_rule_basics(rule);

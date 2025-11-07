@@ -50,6 +50,9 @@ impl BuiltinRules {
             Self::required_field_override_rule(),
             Self::binding_strength_weakening_rule(),
             Self::binding_without_valueset_rule(),
+            Self::duplicate_rule_rule(),
+            Self::duplicate_alias_rule(),
+            Self::slice_name_collision_rule(),
         ]
     }
 
@@ -59,6 +62,7 @@ impl BuiltinRules {
             Self::trailing_text_rule(),
             Self::inconsistent_metadata_rule(),
             Self::binding_strength_inconsistent_rule(),
+            Self::must_support_propagation_rule(),
         ]
     }
 
@@ -1059,6 +1063,64 @@ impl BuiltinRules {
         }
     }
 
+    /// Rule for detecting slice name collisions
+    fn slice_name_collision_rule() -> Rule {
+        Rule {
+            id: profile::SLICE_NAME_COLLISION.to_string(),
+            severity: Severity::Warning,
+            description: "Detects potential collisions between slice names and FHIR element names".to_string(),
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: profile::SLICE_NAME_COLLISION.to_string(),
+                name: "Slice Name Collision".to_string(),
+                description: "Warns when slice names may collide with common FHIR element names".to_string(),
+                severity: Severity::Warning,
+                category: RuleCategory::Correctness,
+                tags: vec![
+                    "correctness".to_string(),
+                    "slicing".to_string(),
+                    "naming".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/maki/rules/correctness/slice-name-collision"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
+        }
+    }
+
+    /// Rule for checking MustSupport propagation
+    fn must_support_propagation_rule() -> Rule {
+        Rule {
+            id: profile::MUST_SUPPORT_PROPAGATION.to_string(),
+            severity: Severity::Warning,
+            description: "Checks consistency of MustSupport flags in element hierarchies".to_string(),
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: profile::MUST_SUPPORT_PROPAGATION.to_string(),
+                name: "MustSupport Propagation".to_string(),
+                description: "Warns when child elements of MustSupport elements are not also marked MS".to_string(),
+                severity: Severity::Warning,
+                category: RuleCategory::Suspicious,
+                tags: vec![
+                    "suspicious".to_string(),
+                    "must-support".to_string(),
+                    "consistency".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/maki/rules/suspicious/must-support-propagation"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
+        }
+    }
+
     /// Rule for detecting duplicate definitions
     /// This is a BLOCKING rule - detects duplicate names, IDs, and URLs
     fn duplicate_definition_rule() -> Rule {
@@ -1083,6 +1145,66 @@ impl BuiltinRules {
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
                     "https://octofhir.github.io/maki/rules/blocking/duplicate-definition"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
+        }
+    }
+
+    /// Rule for detecting conflicting rules within profiles
+    /// This detects when the same element path has multiple conflicting rules (e.g., different cardinalities)
+    fn duplicate_rule_rule() -> Rule {
+        Rule {
+            id: duplicates::DUPLICATE_RULE.to_string(),
+            severity: Severity::Error,
+            description: "Detects conflicting rules for the same element path within profiles".to_string(),
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: duplicates::DUPLICATE_RULE.to_string(),
+                name: "Conflicting Rules".to_string(),
+                description: "Detects when the same element path has multiple conflicting rules (cardinality, type, binding)".to_string(),
+                severity: Severity::Error,
+                category: RuleCategory::Correctness,
+                tags: vec![
+                    "correctness".to_string(),
+                    "rules".to_string(),
+                    "conflicts".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/maki/rules/correctness/duplicate-rule"
+                        .to_string(),
+                ),
+            },
+            is_ast_rule: true,
+        }
+    }
+
+    /// Rule for detecting duplicate alias definitions
+    /// This detects aliases with the same name but different values
+    fn duplicate_alias_rule() -> Rule {
+        Rule {
+            id: duplicates::DUPLICATE_ALIAS.to_string(),
+            severity: Severity::Error,
+            description: "Detects duplicate alias definitions with different values".to_string(),
+            gritql_pattern: String::new(),
+            autofix: None,
+            metadata: RuleMetadata {
+                id: duplicates::DUPLICATE_ALIAS.to_string(),
+                name: "Duplicate Alias".to_string(),
+                description: "Detects aliases with the same name but different values, which causes conflicts".to_string(),
+                severity: Severity::Error,
+                category: RuleCategory::Correctness,
+                tags: vec![
+                    "correctness".to_string(),
+                    "alias".to_string(),
+                    "duplicates".to_string(),
+                ],
+                version: Some("1.0.0".to_string()),
+                docs_url: Some(
+                    "https://octofhir.github.io/maki/rules/correctness/duplicate-alias"
                         .to_string(),
                 ),
             },
