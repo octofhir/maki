@@ -20,7 +20,7 @@ use super::parser::GritQLParser;
 use super::compiler::PatternCompiler;
 use grit_pattern_matcher::pattern::Pattern;
 use grit_util::Ast;
-use maki_core::{MakiError, Result};
+use maki_core::{CodeSuggestion, Diagnostic, MakiError, Result, Severity};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -38,6 +38,12 @@ pub struct CompiledGritQLPattern {
     /// Mapping from variable names to their indices (used in Phase 2 for variable binding)
     #[allow(dead_code)]
     variable_indices: HashMap<String, usize>,
+    /// Optional effect for rewriting (for autofix support)
+    pub effect: Option<super::rewrite::Effect>,
+    /// Severity level for diagnostics
+    pub severity: Option<Severity>,
+    /// Message for diagnostics
+    pub message: Option<String>,
 }
 
 /// Range information for a match
@@ -58,6 +64,15 @@ pub struct GritQLMatch {
     pub captures: HashMap<String, String>,
     /// The matched text
     pub matched_text: String,
+}
+
+/// GritQL match with optional autofix suggestion
+#[derive(Debug, Clone)]
+pub struct GritQLMatchWithFix {
+    /// The match data
+    pub match_data: GritQLMatch,
+    /// Optional autofix suggestion
+    pub fix: Option<CodeSuggestion>,
 }
 
 /// Compiler for GritQL patterns
@@ -83,6 +98,9 @@ impl GritQLCompiler {
                 captures: Vec::new(),
                 compiled_pattern: None,
                 variable_indices: HashMap::new(),
+                effect: None,
+                severity: None,
+                message: None,
             });
         }
 
@@ -114,6 +132,9 @@ impl GritQLCompiler {
             captures,
             compiled_pattern: Some(Arc::new(compiled_pattern)),
             variable_indices,
+            effect: None,
+            severity: None,
+            message: None,
         })
     }
 
@@ -213,6 +234,62 @@ impl CompiledGritQLPattern {
             matches.len()
         );
         Ok(matches)
+    }
+
+    /// Execute pattern and generate autofixes for all matches
+    pub fn execute_with_fixes(&self, source: &str, file_path: &str) -> Result<Vec<GritQLMatchWithFix>> {
+        // Execute pattern to get matches
+        let matches = self.execute(source, file_path)?;
+
+        // If pattern has effects, generate autofixes
+        if let Some(effect) = &self.effect {
+            matches
+                .into_iter()
+                .map(|m| {
+                    let fix = effect.apply(source, &m.captures, file_path)?;
+                    Ok(GritQLMatchWithFix {
+                        match_data: m,
+                        fix: Some(fix),
+                    })
+                })
+                .collect()
+        } else {
+            Ok(matches
+                .into_iter()
+                .map(|m| GritQLMatchWithFix {
+                    match_data: m,
+                    fix: None,
+                })
+                .collect())
+        }
+    }
+
+    /// Convert a match with fix to a Diagnostic
+    pub fn to_diagnostic(&self, match_with_fix: GritQLMatchWithFix, file_path: &str) -> Diagnostic {
+        let severity = self.severity.unwrap_or(Severity::Warning);
+        let message = self.message.clone().unwrap_or_else(|| {
+            format!("Rule violation detected by pattern: {}", self.rule_id)
+        });
+
+        let location = maki_core::Location {
+            file: file_path.into(),
+            line: match_with_fix.match_data.range.start_line,
+            column: match_with_fix.match_data.range.start_column,
+            end_line: Some(match_with_fix.match_data.range.end_line),
+            end_column: Some(match_with_fix.match_data.range.end_column),
+            offset: 0, // Will be set by caller if needed
+            length: 0, // Will be set by caller if needed
+            span: None,
+        };
+
+        let mut diagnostic = Diagnostic::new(&self.rule_id, severity, message, location);
+
+        // Add the autofix if available
+        if let Some(fix) = match_with_fix.fix {
+            diagnostic = diagnostic.with_suggestion(fix);
+        }
+
+        diagnostic
     }
 
     /// Internal execution using real grit-pattern-matcher
@@ -511,5 +588,70 @@ mod tests {
 
         // Pattern should find matches
         assert!(matches.len() > 0, "Should have matches for Profile");
+    }
+
+    #[test]
+    fn test_execute_with_fixes_no_effect() {
+        let compiler = GritQLCompiler::new().unwrap();
+        let pattern = compiler
+            .compile_pattern("Profile: $name", "test-rule")
+            .unwrap();
+
+        let source = "Profile: MyPatient";
+        let matches_with_fixes = pattern.execute_with_fixes(source, "test.fsh").unwrap();
+
+        // Should have matches but no fixes
+        assert!(matches_with_fixes.len() > 0, "Should have matches");
+        assert!(matches_with_fixes[0].fix.is_none(), "Should not have fix without effect");
+    }
+
+    #[test]
+    fn test_gritql_match_with_fix_creation() {
+        let match_with_fix = GritQLMatchWithFix {
+            match_data: GritQLMatch {
+                range: MatchRange {
+                    start_line: 1,
+                    start_column: 1,
+                    end_line: 1,
+                    end_column: 10,
+                },
+                captures: std::collections::HashMap::new(),
+                matched_text: "test".to_string(),
+            },
+            fix: None,
+        };
+
+        assert!(match_with_fix.fix.is_none());
+        assert_eq!(match_with_fix.match_data.matched_text, "test");
+    }
+
+    #[test]
+    fn test_to_diagnostic_conversion() {
+        let compiler = GritQLCompiler::new().unwrap();
+        let mut pattern = compiler
+            .compile_pattern("Profile: $name", "test-rule")
+            .unwrap();
+
+        pattern.severity = Some(Severity::Error);
+        pattern.message = Some("Test error message".to_string());
+
+        let match_with_fix = GritQLMatchWithFix {
+            match_data: GritQLMatch {
+                range: MatchRange {
+                    start_line: 1,
+                    start_column: 1,
+                    end_line: 1,
+                    end_column: 10,
+                },
+                captures: std::collections::HashMap::new(),
+                matched_text: "test".to_string(),
+            },
+            fix: None,
+        };
+
+        let diagnostic = pattern.to_diagnostic(match_with_fix, "test.fsh");
+        assert_eq!(diagnostic.rule_id, "test-rule");
+        assert_eq!(diagnostic.severity, Severity::Error);
+        assert_eq!(diagnostic.message, "Test error message");
     }
 }

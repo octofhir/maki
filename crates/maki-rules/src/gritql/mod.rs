@@ -46,6 +46,11 @@ pub mod parser;
 pub mod builtins;
 pub mod executor;
 
+// Rewriting and code generation
+pub mod functions;
+pub mod rewrite;
+pub mod validator;
+
 // Rule loading and registry
 pub mod loader;
 pub mod registry;
@@ -55,6 +60,9 @@ pub use builtins::register_fsh_builtins;
 pub use cst_adapter::{FshGritCursor, FshGritNode};
 pub use cst_language::FshTargetLanguage;
 pub use cst_tree::FshGritTree;
-pub use executor::{CompiledGritQLPattern, GritQLCompiler, GritQLMatch, MatchRange};
+pub use executor::{CompiledGritQLPattern, GritQLCompiler, GritQLMatch, GritQLMatchWithFix, MatchRange};
+pub use functions::{FunctionValue, RewriteFunctionRegistry, RewriteFunctions, RewriteFunc};
 pub use loader::GritQLRuleLoader;
 pub use registry::GritQLRegistry;
+pub use rewrite::Effect;
+pub use validator::{RewriteValidator, ValidationResult};
