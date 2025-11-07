@@ -189,7 +189,9 @@ impl RuleRegistry {
                 // Only override if:
                 // 1. This pack has higher priority, OR
                 // 2. This pack has can_override=true and priority >= existing
-                if pack_priority > existing_priority || (can_override && pack_priority >= existing_priority) {
+                if pack_priority > existing_priority
+                    || (can_override && pack_priority >= existing_priority)
+                {
                     self.rule_precedence.insert(rule.id.clone(), pack_priority);
                 }
                 // Otherwise, keep the existing priority (don't override)
