@@ -40,6 +40,7 @@ pub async fn lint_command(
     write: bool,
     dry_run: bool,
     r#unsafe: bool,
+    interactive: bool,
     _min_severity: Severity,
     include: Vec<String>,
     exclude: Vec<String>,
@@ -391,9 +392,9 @@ pub async fn lint_command(
         if !fixes.is_empty() {
             // Create fix configuration based on CLI flags
             let fix_config = FixConfig {
-                apply_unsafe: r#unsafe,
+                apply_unsafe: r#unsafe || interactive, // Interactive mode implies unsafe fixes are available
                 dry_run,
-                interactive: false,
+                interactive,
                 max_fixes_per_file: None,
                 validate_syntax: true,
             };

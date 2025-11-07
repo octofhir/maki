@@ -555,9 +555,17 @@ pub fn check_duplicate_aliases(model: &SemanticModel) -> Vec<Diagnostic> {
                         name, value_str
                     );
 
+                    // Add autofix to remove redundant alias
+                    let suggestion = maki_core::CodeSuggestion::safe(
+                        "Remove redundant alias definition",
+                        String::new(), // Replace with empty string to remove
+                        location.clone(),
+                    );
+
                     diagnostics.push(
                         Diagnostic::new(DUPLICATE_ALIAS, Severity::Warning, message, location)
-                            .with_code("redundant-alias".to_string()),
+                            .with_code("redundant-alias".to_string())
+                            .with_suggestion(suggestion),
                     );
                 }
             }

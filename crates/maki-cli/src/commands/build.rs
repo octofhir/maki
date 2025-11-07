@@ -513,6 +513,7 @@ async fn run_linter_before_build(input_dir: &Path, strict: bool) -> Result<LintR
         write,
         dry_run,
         r#unsafe,
+        false, // interactive mode not supported in build command
         min_severity,
         include,
         exclude,

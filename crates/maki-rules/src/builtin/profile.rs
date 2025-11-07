@@ -350,17 +350,16 @@ fn check_entity_slice_collisions(
         HashMap::new();
 
     for rule in rules {
-        if let Rule::Contains(contains_rule) = rule {
-            if let Some(path) = contains_rule.path() {
-                let base_path = path.syntax().text().to_string().trim().to_string();
+        if let Rule::Contains(contains_rule) = rule
+            && let Some(path) = contains_rule.path() {
+            let base_path = path.syntax().text().to_string().trim().to_string();
 
-                // Get slice names
-                for slice_name in contains_rule.items() {
-                    slices_by_path
-                        .entry(base_path.clone())
-                        .or_default()
-                        .push((slice_name, contains_rule.syntax().clone()));
-                }
+            // Get slice names
+            for slice_name in contains_rule.items() {
+                slices_by_path
+                    .entry(base_path.clone())
+                    .or_default()
+                    .push((slice_name, contains_rule.syntax().clone()));
             }
         }
     }

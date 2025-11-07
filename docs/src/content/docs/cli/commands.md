@@ -15,12 +15,24 @@ maki lint [OPTIONS] <FILES>...
 
 ### Options
 
-- `--fix` - Automatically fix issues when possible
-- `--severity <LEVEL>` - Only show diagnostics at or above this level
+#### Autofix Options
+
+- `--fix` - Automatically fix safe issues (no semantic changes)
+- `--unsafe` - Apply unsafe fixes (semantic changes) in addition to safe fixes
+- `--dry-run` - Preview fixes without modifying files
+- `--interactive`, `-i` - Prompt for confirmation on each unsafe fix
+- `-w, --write` - Write fixes to files (alias for `--fix`)
+
+#### Diagnostic Options
+
+- `--severity <LEVEL>` - Only show diagnostics at or above this level: `error`, `warning`, `info`, `hint`
 - `--format <FORMAT>` - Output format: `human`, `json`, `sarif`, `github`
+- `--max-diagnostics <N>` - Limit number of diagnostics shown
+
+#### Configuration Options
+
 - `--config <PATH>` - Path to configuration file
 - `--no-config` - Don't load configuration files
-- `--max-diagnostics <N>` - Limit number of diagnostics shown
 
 ### Examples
 
@@ -28,8 +40,17 @@ maki lint [OPTIONS] <FILES>...
 # Lint all FSH files
 maki lint **/*.fsh
 
-# Lint with automatic fixes
+# Apply safe fixes only
 maki lint --fix input/fsh/*.fsh
+
+# Apply all fixes (safe + unsafe)
+maki lint --fix --unsafe input/fsh/*.fsh
+
+# Preview fixes without applying
+maki lint --fix --dry-run input/fsh/*.fsh
+
+# Interactive mode - review each unsafe fix
+maki lint --fix --unsafe --interactive input/fsh/*.fsh
 
 # Show only errors
 maki lint --severity error **/*.fsh
@@ -37,6 +58,22 @@ maki lint --severity error **/*.fsh
 # Output JSON format
 maki lint --format json **/*.fsh > diagnostics.json
 ```
+
+### Fix Safety Levels
+
+**Safe fixes** (applied with `--fix`):
+- Add missing metadata (`Id`, `Title`, `Description`)
+- Remove unused code (redundant aliases)
+- Fix formatting and whitespace
+- No semantic changes
+
+**Unsafe fixes** (require `--unsafe` flag):
+- Change naming conventions
+- Add FHIR constraints
+- Modify cardinality
+- Semantic changes that should be reviewed
+
+See the [Automatic Fixes guide](/guides/autofix/) for detailed information.
 
 ## `maki format`
 

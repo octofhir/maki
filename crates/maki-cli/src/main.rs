@@ -167,6 +167,10 @@ enum Commands {
         #[arg(long, help = "Apply unsafe fixes (requires --write, use with caution)")]
         r#unsafe: bool,
 
+        /// Interactive mode - confirm each unsafe fix
+        #[arg(long, short = 'i', help = "Interactively confirm each unsafe fix")]
+        interactive: bool,
+
         /// Minimum severity level to report
         #[arg(
             long,
@@ -515,6 +519,7 @@ async fn run_command(cli: Cli) -> Result<()> {
             write,
             dry_run,
             r#unsafe,
+            interactive,
             min_severity,
             include,
             exclude,
@@ -532,6 +537,7 @@ async fn run_command(cli: Cli) -> Result<()> {
                 write,
                 dry_run,
                 r#unsafe,
+                interactive,
                 min_severity,
                 include,
                 exclude,

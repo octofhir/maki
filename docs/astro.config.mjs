@@ -75,6 +75,7 @@ export default defineConfig({
 					label: 'CLI',
 					items: [
 						{ label: 'Commands', slug: 'cli/commands' },
+						{ label: 'Autofix Reference', slug: 'cli/autofix-reference' },
 						{ label: 'Options', slug: 'cli/options' },
 						{ label: 'Exit Codes', slug: 'cli/exit-codes' },
 					],
@@ -82,6 +83,7 @@ export default defineConfig({
 				{
 					label: 'Guides',
 					items: [
+						{ label: 'Automatic Fixes', slug: 'guides/autofix' },
 						{ label: 'Writing Custom Rules', slug: 'guides/custom-rules' },
 						{ label: 'CI/CD Integration', slug: 'guides/ci-cd' },
 						{ label: 'Editor Integration', slug: 'guides/editors' },

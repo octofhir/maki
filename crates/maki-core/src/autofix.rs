@@ -701,8 +701,18 @@ impl AutofixEngine for DefaultAutofixEngine {
         let mut applied_count = 0;
         let mut failed_count = 0;
         let mut errors = Vec::new();
+        let mut _skipped_count = 0; // Track skipped fixes (for future statistics)
 
         for fix in sorted_fixes {
+            // Interactive mode: ask for confirmation on unsafe fixes
+            if config.interactive && fix.requires_unsafe_flag() {
+                let should_apply = prompt_fix_confirmation(fix, &original_content)?;
+                if !should_apply {
+                    _skipped_count += 1;
+                    continue;
+                }
+            }
+
             match self.apply_single_fix(&mut modified_content, fix) {
                 Ok(()) => applied_count += 1,
                 Err(e) => {
@@ -1172,6 +1182,319 @@ impl RollbackPlan {
 
         Ok(plan)
     }
+}
+
+/// Interactive prompt for fix confirmation
+/// Returns true if the user wants to apply the fix, false otherwise
+fn prompt_fix_confirmation(fix: &Fix, original_content: &str) -> Result<bool> {
+    use std::io::{self, Write};
+
+    println!("\n{}", "─".repeat(80));
+    println!("🔧 {} autofix suggested", if fix.is_safe() { "Safe" } else { "Unsafe" });
+    println!("{}", "─".repeat(80));
+    println!("Rule:     {}", fix.rule_id);
+    println!("Location: {}:{}:{}",
+        fix.location.file.display(),
+        fix.location.line,
+        fix.location.column
+    );
+    println!("Safety:   {}", fix.safety_description());
+    println!("\nDescription: {}", fix.description);
+
+    // Show the change preview
+    println!("\nChanges:");
+    show_fix_preview(fix, original_content);
+
+    println!("\n{}", "─".repeat(80));
+    print!("Apply this fix? [y/N/q] ");
+    io::stdout().flush().map_err(|e| MakiError::internal_error(format!("Failed to flush stdout: {}", e)))?;
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| MakiError::internal_error(format!("Failed to read user input: {}", e)))?;
+
+    let response = input.trim().to_lowercase();
+
+    match response.as_str() {
+        "q" | "quit" => {
+            println!("\n❌ Autofix cancelled by user");
+            Err(MakiError::autofix_error("User cancelled autofix".to_string()))
+        }
+        "y" | "yes" => Ok(true),
+        _ => Ok(false),
+    }
+}
+
+/// Show a preview of the fix with context and colors
+fn show_fix_preview(fix: &Fix, original_content: &str) {
+    use similar::{ChangeTag, TextDiff};
+
+    let lines: Vec<&str> = original_content.lines().collect();
+    let start_line = fix.location.line.saturating_sub(1);
+    let context_lines = 2; // Show 2 lines before and after
+
+    // Get the original text that will be replaced
+    let original_text = if let Some(line) = lines.get(start_line) {
+        *line
+    } else {
+        return;
+    };
+
+    // Use similar crate for intelligent diff - work with String types
+    let diff = TextDiff::from_lines(original_text, fix.replacement.as_str());
+
+    // Show context before (gray)
+    let context_start = start_line.saturating_sub(context_lines);
+    for i in context_start..start_line {
+        if let Some(line) = lines.get(i) {
+            println!("  \x1b[90m{:4}\x1b[0m │ {}", i + 1, line);
+        }
+    }
+
+    // Show the diff with colors
+    let mut current_line = start_line + 1;
+    for change in diff.iter_all_changes() {
+        let sign = match change.tag() {
+            ChangeTag::Delete => "\x1b[31m-\x1b[0m", // Red minus
+            ChangeTag::Insert => "\x1b[32m+\x1b[0m", // Green plus
+            ChangeTag::Equal => " ",
+        };
+
+        let line_text = change.value().trim_end();
+        let colored_text = match change.tag() {
+            ChangeTag::Delete => format!("\x1b[31m{}\x1b[0m", line_text), // Red text
+            ChangeTag::Insert => format!("\x1b[32m{}\x1b[0m", line_text), // Green text
+            ChangeTag::Equal => line_text.to_string(),
+        };
+
+        println!("{} \x1b[90m{:4}\x1b[0m │ {}", sign, current_line, colored_text);
+
+        // Only increment line number for non-delete changes
+        if !matches!(change.tag(), ChangeTag::Delete) {
+            current_line += 1;
+        }
+    }
+
+    // Show context after (gray)
+    let context_end = (start_line + 1 + context_lines).min(lines.len());
+    for i in (start_line + 1)..context_end {
+        if let Some(line) = lines.get(i) {
+            println!("  \x1b[90m{:4}\x1b[0m │ {}", i + 1, line);
+        }
+    }
+}
+
+/// Generate fix statistics from applied fixes
+#[derive(Debug, Clone)]
+pub struct FixStatistics {
+    /// Total number of fixes attempted
+    pub total_fixes: usize,
+    /// Number of safe fixes applied
+    pub safe_fixes_applied: usize,
+    /// Number of unsafe fixes applied
+    pub unsafe_fixes_applied: usize,
+    /// Number of fixes that failed
+    pub failed_fixes: usize,
+    /// Number of fixes skipped (user declined)
+    pub skipped_fixes: usize,
+    /// Number of files modified
+    pub files_modified: usize,
+    /// Statistics by rule ID
+    pub by_rule: HashMap<String, RuleFixStats>,
+}
+
+/// Fix statistics for a specific rule
+#[derive(Debug, Clone)]
+pub struct RuleFixStats {
+    /// Number of times this rule's fixes were applied
+    pub applied: usize,
+    /// Number of times this rule's fixes failed
+    pub failed: usize,
+    /// Whether this rule provides safe or unsafe fixes
+    pub is_safe: bool,
+}
+
+impl FixStatistics {
+    /// Create an empty statistics object
+    pub fn new() -> Self {
+        Self {
+            total_fixes: 0,
+            safe_fixes_applied: 0,
+            unsafe_fixes_applied: 0,
+            failed_fixes: 0,
+            skipped_fixes: 0,
+            files_modified: 0,
+            by_rule: HashMap::new(),
+        }
+    }
+
+    /// Add a fix result to the statistics
+    pub fn record_fix(&mut self, fix: &Fix, applied: bool, failed: bool) {
+        self.total_fixes += 1;
+
+        if failed {
+            self.failed_fixes += 1;
+            let stats = self.by_rule.entry(fix.rule_id.clone()).or_insert(RuleFixStats {
+                applied: 0,
+                failed: 0,
+                is_safe: fix.is_safe(),
+            });
+            stats.failed += 1;
+        } else if applied {
+            if fix.is_safe() {
+                self.safe_fixes_applied += 1;
+            } else {
+                self.unsafe_fixes_applied += 1;
+            }
+
+            let stats = self.by_rule.entry(fix.rule_id.clone()).or_insert(RuleFixStats {
+                applied: 0,
+                failed: 0,
+                is_safe: fix.is_safe(),
+            });
+            stats.applied += 1;
+        } else {
+            self.skipped_fixes += 1;
+        }
+    }
+
+    /// Print a formatted statistics report
+    pub fn print_report(&self) {
+        println!("\n{}", "═".repeat(80));
+        println!("📊 Autofix Statistics");
+        println!("{}", "═".repeat(80));
+
+        println!("\n📈 Overall:");
+        println!("  Total fixes:         {}", self.total_fixes);
+        println!("  ✅ Applied (safe):    {}", self.safe_fixes_applied);
+        println!("  ⚠️  Applied (unsafe):  {}", self.unsafe_fixes_applied);
+        println!("  ❌ Failed:            {}", self.failed_fixes);
+        println!("  ⏭️  Skipped:           {}", self.skipped_fixes);
+        println!("  📁 Files modified:    {}", self.files_modified);
+
+        if !self.by_rule.is_empty() {
+            println!("\n📋 By Rule:");
+            let mut rules: Vec<_> = self.by_rule.iter().collect();
+            rules.sort_by(|a, b| b.1.applied.cmp(&a.1.applied));
+
+            for (rule_id, stats) in rules {
+                let safety_icon = if stats.is_safe { "✅" } else { "⚠️" };
+                println!("  {} {}", safety_icon, rule_id);
+                println!("     Applied: {} | Failed: {}", stats.applied, stats.failed);
+            }
+        }
+
+        println!("\n{}", "═".repeat(80));
+    }
+}
+
+impl Default for FixStatistics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Generate a unified diff between original and modified content with colors
+///
+/// This function uses the `similar` crate to generate a proper unified diff
+/// with ANSI color codes for terminal display.
+pub fn generate_unified_diff(original: &str, modified: &str, file_path: &Path) -> String {
+    generate_unified_diff_impl(original, modified, file_path, true)
+}
+
+/// Generate a unified diff without colors (for file output)
+pub fn generate_unified_diff_plain(original: &str, modified: &str, file_path: &Path) -> String {
+    generate_unified_diff_impl(original, modified, file_path, false)
+}
+
+/// Internal implementation of unified diff generation
+fn generate_unified_diff_impl(
+    original: &str,
+    modified: &str,
+    file_path: &Path,
+    colorize: bool,
+) -> String {
+    use similar::{ChangeTag, TextDiff};
+
+    let diff = TextDiff::from_lines(original, modified);
+    let mut output = String::new();
+
+    // File headers
+    if colorize {
+        output.push_str(&format!(
+            "\x1b[1m--- {}\x1b[0m\n",
+            file_path.display()
+        ));
+        output.push_str(&format!(
+            "\x1b[1m+++ {} (modified)\x1b[0m\n",
+            file_path.display()
+        ));
+    } else {
+        output.push_str(&format!("--- {}\n", file_path.display()));
+        output.push_str(&format!("+++ {} (modified)\n", file_path.display()));
+    }
+
+    // Generate unified diff hunks
+    for (idx, group) in diff.grouped_ops(3).iter().enumerate() {
+        if idx > 0 {
+            output.push('\n');
+        }
+
+        let old_line = group[0].old_range().start;
+        let new_line = group[0].new_range().start;
+        let old_len = group.iter().map(|op| op.old_range().len()).sum::<usize>();
+        let new_len = group.iter().map(|op| op.new_range().len()).sum::<usize>();
+
+        // Hunk header
+        if colorize {
+            output.push_str(&format!(
+                "\x1b[36m@@ -{},{} +{},{} @@\x1b[0m\n",
+                old_line + 1,
+                old_len,
+                new_line + 1,
+                new_len
+            ));
+        } else {
+            output.push_str(&format!(
+                "@@ -{},{} +{},{} @@\n",
+                old_line + 1,
+                old_len,
+                new_line + 1,
+                new_len
+            ));
+        }
+
+        // Changes
+        for op in group {
+            for change in diff.iter_changes(op) {
+                let sign = match change.tag() {
+                    ChangeTag::Delete => '-',
+                    ChangeTag::Insert => '+',
+                    ChangeTag::Equal => ' ',
+                };
+
+                let line_text = change.value();
+
+                if colorize {
+                    let colored_line = match change.tag() {
+                        ChangeTag::Delete => format!("\x1b[31m{}{}\x1b[0m", sign, line_text),
+                        ChangeTag::Insert => format!("\x1b[32m{}{}\x1b[0m", sign, line_text),
+                        ChangeTag::Equal => format!("{}{}", sign, line_text),
+                    };
+                    output.push_str(&colored_line);
+                } else {
+                    output.push_str(&format!("{}{}", sign, line_text));
+                }
+
+                if !line_text.ends_with('\n') {
+                    output.push('\n');
+                }
+            }
+        }
+    }
+
+    output
 }
 
 #[cfg(test)]
