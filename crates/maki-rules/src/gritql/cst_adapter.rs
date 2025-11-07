@@ -62,6 +62,107 @@ impl FshGritNode {
     pub fn text_content(&self) -> String {
         self.node.text().to_string()
     }
+
+    /// Get a field value by name from this node as a string
+    ///
+    /// For example, if this is a Profile node, `get_field_text("name")` returns the name identifier.
+    /// This is used for field access syntax like `$profile.name` in patterns.
+    pub fn get_field_text(&self, field_name: &str) -> Option<String> {
+        // Simple text-based field extraction - works for common patterns
+        let text = self.node.text().to_string();
+
+        match self.kind() {
+            FshSyntaxKind::Profile => self.extract_profile_field_text(&text, field_name),
+            FshSyntaxKind::Extension => self.extract_extension_field_text(&text, field_name),
+            FshSyntaxKind::ValueSet => self.extract_valueset_field_text(&text, field_name),
+            FshSyntaxKind::CodeSystem => self.extract_codesystem_field_text(&text, field_name),
+            FshSyntaxKind::Instance => self.extract_instance_field_text(&text, field_name),
+            _ => None,
+        }
+    }
+
+    /// Extract a field from a Profile definition
+    fn extract_profile_field_text(&self, text: &str, field_name: &str) -> Option<String> {
+        match field_name {
+            "name" => self.extract_identifier_after_keyword(text, "Profile:"),
+            "parent" => self.extract_identifier_after_keyword(text, "Parent:"),
+            "id" => self.extract_identifier_after_keyword(text, "Id:"),
+            "title" => self.extract_quoted_string_after_keyword(text, "Title:"),
+            "description" => self.extract_quoted_string_after_keyword(text, "Description:"),
+            _ => None,
+        }
+    }
+
+    /// Extract a field from an Extension definition
+    fn extract_extension_field_text(&self, text: &str, field_name: &str) -> Option<String> {
+        match field_name {
+            "name" => self.extract_identifier_after_keyword(text, "Extension:"),
+            "url" => self.extract_quoted_string_after_keyword(text, "Url:"),
+            "title" => self.extract_quoted_string_after_keyword(text, "Title:"),
+            "description" => self.extract_quoted_string_after_keyword(text, "Description:"),
+            _ => None,
+        }
+    }
+
+    /// Extract a field from a ValueSet definition
+    fn extract_valueset_field_text(&self, text: &str, field_name: &str) -> Option<String> {
+        match field_name {
+            "name" => self.extract_identifier_after_keyword(text, "ValueSet:"),
+            "id" => self.extract_identifier_after_keyword(text, "Id:"),
+            "title" => self.extract_quoted_string_after_keyword(text, "Title:"),
+            _ => None,
+        }
+    }
+
+    /// Extract a field from a CodeSystem definition
+    fn extract_codesystem_field_text(&self, text: &str, field_name: &str) -> Option<String> {
+        match field_name {
+            "name" => self.extract_identifier_after_keyword(text, "CodeSystem:"),
+            "id" => self.extract_identifier_after_keyword(text, "Id:"),
+            "title" => self.extract_quoted_string_after_keyword(text, "Title:"),
+            _ => None,
+        }
+    }
+
+    /// Extract a field from an Instance definition
+    fn extract_instance_field_text(&self, text: &str, field_name: &str) -> Option<String> {
+        match field_name {
+            "name" => self.extract_identifier_after_keyword(text, "Instance:"),
+            "instanceOf" => self.extract_identifier_after_keyword(text, "InstanceOf:"),
+            _ => None,
+        }
+    }
+
+    /// Extract an identifier that follows a keyword
+    fn extract_identifier_after_keyword(&self, text: &str, keyword: &str) -> Option<String> {
+        if let Some(pos) = text.find(keyword) {
+            let after = text[pos + keyword.len()..].trim_start();
+            // Get first word
+            if let Some(end) = after.find(|c: char| c.is_whitespace() || c == '\n') {
+                let ident = &after[..end];
+                if !ident.is_empty() {
+                    return Some(ident.to_string());
+                }
+            } else if !after.is_empty() {
+                return Some(after.to_string());
+            }
+        }
+        None
+    }
+
+    /// Extract a quoted string that follows a keyword
+    fn extract_quoted_string_after_keyword(&self, text: &str, keyword: &str) -> Option<String> {
+        if let Some(pos) = text.find(keyword) {
+            let after = text[pos + keyword.len()..].trim_start();
+            if after.starts_with('"') {
+                if let Some(end) = after[1..].find('"') {
+                    let quoted = &after[1..end + 1];
+                    return Some(quoted.to_string());
+                }
+            }
+        }
+        None
+    }
 }
 
 impl GritAstNode for FshGritNode {

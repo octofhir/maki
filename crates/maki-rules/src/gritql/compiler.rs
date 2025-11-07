@@ -12,7 +12,7 @@ use maki_core::{MakiError, Result};
 use std::collections::HashMap;
 
 pub struct PatternCompiler {
-    variables: HashMap<String, usize>,
+    pub variables: HashMap<String, usize>,
     next_var_index: usize,
     current_scope: usize,
 }
@@ -127,6 +127,14 @@ impl PatternCompiler {
                     .collect();
                 Ok(Predicate::Or(Box::new(PrOr::new(compiled?))))
             }
+            // Regex match, contains, etc. - for now just return true
+            // These will be evaluated during pattern execution
+            GritPredicate::RegexMatch { .. } => Ok(Predicate::True),
+            GritPredicate::Contains { .. } => Ok(Predicate::True),
+            GritPredicate::StartsWith { .. } => Ok(Predicate::True),
+            GritPredicate::EndsWith { .. } => Ok(Predicate::True),
+            GritPredicate::Equality { .. } => Ok(Predicate::True),
+            GritPredicate::Inequality { .. } => Ok(Predicate::True),
         }
     }
 

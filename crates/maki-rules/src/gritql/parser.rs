@@ -20,10 +20,26 @@ pub enum GritPattern {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum GritPredicate {
+    /// Check if a field exists
     FieldExists(String),
+    /// Not predicate
     Not(Box<GritPredicate>),
+    /// And predicate (all must be true)
     And(Vec<GritPredicate>),
+    /// Or predicate (any must be true)
     Or(Vec<GritPredicate>),
+    /// Regex match: $var <: r"pattern"
+    RegexMatch { var: String, regex: String },
+    /// Contains: $var contains "substring"
+    Contains { var: String, substring: String },
+    /// Starts with: $var startsWith "prefix"
+    StartsWith { var: String, prefix: String },
+    /// Ends with: $var endsWith "suffix"
+    EndsWith { var: String, suffix: String },
+    /// Equality: $a == "value"
+    Equality { left: String, right: String },
+    /// Inequality: $a != "value"
+    Inequality { left: String, right: String },
 }
 
 pub struct GritQLParser {
@@ -102,20 +118,175 @@ impl GritQLParser {
         self.expect_char('{')?;
         self.skip_whitespace();
 
+        // Parse: not inner
         if self.peek_word("not") {
             self.consume_word("not")?;
             self.skip_whitespace();
-            let pred = self.parse_predicate()?;
+            let pred = self.parse_predicate_inner()?;
             self.skip_whitespace();
             self.expect_char('}')?;
             return Ok(GritPredicate::Not(Box::new(pred)));
         }
 
-        let field = self.parse_identifier()?;
+        let pred = self.parse_predicate_inner()?;
         self.skip_whitespace();
         self.expect_char('}')?;
 
-        Ok(GritPredicate::FieldExists(field))
+        Ok(pred)
+    }
+
+    fn parse_predicate_inner(&mut self) -> Result<GritPredicate> {
+        let first = self.parse_simple_predicate()?;
+
+        self.skip_whitespace();
+
+        // Check for 'and' or 'or' operators
+        if self.peek_word("and") {
+            let mut preds = vec![first];
+            while self.peek_word("and") {
+                self.consume_word("and")?;
+                self.skip_whitespace();
+                preds.push(self.parse_simple_predicate()?);
+                self.skip_whitespace();
+            }
+            return Ok(GritPredicate::And(preds));
+        }
+
+        if self.peek_word("or") {
+            let mut preds = vec![first];
+            while self.peek_word("or") {
+                self.consume_word("or")?;
+                self.skip_whitespace();
+                preds.push(self.parse_simple_predicate()?);
+                self.skip_whitespace();
+            }
+            return Ok(GritPredicate::Or(preds));
+        }
+
+        Ok(first)
+    }
+
+    fn parse_simple_predicate(&mut self) -> Result<GritPredicate> {
+        self.skip_whitespace();
+
+        // Parse variable or field name (might start with $)
+        if self.current_char() == Some('$') {
+            self.advance();
+        }
+
+        let field_or_var = self.parse_identifier()?;
+        self.skip_whitespace();
+
+        // Check for operators
+        // <: (regex match)
+        if self.peek_word("<:") {
+            self.consume_word("<:")?;
+            self.skip_whitespace();
+            let regex = self.parse_string_or_regex()?;
+            return Ok(GritPredicate::RegexMatch {
+                var: field_or_var,
+                regex,
+            });
+        }
+
+        // contains
+        if self.peek_word("contains") {
+            self.consume_word("contains")?;
+            self.skip_whitespace();
+            let substring = self.parse_quoted_string()?;
+            return Ok(GritPredicate::Contains {
+                var: field_or_var,
+                substring,
+            });
+        }
+
+        // startsWith
+        if self.peek_word("startsWith") {
+            self.consume_word("startsWith")?;
+            self.skip_whitespace();
+            let prefix = self.parse_quoted_string()?;
+            return Ok(GritPredicate::StartsWith {
+                var: field_or_var,
+                prefix,
+            });
+        }
+
+        // endsWith
+        if self.peek_word("endsWith") {
+            self.consume_word("endsWith")?;
+            self.skip_whitespace();
+            let suffix = self.parse_quoted_string()?;
+            return Ok(GritPredicate::EndsWith {
+                var: field_or_var,
+                suffix,
+            });
+        }
+
+        // == (equality)
+        if self.peek_word("==") {
+            self.consume_word("==")?;
+            self.skip_whitespace();
+            let right = self.parse_quoted_string()?;
+            return Ok(GritPredicate::Equality {
+                left: field_or_var,
+                right,
+            });
+        }
+
+        // != (inequality)
+        if self.peek_word("!=") {
+            self.consume_word("!=")?;
+            self.skip_whitespace();
+            let right = self.parse_quoted_string()?;
+            return Ok(GritPredicate::Inequality {
+                left: field_or_var,
+                right,
+            });
+        }
+
+        // No operator found, treat as field exists
+        Ok(GritPredicate::FieldExists(field_or_var))
+    }
+
+    fn parse_quoted_string(&mut self) -> Result<String> {
+        self.skip_whitespace();
+        self.expect_char('"')?;
+
+        let mut result = String::new();
+        while let Some(ch) = self.current_char() {
+            if ch == '"' {
+                self.advance();
+                return Ok(result);
+            }
+            if ch == '\\' {
+                self.advance();
+                if let Some(escaped_ch) = self.current_char() {
+                    result.push(escaped_ch);
+                    self.advance();
+                }
+            } else {
+                result.push(ch);
+                self.advance();
+            }
+        }
+
+        Err(MakiError::rule_error(
+            "gritql-parser",
+            "Unterminated string in predicate",
+        ))
+    }
+
+    fn parse_string_or_regex(&mut self) -> Result<String> {
+        self.skip_whitespace();
+
+        // Check for r"..." regex
+        if self.peek_word("r\"") {
+            self.consume_word("r")?;
+            return self.parse_quoted_string();
+        }
+
+        // Otherwise just a regular quoted string
+        self.parse_quoted_string()
     }
 
     fn parse_identifier(&mut self) -> Result<String> {

@@ -204,6 +204,164 @@ maki lint --rule custom/require-ms-flag test.fsh
 4. **Include Fixes** - Provide automated fixes when possible
 5. **Document Rules** - Explain why the rule exists
 
+## Built-in Functions
+
+MAKI provides 12 specialized built-in functions for FSH pattern matching:
+
+### Node Type Checking Functions
+
+Check the type of a matched node:
+
+```gritql
+is_profile($node)       // Returns true if node is a Profile
+is_extension($node)     // Returns true if node is an Extension
+is_value_set($node)     // Returns true if node is a ValueSet
+is_code_system($node)   // Returns true if node is a CodeSystem
+```
+
+**Example:**
+```gritql
+Profile: $name where { is_profile($name) }
+```
+
+### Node Property Functions
+
+Check if a node has specific fields or properties:
+
+```gritql
+has_comment($node)      // Node has comments
+has_title($node)        // Node has Title field
+has_description($node)  // Node has Description field
+has_parent($node)       // Node has Parent field (Profiles only)
+```
+
+**Example:**
+```gritql
+Profile where { has_title($p) and has_description($p) }
+Extension where { not has_comment($e) }
+```
+
+### String Validation Functions
+
+Validate if a string follows a specific naming convention:
+
+```gritql
+is_kebab_case($text)           // lowercase-with-dashes
+is_pascal_case($text)          // PascalCase
+is_camel_case($text)           // camelCase
+is_screaming_snake_case($text) // SCREAMING_SNAKE_CASE
+```
+
+**Patterns:**
+- **kebab-case**: `my-profile`, `patient-id`, `value-set-name`
+- **PascalCase**: `MyProfile`, `PatientRecord`, `ValueSetName`
+- **camelCase**: `myProfile`, `patientRecord`, `valueSetName`
+- **SCREAMING_SNAKE_CASE**: `MY_PROFILE`, `PATIENT_ID`, `VALUE_SET_NAME`
+
+**Example:**
+```gritql
+// Enforce PascalCase naming for profiles
+Profile: $name where {
+  is_pascal_case($name)
+}
+
+// Enforce kebab-case IDs
+ValueSet where {
+  is_kebab_case($id)
+}
+```
+
+## Field Conditions
+
+Check for field existence and compare field values:
+
+```gritql
+// Check if field exists
+Profile where { title }
+
+// Check if field doesn't exist
+Profile where { not title }
+
+// Compare field values
+Profile where { parent == "Patient" }
+
+// String operations on fields
+Extension where { url contains "hl7.org" }
+
+// Multiple conditions with AND
+Profile where {
+  title and
+  description and
+  parent
+}
+
+// Multiple conditions with OR
+Profile where {
+  not title or
+  not description
+}
+```
+
+## Common Built-in Function Examples
+
+### Enforce Documentation Standards
+
+```gritql
+// Find profiles without titles
+Profile where { not title }
+
+// Find profiles missing descriptions
+Profile where { not description }
+
+// Find profiles with complete documentation
+Profile where {
+  title and
+  description and
+  parent
+}
+```
+
+### Enforce Naming Conventions
+
+```gritql
+// Validate profile names use PascalCase
+Profile: $name where {
+  is_pascal_case($name)
+}
+
+// Find IDs that don't use kebab-case
+ValueSet where {
+  not is_kebab_case($id)
+}
+
+// Enforce consistent extension naming
+Extension: $ext where {
+  is_pascal_case($ext) and
+  title and
+  description
+}
+```
+
+### Enforce Metadata Requirements
+
+```gritql
+// Extensions must have titles and descriptions
+Extension where {
+  has_title($e) and
+  has_description($e)
+}
+
+// Profiles with comments
+Profile where {
+  has_comment($p)
+}
+
+// ValueSets with parent relationships
+ValueSet where {
+  has_parent($vs)
+}
+```
+
 ## See Also
 
 - [GritQL Documentation](https://docs.grit.io/) - Complete GritQL reference

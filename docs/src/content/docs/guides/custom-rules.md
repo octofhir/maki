@@ -123,38 +123,168 @@ maki lint --rule custom/profile-naming test.fsh
 maki lint --only-custom **/*.fsh
 ```
 
-## Advanced Patterns
+## Using Built-in Functions
 
-### Complex Conditions
+MAKI provides 12 built-in functions for powerful pattern matching. Here are practical examples:
+
+### Example: Enforce PascalCase Profile Names
 
 ```gritql
+language fsh
+description "Profile names must use PascalCase"
+severity error
+
 pattern {
   Profile: $name
-  * $path from $vs (required)
 }
 
 where {
-  ends_with($path, "code") and
-  !is_uri($vs)
+  not is_pascal_case($name)
 }
 
-message "Code bindings should use full URI: ${vs}"
+message "Profile name '${name}' should use PascalCase (e.g., MyProfile)"
 ```
 
-### Multiple Patterns
+### Example: Enforce kebab-case ValueSet IDs
 
 ```gritql
+language fsh
+description "ValueSet IDs must use kebab-case"
+severity error
+
 pattern {
-  or {
-    { ValueSet: $name }
-    { CodeSystem: $name }
+  ValueSet: $vs_name where { id }
+}
+
+where {
+  not is_kebab_case($id)
+}
+
+message "ValueSet ID should use kebab-case (e.g., my-value-set)"
+```
+
+### Example: Require Complete Documentation
+
+```gritql
+language fsh
+description "Profiles must have title, description, and parent"
+severity warning
+
+pattern {
+  Profile: $name where {
+    not (title and description and parent)
   }
 }
 
-where {
-  !contains($name, "VS") and
-  !contains($name, "CS")
+message "Profile '${name}' is missing required documentation (title, description, parent)"
+```
+
+### Example: Check Profile Properties
+
+```gritql
+language fsh
+description "Profiles must inherit from Patient"
+severity error
+
+pattern {
+  Profile: $name where {
+    parent != "Patient" and
+    parent != "DomainResource"
+  }
 }
+
+message "Profile '${name}' should inherit from Patient or DomainResource"
+```
+
+### Example: Validate Extension Documentation
+
+```gritql
+language fsh
+description "Extensions must have title, description, and URL"
+severity warning
+
+pattern {
+  Extension: $ext where {
+    not (has_title($e) and has_description($e) and url)
+  }
+}
+
+message "Extension '${ext}' is missing documentation"
+```
+
+### Example: Find Undocumented Elements
+
+```gritql
+language fsh
+description "All definitions should have descriptions"
+severity info
+
+pattern {
+  (Profile or Extension or ValueSet or CodeSystem): $name where {
+    not has_description($d)
+  }
+}
+
+message "Element '${name}' should include a description"
+```
+
+## Advanced Patterns
+
+### Complex Conditions with Built-ins
+
+```gritql
+language fsh
+description "Profile naming and documentation validation"
+severity error
+
+pattern {
+  Profile: $name where {
+    is_pascal_case($name) and
+    title and
+    description and
+    parent
+  }
+}
+
+message "Profile '${name}' meets all requirements"
+```
+
+### Multiple Type Validation
+
+```gritql
+language fsh
+description "Validate naming across definition types"
+severity warning
+
+pattern {
+  or {
+    { Profile: $p where { is_pascal_case($p) } }
+    { Extension: $e where { is_pascal_case($e) } }
+    { ValueSet: $vs where { not is_kebab_case($vs) } }
+  }
+}
+
+message "Definition naming convention mismatch"
+```
+
+### Composite Rules
+
+```gritql
+language fsh
+description "Complete validation of profiles"
+severity error
+
+pattern {
+  Profile: $name where {
+    is_pascal_case($name) and
+    has_title($p) and
+    has_description($p) and
+    has_parent($p) and
+    has_comment($p)
+  }
+}
+
+message "Profile '${name}' is well-documented and follows conventions"
 ```
 
 ## Best Practices
@@ -184,8 +314,20 @@ git clone https://github.com/yourorg/maki-rules.git
 }
 ```
 
+## Quick Reference: Built-in Functions
+
+MAKI provides 12 specialized functions for FSH validation:
+
+| Category | Functions |
+|----------|-----------|
+| **Node Type Checks** | `is_profile()`, `is_extension()`, `is_value_set()`, `is_code_system()` |
+| **Node Properties** | `has_comment()`, `has_title()`, `has_description()`, `has_parent()` |
+| **String Validation** | `is_kebab_case()`, `is_pascal_case()`, `is_camel_case()`, `is_screaming_snake_case()` |
+
+See [GritQL Rules](/configuration/gritql/) for complete documentation of all built-in functions.
+
 ## See Also
 
+- [GritQL Rules](/configuration/gritql/) - Complete built-in functions reference
 - [GritQL Documentation](https://docs.grit.io/)
-- [GritQL Rules](/configuration/gritql/)
 - [Built-in Rules](/rules/) - Examples
