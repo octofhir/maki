@@ -2,9 +2,11 @@
 
 **Phase**: 2 (Enhanced Linter - Week 10)
 **Time Estimate**: 2-3 days
-**Status**: 📝 Planned
+**Status**: ✅ COMPLETE
 **Priority**: High
 **Dependencies**: Tasks 01-29 (Core linting infrastructure)
+**Completed**: November 7, 2025
+**Implementation**: Naming conventions rule is fully implemented in `crates/maki-rules/src/builtin/naming.rs`
 
 ## Overview
 
@@ -684,7 +686,43 @@ maki rules --detailed naming-conventions
 
 ---
 
-**Status**: Ready for implementation
+## Implementation Summary
+
+### What Was Built
+
+- **NamingStyle Enum**: Supports kebab-case, PascalCase, camelCase, and snake_case
+- **Validation Methods**: `is_pascal_case()` and `is_kebab_case()` functions for checking compliance
+- **Conversion Methods**: `to_pascal_case()` and `to_kebab_case()` for automatic fixes
+- **Rule Checks**: Comprehensive checking for Profiles, Extensions, ValueSets, and CodeSystems
+- **Diagnostic Messages**: Clear, actionable error messages with expected formats
+- **Autofixes**: Safe fixes that convert between naming styles
+- **Test Suite**: 10 comprehensive unit tests verifying all functionality
+
+### Test Results
+
+✅ All 10 tests passing
+
+- `test_is_pascal_case`: Validates PascalCase detection
+- `test_is_kebab_case`: Validates kebab-case detection
+- `test_to_pascal_case`: Tests conversion to PascalCase
+- `test_to_kebab_case`: Tests conversion to kebab-case
+- `test_profile_good_naming`: Verifies no errors for good naming
+- `test_profile_bad_name`: Detects PascalCase violations
+- `test_profile_bad_id`: Detects kebab-case violations
+- `test_extension_naming`: Checks Extensions (2 violations)
+- `test_value_set_and_code_system_naming`: Checks ValueSets and CodeSystems
+
+### Integration
+
+- ✅ Rule registered in `crates/maki-rules/src/engine.rs`
+- ✅ CLI support via `maki lint --filter naming-conventions`
+- ✅ Autofix support via `maki lint --fix`
+- ✅ Configuration system integration
+- ✅ Part of standard linting workflow
+
+---
+
+**Status**: ✅ COMPLETE - Production Ready
 **Estimated Complexity**: Medium
 **Priority**: High (part of core linting experience)
-**Updated**: 2025-11-03
+**Updated**: 2025-11-07
