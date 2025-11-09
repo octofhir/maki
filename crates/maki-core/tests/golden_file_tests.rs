@@ -12,12 +12,7 @@ fn create_formatter() -> AstFormatter<CachedFshParser> {
 
 /// Create test configuration
 fn create_config() -> FormatterConfiguration {
-    FormatterConfiguration {
-        enabled: Some(true),
-        indent_size: Some(2),
-        line_width: Some(100),
-        align_carets: Some(true),
-    }
+    FormatterConfiguration::default()
 }
 
 /// Run a golden file test
@@ -201,10 +196,8 @@ Parent: Patient
     // Test different indent sizes
     for indent_size in [2, 4, 8] {
         let config = FormatterConfiguration {
-            enabled: Some(true),
             indent_size: Some(indent_size),
-            line_width: Some(100),
-            align_carets: Some(true),
+            ..Default::default()
         };
 
         let result = formatter.format_string(content, &config).unwrap();
@@ -216,10 +209,8 @@ Parent: Patient
     // Test different line widths
     for max_line_width in [40, 80, 120] {
         let config = FormatterConfiguration {
-            enabled: Some(true),
-            indent_size: Some(2),
             line_width: Some(max_line_width),
-            align_carets: Some(true),
+            ..Default::default()
         };
 
         let result = formatter.format_string(content, &config).unwrap();
@@ -229,10 +220,8 @@ Parent: Patient
     // Test caret alignment on/off
     for align_carets in [true, false] {
         let config = FormatterConfiguration {
-            enabled: Some(true),
-            indent_size: Some(2),
-            line_width: Some(100),
             align_carets: Some(align_carets),
+            ..Default::default()
         };
 
         let result = formatter.format_string(content, &config).unwrap();

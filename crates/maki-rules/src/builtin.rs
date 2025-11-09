@@ -1068,13 +1068,15 @@ impl BuiltinRules {
         Rule {
             id: profile::SLICE_NAME_COLLISION.to_string(),
             severity: Severity::Warning,
-            description: "Detects potential collisions between slice names and FHIR element names".to_string(),
+            description: "Detects potential collisions between slice names and FHIR element names"
+                .to_string(),
             gritql_pattern: String::new(),
             autofix: None,
             metadata: RuleMetadata {
                 id: profile::SLICE_NAME_COLLISION.to_string(),
                 name: "Slice Name Collision".to_string(),
-                description: "Warns when slice names may collide with common FHIR element names".to_string(),
+                description: "Warns when slice names may collide with common FHIR element names"
+                    .to_string(),
                 severity: Severity::Warning,
                 category: RuleCategory::Correctness,
                 tags: vec![
@@ -1097,13 +1099,16 @@ impl BuiltinRules {
         Rule {
             id: profile::MUST_SUPPORT_PROPAGATION.to_string(),
             severity: Severity::Warning,
-            description: "Checks consistency of MustSupport flags in element hierarchies".to_string(),
+            description: "Checks consistency of MustSupport flags in element hierarchies"
+                .to_string(),
             gritql_pattern: String::new(),
             autofix: None,
             metadata: RuleMetadata {
                 id: profile::MUST_SUPPORT_PROPAGATION.to_string(),
                 name: "MustSupport Propagation".to_string(),
-                description: "Warns when child elements of MustSupport elements are not also marked MS".to_string(),
+                description:
+                    "Warns when child elements of MustSupport elements are not also marked MS"
+                        .to_string(),
                 severity: Severity::Warning,
                 category: RuleCategory::Suspicious,
                 tags: vec![

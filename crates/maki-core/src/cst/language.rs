@@ -192,6 +192,7 @@ impl Language for FshLanguage {
             338 => FshSyntaxKind::InsertRuleArgs,
             339 => FshSyntaxKind::Ratio,
             340 => FshSyntaxKind::PathSegment,
+            341 => FshSyntaxKind::CardinalityNode,
 
             // Value nodes (380-389)
             380 => FshSyntaxKind::RegexValue,

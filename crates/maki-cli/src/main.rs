@@ -260,6 +260,18 @@ enum Commands {
         /// Indentation size
         #[arg(long, help = "Number of spaces for indentation")]
         indent_size: Option<usize>,
+
+        /// Show progress for long-running operations
+        #[arg(long, help = "Show progress bar for large projects")]
+        progress: bool,
+
+        /// Quiet mode (only show errors)
+        #[arg(long, short = 'q', help = "Quiet mode (only show errors)")]
+        quiet: bool,
+
+        /// Show current formatting configuration
+        #[arg(long, help = "Show current formatting configuration")]
+        show_config: bool,
     },
 
     /// Manage and inspect linting rules
@@ -559,6 +571,9 @@ async fn run_command(cli: Cli) -> Result<()> {
             exclude,
             line_width,
             indent_size,
+            progress,
+            quiet,
+            show_config,
         }) => {
             let paths = if paths.is_empty() {
                 vec![PathBuf::from(".")]
@@ -577,6 +592,9 @@ async fn run_command(cli: Cli) -> Result<()> {
                 exclude,
                 line_width,
                 indent_size,
+                progress,
+                quiet,
+                show_config,
                 cli.config,
             )
             .await

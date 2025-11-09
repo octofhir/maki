@@ -1190,10 +1190,14 @@ fn prompt_fix_confirmation(fix: &Fix, original_content: &str) -> Result<bool> {
     use std::io::{self, Write};
 
     println!("\n{}", "─".repeat(80));
-    println!("🔧 {} autofix suggested", if fix.is_safe() { "Safe" } else { "Unsafe" });
+    println!(
+        "🔧 {} autofix suggested",
+        if fix.is_safe() { "Safe" } else { "Unsafe" }
+    );
     println!("{}", "─".repeat(80));
     println!("Rule:     {}", fix.rule_id);
-    println!("Location: {}:{}:{}",
+    println!(
+        "Location: {}:{}:{}",
         fix.location.file.display(),
         fix.location.line,
         fix.location.column
@@ -1207,7 +1211,9 @@ fn prompt_fix_confirmation(fix: &Fix, original_content: &str) -> Result<bool> {
 
     println!("\n{}", "─".repeat(80));
     print!("Apply this fix? [y/N/q] ");
-    io::stdout().flush().map_err(|e| MakiError::internal_error(format!("Failed to flush stdout: {}", e)))?;
+    io::stdout()
+        .flush()
+        .map_err(|e| MakiError::internal_error(format!("Failed to flush stdout: {}", e)))?;
 
     let mut input = String::new();
     io::stdin()
@@ -1219,7 +1225,9 @@ fn prompt_fix_confirmation(fix: &Fix, original_content: &str) -> Result<bool> {
     match response.as_str() {
         "q" | "quit" => {
             println!("\n❌ Autofix cancelled by user");
-            Err(MakiError::autofix_error("User cancelled autofix".to_string()))
+            Err(MakiError::autofix_error(
+                "User cancelled autofix".to_string(),
+            ))
         }
         "y" | "yes" => Ok(true),
         _ => Ok(false),
@@ -1268,7 +1276,10 @@ fn show_fix_preview(fix: &Fix, original_content: &str) {
             ChangeTag::Equal => line_text.to_string(),
         };
 
-        println!("{} \x1b[90m{:4}\x1b[0m │ {}", sign, current_line, colored_text);
+        println!(
+            "{} \x1b[90m{:4}\x1b[0m │ {}",
+            sign, current_line, colored_text
+        );
 
         // Only increment line number for non-delete changes
         if !matches!(change.tag(), ChangeTag::Delete) {
@@ -1335,11 +1346,14 @@ impl FixStatistics {
 
         if failed {
             self.failed_fixes += 1;
-            let stats = self.by_rule.entry(fix.rule_id.clone()).or_insert(RuleFixStats {
-                applied: 0,
-                failed: 0,
-                is_safe: fix.is_safe(),
-            });
+            let stats = self
+                .by_rule
+                .entry(fix.rule_id.clone())
+                .or_insert(RuleFixStats {
+                    applied: 0,
+                    failed: 0,
+                    is_safe: fix.is_safe(),
+                });
             stats.failed += 1;
         } else if applied {
             if fix.is_safe() {
@@ -1348,11 +1362,14 @@ impl FixStatistics {
                 self.unsafe_fixes_applied += 1;
             }
 
-            let stats = self.by_rule.entry(fix.rule_id.clone()).or_insert(RuleFixStats {
-                applied: 0,
-                failed: 0,
-                is_safe: fix.is_safe(),
-            });
+            let stats = self
+                .by_rule
+                .entry(fix.rule_id.clone())
+                .or_insert(RuleFixStats {
+                    applied: 0,
+                    failed: 0,
+                    is_safe: fix.is_safe(),
+                });
             stats.applied += 1;
         } else {
             self.skipped_fixes += 1;
@@ -1422,10 +1439,7 @@ fn generate_unified_diff_impl(
 
     // File headers
     if colorize {
-        output.push_str(&format!(
-            "\x1b[1m--- {}\x1b[0m\n",
-            file_path.display()
-        ));
+        output.push_str(&format!("\x1b[1m--- {}\x1b[0m\n", file_path.display()));
         output.push_str(&format!(
             "\x1b[1m+++ {} (modified)\x1b[0m\n",
             file_path.display()

@@ -1693,13 +1693,17 @@ impl AstNode for SeverityClause {
 
 impl SeverityClause {
     pub fn value(&self) -> Option<String> {
-        // Get the identifier after "Severity:" and optional #
-        // Parser stores # and identifier as separate tokens
+        // Get the code or identifier after "Severity:"
+        // Severity values are typically codes like #error, #warning
         self.syntax
             .children_with_tokens()
             .filter_map(|child| child.into_token())
-            .find(|t| t.kind() == FshSyntaxKind::Ident)
-            .map(|t| t.text().trim().to_string())
+            .find(|t| t.kind() == FshSyntaxKind::Code || t.kind() == FshSyntaxKind::Ident)
+            .map(|t| {
+                let text = t.text().trim();
+                // Remove # prefix if present (Code tokens include it)
+                text.strip_prefix('#').unwrap_or(text).to_string()
+            })
     }
 }
 
@@ -3077,19 +3081,12 @@ impl CardinalityNode {
     }
 
     /// Get the full cardinality as a string (e.g., "0..1", "1..*", "5")
+    ///
+    /// For lossless formatting, this returns the original source text exactly as written.
+    /// Use `min()` and `max()` methods for semantic analysis if you need to interpret the values.
     pub fn as_string(&self) -> String {
-        if let (Some(min), Some(max)) = (self.min(), self.max()) {
-            if min.to_string() == max {
-                // Single value cardinality
-                min.to_string()
-            } else {
-                // Range cardinality
-                format!("{}..{}", min, max)
-            }
-        } else {
-            // Fallback to raw text
-            self.syntax.text().to_string().trim().to_string()
-        }
+        // Use raw text to preserve original formatting (e.g., "1..1" vs "1")
+        self.syntax.text().to_string().trim().to_string()
     }
 
     /// Check if cardinality contains a specific string (for backward compatibility)

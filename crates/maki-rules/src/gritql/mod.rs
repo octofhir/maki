@@ -60,8 +60,10 @@ pub use builtins::register_fsh_builtins;
 pub use cst_adapter::{FshGritCursor, FshGritNode};
 pub use cst_language::FshTargetLanguage;
 pub use cst_tree::FshGritTree;
-pub use executor::{CompiledGritQLPattern, GritQLCompiler, GritQLMatch, GritQLMatchWithFix, MatchRange};
-pub use functions::{FunctionValue, RewriteFunctionRegistry, RewriteFunctions, RewriteFunc};
+pub use executor::{
+    CompiledGritQLPattern, GritQLCompiler, GritQLMatch, GritQLMatchWithFix, MatchRange,
+};
+pub use functions::{FunctionValue, RewriteFunc, RewriteFunctionRegistry, RewriteFunctions};
 pub use loader::GritQLRuleLoader;
 pub use registry::GritQLRegistry;
 pub use rewrite::Effect;

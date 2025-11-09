@@ -442,7 +442,7 @@ pub fn check_extension_context(model: &SemanticModel) -> Vec<Diagnostic> {
 #[derive(Debug, Clone)]
 struct RequiredElement {
     path: String,
-    #[allow(dead_code)]  // Used for display in diagnostics
+    #[allow(dead_code)] // Used for display in diagnostics
     min: u32,
     max_str: String,
 }
@@ -469,44 +469,45 @@ pub fn check_instance_required_fields(model: &SemanticModel) -> Vec<Diagnostic> 
         if let Some(instance_name) = instance.name() {
             // Get the profile this instance conforms to
             if let Some(instance_of) = instance.instance_of()
-                && let Some(profile_name) = instance_of.value() {
-                    // Find the profile definition
-                    if let Some(profile) = profiles.get(&profile_name) {
-                        // Collect required elements from the profile
-                        let required_elements = collect_required_elements(profile);
+                && let Some(profile_name) = instance_of.value()
+            {
+                // Find the profile definition
+                if let Some(profile) = profiles.get(&profile_name) {
+                    // Collect required elements from the profile
+                    let required_elements = collect_required_elements(profile);
 
-                        if !required_elements.is_empty() {
-                            // Collect provided elements from the instance
-                            let provided_elements = collect_instance_assignments(&instance);
+                    if !required_elements.is_empty() {
+                        // Collect provided elements from the instance
+                        let provided_elements = collect_instance_assignments(&instance);
 
-                            // Check for missing required elements
-                            for required in &required_elements {
-                                if !provided_elements.contains(&required.path) {
-                                    let location = model.source_map.node_to_diagnostic_location(
-                                        instance.syntax(),
-                                        &model.source,
-                                        &model.source_file,
-                                    );
+                        // Check for missing required elements
+                        for required in &required_elements {
+                            if !provided_elements.contains(&required.path) {
+                                let location = model.source_map.node_to_diagnostic_location(
+                                    instance.syntax(),
+                                    &model.source,
+                                    &model.source_file,
+                                );
 
-                                    let message = format!(
-                                        "Instance '{}' missing required element '{}'\n  Note: Profile '{}' requires this element with cardinality {}",
-                                        instance_name, required.path, profile_name, required.max_str
-                                    );
+                                let message = format!(
+                                    "Instance '{}' missing required element '{}'\n  Note: Profile '{}' requires this element with cardinality {}",
+                                    instance_name, required.path, profile_name, required.max_str
+                                );
 
-                                    diagnostics.push(
-                                        Diagnostic::new(
-                                            INSTANCE_REQUIRED_FIELDS_MISSING,
-                                            Severity::Error,
-                                            message,
-                                            location,
-                                        )
-                                        .with_code("instance-missing-required-field".to_string()),
-                                    );
-                                }
+                                diagnostics.push(
+                                    Diagnostic::new(
+                                        INSTANCE_REQUIRED_FIELDS_MISSING,
+                                        Severity::Error,
+                                        message,
+                                        location,
+                                    )
+                                    .with_code("instance-missing-required-field".to_string()),
+                                );
                             }
                         }
                     }
                 }
+            }
         }
     }
 
@@ -530,13 +531,14 @@ fn collect_required_elements(profile: &maki_core::cst::ast::Profile) -> Vec<Requ
                 // Parse cardinality from text (format: "min..max")
                 if let Some((min_str, _max_str)) = card_text.split_once("..")
                     && let Ok(min) = min_str.trim().parse::<u32>()
-                        && min >= 1 {
-                            required.push(RequiredElement {
-                                path: path_str,
-                                min,
-                                max_str: card_text,
-                            });
-                        }
+                    && min >= 1
+                {
+                    required.push(RequiredElement {
+                        path: path_str,
+                        min,
+                        max_str: card_text,
+                    });
+                }
             }
         }
     }
@@ -545,7 +547,9 @@ fn collect_required_elements(profile: &maki_core::cst::ast::Profile) -> Vec<Requ
 }
 
 /// Collect all assignment paths from an instance
-fn collect_instance_assignments(instance: &maki_core::cst::ast::Instance) -> std::collections::HashSet<String> {
+fn collect_instance_assignments(
+    instance: &maki_core::cst::ast::Instance,
+) -> std::collections::HashSet<String> {
     use maki_core::cst::ast::Rule;
     let mut paths = std::collections::HashSet::new();
 
@@ -620,8 +624,13 @@ pub fn check_profile_without_examples(model: &SemanticModel) -> Vec<Diagnostic> 
                 );
 
                 diagnostics.push(
-                    Diagnostic::new(PROFILE_WITHOUT_EXAMPLES, Severity::Warning, message, location)
-                        .with_code("profile-without-examples".to_string()),
+                    Diagnostic::new(
+                        PROFILE_WITHOUT_EXAMPLES,
+                        Severity::Warning,
+                        message,
+                        location,
+                    )
+                    .with_code("profile-without-examples".to_string()),
                 );
             }
         }
@@ -844,7 +853,12 @@ mod tests {
             .collect();
         assert_eq!(id_diags.len(), 1);
         assert!(id_diags[0].message.contains("Id"));
-        assert!(id_diags[0].suggestions.iter().any(|s| s.message.contains("my-profile")));
+        assert!(
+            id_diags[0]
+                .suggestions
+                .iter()
+                .any(|s| s.message.contains("my-profile"))
+        );
     }
 
     #[test]
@@ -859,10 +873,12 @@ mod tests {
             .collect();
         assert_eq!(title_diags.len(), 1);
         assert!(title_diags[0].message.contains("Title"));
-        assert!(title_diags[0]
-            .suggestions
-            .iter()
-            .any(|s| s.message.contains("My Profile")));
+        assert!(
+            title_diags[0]
+                .suggestions
+                .iter()
+                .any(|s| s.message.contains("My Profile"))
+        );
     }
 
     #[test]
@@ -877,10 +893,12 @@ mod tests {
             .collect();
         assert_eq!(desc_diags.len(), 1);
         assert!(desc_diags[0].message.contains("Description"));
-        assert!(desc_diags[0]
-            .suggestions
-            .iter()
-            .any(|s| s.replacement.contains("TODO")));
+        assert!(
+            desc_diags[0]
+                .suggestions
+                .iter()
+                .any(|s| s.replacement.contains("TODO"))
+        );
     }
 
     #[test]
@@ -898,7 +916,11 @@ mod tests {
                     || d.rule_id == REQUIRED_TITLE
             })
             .collect();
-        assert_eq!(required_diags.len(), 0, "No required fields should be missing");
+        assert_eq!(
+            required_diags.len(),
+            0,
+            "No required fields should be missing"
+        );
     }
 
     #[test]
@@ -1049,7 +1071,10 @@ InstanceOf: StrictPatient
         let diagnostics = check_instance_required_fields(&model);
 
         // Should detect missing 'name' and 'gender'
-        assert!(diagnostics.len() >= 2, "Should detect at least 2 missing fields");
+        assert!(
+            diagnostics.len() >= 2,
+            "Should detect at least 2 missing fields"
+        );
         assert!(diagnostics.iter().any(|d| d.message.contains("name")));
         assert!(diagnostics.iter().any(|d| d.message.contains("gender")));
     }
@@ -1069,7 +1094,11 @@ InstanceOf: StrictPatient
         let model = create_test_model(source);
         let diagnostics = check_instance_required_fields(&model);
 
-        assert_eq!(diagnostics.len(), 0, "Complete instance should have no errors");
+        assert_eq!(
+            diagnostics.len(),
+            0,
+            "Complete instance should have no errors"
+        );
     }
 
     #[test]
@@ -1137,7 +1166,11 @@ InstanceOf: PopularProfile
         let model = create_test_model(source);
         let diagnostics = check_profile_without_examples(&model);
 
-        assert_eq!(diagnostics.len(), 0, "Profile with examples should not warn");
+        assert_eq!(
+            diagnostics.len(),
+            0,
+            "Profile with examples should not warn"
+        );
     }
 
     #[test]
@@ -1217,7 +1250,8 @@ Parent: Patient
             context: None,
             snapshot: Some(maki_core::export::StructureDefinitionSnapshot {
                 element: vec![{
-                    let mut elem = maki_core::export::ElementDefinition::new("Patient.name".to_string());
+                    let mut elem =
+                        maki_core::export::ElementDefinition::new("Patient.name".to_string());
                     elem.id = Some("Patient.name".to_string());
                     elem.min = Some(1);
                     elem.max = Some("*".to_string());

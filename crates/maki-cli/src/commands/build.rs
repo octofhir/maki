@@ -581,6 +581,9 @@ async fn run_formatter_before_build(input_dir: &Path) -> Result<FormatResult> {
     let exclude = vec![]; // Use defaults
     let line_width = None; // Use config defaults
     let indent_size = None; // Use config defaults
+    let progress = false; // No progress bar during build
+    let quiet = true; // Quiet mode during build
+    let show_config = false; // Don't show config during build
     let config_path = None; // Auto-discover config
 
     // Run formatter
@@ -595,6 +598,9 @@ async fn run_formatter_before_build(input_dir: &Path) -> Result<FormatResult> {
         exclude,
         line_width,
         indent_size,
+        progress,
+        quiet,
+        show_config,
         config_path,
     )
     .await?;

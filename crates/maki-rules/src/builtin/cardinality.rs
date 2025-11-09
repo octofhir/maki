@@ -17,10 +17,7 @@ pub const CARDINALITY_TOO_RESTRICTIVE: &str = "correctness/cardinality-too-restr
 
 /// Detect cardinality conflict patterns
 /// Identifies suspicious cardinality patterns that often indicate parent/child conflicts
-fn detect_conflict_patterns(
-    card: &Cardinality,
-    location: Location,
-) -> Vec<Diagnostic> {
+fn detect_conflict_patterns(card: &Cardinality, location: Location) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
     // Pattern 1: Unbounded on a typically bounded field with high minimum
@@ -46,10 +43,7 @@ fn detect_conflict_patterns(
 }
 
 /// Detect overly restrictive cardinality changes
-fn detect_overly_restrictive(
-    card: &Cardinality,
-    location: Location,
-) -> Vec<Diagnostic> {
+fn detect_overly_restrictive(card: &Cardinality, location: Location) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
     // Pattern 1: Exactly 1 is very restrictive from 0..*
@@ -109,8 +103,7 @@ fn is_cardinality_too_restrictive(
             true,
             Some(format!(
                 "Making optional element required (parent: {}..*, child: {}..)",
-                parent.min,
-                child.min
+                parent.min, child.min
             )),
         );
     }
@@ -150,7 +143,10 @@ pub fn check_cardinality(model: &SemanticModel) -> Vec<Diagnostic> {
             })
             .collect();
 
-        diagnostics.extend(check_resource_cardinality_rules(card_rules.into_iter(), model));
+        diagnostics.extend(check_resource_cardinality_rules(
+            card_rules.into_iter(),
+            model,
+        ));
     }
 
     // Check extensions
@@ -163,7 +159,10 @@ pub fn check_cardinality(model: &SemanticModel) -> Vec<Diagnostic> {
             })
             .collect();
 
-        diagnostics.extend(check_resource_cardinality_rules(card_rules.into_iter(), model));
+        diagnostics.extend(check_resource_cardinality_rules(
+            card_rules.into_iter(),
+            model,
+        ));
     }
 
     diagnostics
@@ -310,13 +309,10 @@ fn find_element_cardinality(
             {
                 return Some(Cardinality {
                     min: element.min.unwrap_or(0),
-                    max: element.max.as_deref().and_then(|m| {
-                        if m == "*" {
-                            None
-                        } else {
-                            m.parse().ok()
-                        }
-                    }),
+                    max: element
+                        .max
+                        .as_deref()
+                        .and_then(|m| if m == "*" { None } else { m.parse().ok() }),
                 });
             }
         }
@@ -330,13 +326,10 @@ fn find_element_cardinality(
             {
                 return Some(Cardinality {
                     min: element.min.unwrap_or(0),
-                    max: element.max.as_deref().and_then(|m| {
-                        if m == "*" {
-                            None
-                        } else {
-                            m.parse().ok()
-                        }
-                    }),
+                    max: element
+                        .max
+                        .as_deref()
+                        .and_then(|m| if m == "*" { None } else { m.parse().ok() }),
                 });
             }
         }
@@ -586,10 +579,18 @@ Title: "My Profile"
                 _ => None,
             })
             .collect();
-        assert_eq!(card_rules.len(), 1, "Profile should have one card rule, got {}", card_rules.len());
+        assert_eq!(
+            card_rules.len(),
+            1,
+            "Profile should have one card rule, got {}",
+            card_rules.len()
+        );
 
         let diagnostics = check_cardinality(&model);
-        assert!(!diagnostics.is_empty(), "Should detect reversed cardinality");
+        assert!(
+            !diagnostics.is_empty(),
+            "Should detect reversed cardinality"
+        );
         assert_eq!(diagnostics[0].severity, Severity::Error);
         assert!(diagnostics[0].message.contains("minimum"));
         assert!(diagnostics[0].message.contains("greater than"));
@@ -675,7 +676,10 @@ Parent: Patient
         let model = create_test_model(source);
         let diagnostics = check_cardinality(&model);
         // Should have one error for reversed cardinality
-        let errors = diagnostics.iter().filter(|d| d.severity == Severity::Error).count();
+        let errors = diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .count();
         assert_eq!(errors, 1);
     }
 
@@ -998,8 +1002,15 @@ Title: "Test Profile"
             .iter()
             .filter(|d| d.severity == Severity::Error)
             .collect();
-        assert_eq!(errors.len(), 1, "Should detect one reversed cardinality error");
-        assert!(errors[0].suggestions.len() > 0, "Should have autofix suggestion");
+        assert_eq!(
+            errors.len(),
+            1,
+            "Should detect one reversed cardinality error"
+        );
+        assert!(
+            !errors[0].suggestions.is_empty(),
+            "Should have autofix suggestion"
+        );
     }
 
     #[test]
@@ -1011,7 +1022,10 @@ Extension: MyExtension
 "#;
         let model = create_test_model(source);
         let diagnostics = check_cardinality(&model);
-        assert!(diagnostics.is_empty(), "Extension cardinality should be valid");
+        assert!(
+            diagnostics.is_empty(),
+            "Extension cardinality should be valid"
+        );
     }
 
     #[test]
@@ -1073,7 +1087,11 @@ Parent: Patient
             .iter()
             .filter(|d| d.severity == Severity::Warning)
             .collect();
-        assert_eq!(errors.len(), 2, "Should have two reversed cardinality errors");
+        assert_eq!(
+            errors.len(),
+            2,
+            "Should have two reversed cardinality errors"
+        );
         assert_eq!(warnings.len(), 1, "Should have one 0..0 warning");
     }
 
@@ -1088,9 +1106,9 @@ Parent: Patient
         let model = create_test_model(source);
         let diagnostics = check_cardinality_conflicts(&model, None).await;
         // Should detect unbounded with high minimum as suspicious
-        let has_warning = diagnostics.iter().any(|d| {
-            d.rule_id == CARDINALITY_CONFLICTS && d.severity == Severity::Warning
-        });
+        let has_warning = diagnostics
+            .iter()
+            .any(|d| d.rule_id == CARDINALITY_CONFLICTS && d.severity == Severity::Warning);
         assert!(has_warning, "Should warn about unbounded high minimum");
     }
 
@@ -1109,9 +1127,9 @@ Parent: Patient
             !diagnostics.is_empty(),
             "Should detect overly restrictive patterns"
         );
-        let has_restrictive = diagnostics.iter().any(|d| {
-            d.rule_id == CARDINALITY_TOO_RESTRICTIVE && d.severity == Severity::Warning
-        });
+        let has_restrictive = diagnostics
+            .iter()
+            .any(|d| d.rule_id == CARDINALITY_TOO_RESTRICTIVE && d.severity == Severity::Warning);
         assert!(has_restrictive, "Should warn about restrictive cardinality");
     }
 
@@ -1164,7 +1182,9 @@ Parent: Patient
 
         // Phase 2a: Conflict detection
         let conflict_diags = check_cardinality_conflicts(&model, None).await;
-        let _has_conflicts = conflict_diags.iter().any(|d| d.rule_id == CARDINALITY_CONFLICTS);
+        let _has_conflicts = conflict_diags
+            .iter()
+            .any(|d| d.rule_id == CARDINALITY_CONFLICTS);
         // May or may not have conflicts depending on patterns
 
         // Phase 2b: Restrictive detection
@@ -1173,6 +1193,9 @@ Parent: Patient
             .iter()
             .filter(|d| d.rule_id == CARDINALITY_TOO_RESTRICTIVE)
             .count();
-        assert!(restrictive_count >= 2, "Phase 2b: Should detect multiple restrictive patterns");
+        assert!(
+            restrictive_count >= 2,
+            "Phase 2b: Should detect multiple restrictive patterns"
+        );
     }
 }

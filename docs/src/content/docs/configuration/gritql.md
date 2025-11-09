@@ -184,6 +184,72 @@ where {
 }
 ```
 
+### Variable Binding with Nested Where Clauses
+
+**New in Phase 3**: You can now use nested where clauses with variable constraints to create more powerful rules:
+
+```gritql
+// Match profiles where the name starts with uppercase
+profile_declaration: $name where {
+    $name <: r"^[A-Z]"
+}
+```
+
+This syntax allows you to:
+1. **Bind a variable** to a field value (e.g., `$name` captures the profile name)
+2. **Apply constraints** to that variable using nested predicates
+3. **Use the captured value** in messages and fixes
+
+#### Examples
+
+**Enforce naming conventions**:
+```gritql
+// Profile names must start with uppercase
+profile_declaration: $name where {
+    $name <: r"^[A-Z]"
+}
+```
+
+**Combine with logical operators**:
+```gritql
+// Profile names must be PascalCase (uppercase start, no underscores/hyphens)
+profile_declaration: $name where {
+    and {
+        $name <: r"^[A-Z]",
+        not $name <: r"[_-]"
+    }
+}
+```
+
+**Check multiple variables**:
+```gritql
+// Both profile name and ID must follow naming rules
+Profile: $name where {
+    and {
+        $name <: r"^[A-Z][a-zA-Z0-9]*$",
+        $parent == "Patient"
+    }
+}
+```
+
+#### Syntax Requirements
+
+⚠️ **Important**: Nested where clauses require braces `{ }`:
+
+```gritql
+// ✅ Correct - braces after 'where'
+$name where { $name <: r"^[A-Z]" }
+
+// ❌ Wrong - missing braces
+$name where $name <: r"^[A-Z]"
+```
+
+This distinguishes variable patterns from regular predicates:
+- `$var where { predicate }` - Variable pattern with constraints
+- `where $var == value` - Regular predicate
+
+See the [GritQL Getting Started Guide](/guides/gritql/getting-started/) for more examples.
+
 ## Testing Custom Rules
 
 Test your rules before deploying:

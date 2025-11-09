@@ -39,7 +39,10 @@ Description: "A profile for patient resources"
 
     // Check captures
     if let Some(match_result) = matches.first() {
-        assert!(!match_result.matched_text.is_empty(), "Should have matched text");
+        assert!(
+            !match_result.matched_text.is_empty(),
+            "Should have matched text"
+        );
     }
 }
 
@@ -47,7 +50,10 @@ Description: "A profile for patient resources"
 fn test_validate_profile_naming() {
     let compiler = GritQLCompiler::new().unwrap();
     let pattern = compiler
-        .compile_pattern("Profile: $name where { is_pascal_case($name) }", "test-rule")
+        .compile_pattern(
+            "Profile: $name where { is_pascal_case($name) }",
+            "test-rule",
+        )
         .unwrap();
 
     // PascalCase profile name
@@ -112,9 +118,7 @@ fn test_complex_documentation_rule() {
 #[test]
 fn test_multiple_definitions_in_file() {
     let compiler = GritQLCompiler::new().unwrap();
-    let pattern = compiler
-        .compile_pattern("Profile", "test-rule")
-        .unwrap();
+    let pattern = compiler.compile_pattern("Profile", "test-rule").unwrap();
 
     let source = r#"
 Profile: Profile1
@@ -129,7 +133,10 @@ Parent: Patient
     let matches = pattern.execute(source, "test.fsh").unwrap();
 
     // Should find all 3 profiles
-    let profile_matches = matches.iter().filter(|m| m.matched_text.contains("Profile:")).count();
+    let profile_matches = matches
+        .iter()
+        .filter(|m| m.matched_text.contains("Profile:"))
+        .count();
     assert!(profile_matches >= 3, "Should find all 3 profiles");
 }
 
@@ -144,21 +151,30 @@ fn test_field_value_comparison() {
     let matches = pattern.execute(source, "test.fsh").unwrap();
 
     // Should match profiles with parent == "Patient"
-    assert!(!matches.is_empty(), "Should find profile with parent Patient");
+    assert!(
+        !matches.is_empty(),
+        "Should find profile with parent Patient"
+    );
 }
 
 #[test]
 fn test_string_contains_operation() {
     let compiler = GritQLCompiler::new().unwrap();
     let pattern = compiler
-        .compile_pattern("Profile: $name where { $name contains \"Patient\" }", "test-rule")
+        .compile_pattern(
+            "Profile: $name where { $name contains \"Patient\" }",
+            "test-rule",
+        )
         .unwrap();
 
     let source = "Profile: MyPatient\nParent: Patient";
     let matches = pattern.execute(source, "test.fsh").unwrap();
 
     // Should match profile names containing "Patient"
-    assert!(!matches.is_empty(), "Should find profile with Patient in name");
+    assert!(
+        !matches.is_empty(),
+        "Should find profile with Patient in name"
+    );
 }
 
 #[test]
@@ -174,7 +190,7 @@ fn test_regex_pattern_matching() {
     let _matches = pattern.execute(source, "test.fsh").unwrap();
 
     // Pattern should compile and execute without errors
-    assert!(true, "Regex pattern should execute successfully");
+    // Test passes if execution doesn't panic
 }
 
 #[test]
@@ -216,11 +232,17 @@ fn test_negated_predicate() {
 fn test_variable_capture_and_validation() {
     let compiler = GritQLCompiler::new().unwrap();
     let pattern = compiler
-        .compile_pattern("Profile: $name where { is_pascal_case($name) }", "test-rule")
+        .compile_pattern(
+            "Profile: $name where { is_pascal_case($name) }",
+            "test-rule",
+        )
         .unwrap();
 
     // Verify captures are correctly set
-    assert!(pattern.captures().contains(&"name".to_string()), "Should have name capture");
+    assert!(
+        pattern.captures().contains(&"name".to_string()),
+        "Should have name capture"
+    );
 
     let source = "Profile: MyPatient\nParent: Patient";
     let matches = pattern.execute(source, "test.fsh").unwrap();
@@ -263,16 +285,13 @@ Title: "My Code System"
 #[test]
 fn test_empty_file_handling() {
     let compiler = GritQLCompiler::new().unwrap();
-    let pattern = compiler
-        .compile_pattern("Profile", "test-rule")
-        .unwrap();
+    let pattern = compiler.compile_pattern("Profile", "test-rule").unwrap();
 
     let source = "";
     let _matches = pattern.execute(source, "test.fsh").unwrap();
 
     // Empty file will still produce a document node match
-    // Just verify the pattern executes without error
-    assert!(true, "Empty file should be handled gracefully");
+    // Just verify the pattern executes without error (test passes if it doesn't panic)
 }
 
 #[test]
@@ -288,15 +307,17 @@ fn test_pattern_matching_consistency() {
     let matches1 = pattern.execute(source, "test.fsh").unwrap();
     let matches2 = pattern.execute(source, "test.fsh").unwrap();
 
-    assert_eq!(matches1.len(), matches2.len(), "Pattern should be deterministic");
+    assert_eq!(
+        matches1.len(),
+        matches2.len(),
+        "Pattern should be deterministic"
+    );
 }
 
 #[test]
 fn test_range_information_accuracy() {
     let compiler = GritQLCompiler::new().unwrap();
-    let pattern = compiler
-        .compile_pattern("Profile", "test-rule")
-        .unwrap();
+    let pattern = compiler.compile_pattern("Profile", "test-rule").unwrap();
 
     let source = "Profile: MyProfile\nParent: Patient";
     let matches = pattern.execute(source, "test.fsh").unwrap();
@@ -328,14 +349,17 @@ fn test_range_information_accuracy() {
 fn test_special_characters_in_strings() {
     let compiler = GritQLCompiler::new().unwrap();
     let pattern = compiler
-        .compile_pattern(r#"Profile: $name where { $name contains "-" }"#, "test-rule")
+        .compile_pattern(
+            r#"Profile: $name where { $name contains "-" }"#,
+            "test-rule",
+        )
         .unwrap();
 
     let source = "Profile: My-Patient\nParent: Patient";
     let _matches = pattern.execute(source, "test.fsh").unwrap();
 
     // Pattern should handle special characters in strings
-    assert!(true, "Should handle special characters successfully");
+    // Test passes if execution doesn't panic
 }
 
 #[test]

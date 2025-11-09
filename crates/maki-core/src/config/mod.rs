@@ -76,8 +76,8 @@ mod unified_config;
 // Re-export main types
 pub use loader::ConfigLoader;
 pub use maki_config::{
-    FilesConfiguration, FormatterConfiguration, LinterConfiguration, RuleConfig, RuleSeverity,
-    RulesConfiguration,
+    FilesConfiguration, FormatterConfiguration, IndentStyle, LinterConfiguration, RuleConfig,
+    RuleSeverity, RulesConfiguration,
 };
 pub use sushi_config::{
     CodeableConcept, Coding, ConfigError, ContactDetail, ContactPoint, DefinitionExtension,

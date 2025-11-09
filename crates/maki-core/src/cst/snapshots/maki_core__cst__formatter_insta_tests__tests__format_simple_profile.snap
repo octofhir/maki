@@ -7,6 +7,6 @@ Parent: Patient
 Id: my-patient
 Title: "My Patient Profile"
 
-* identifier  MS
-* name        MS
-* gender
+* identifier 1..* MS
+* name       1..1 MS
+* gender     1..1

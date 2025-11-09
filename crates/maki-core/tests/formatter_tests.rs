@@ -21,12 +21,7 @@ fn create_test_manager() -> FormatterManager<CachedFshParser> {
 
 /// Create test formatter configuration
 fn create_test_config() -> FormatterConfiguration {
-    FormatterConfiguration {
-        indent_size: Some(2),
-        line_width: Some(100),
-        align_carets: Some(true),
-        enabled: Some(true),
-    }
+    FormatterConfiguration::default()
 }
 
 /// Create a temporary file with given content

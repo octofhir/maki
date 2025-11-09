@@ -14,9 +14,7 @@ pub enum ValidationResult {
     /// Rewrite is safe
     Safe,
     /// Rewrite has issues
-    Unsafe {
-        issues: Vec<String>,
-    },
+    Unsafe { issues: Vec<String> },
 }
 
 impl ValidationResult {
@@ -29,9 +27,7 @@ impl ValidationResult {
     pub fn issues(&self) -> Vec<&str> {
         match self {
             ValidationResult::Safe => vec![],
-            ValidationResult::Unsafe { issues } => {
-                issues.iter().map(|s| s.as_str()).collect()
-            }
+            ValidationResult::Unsafe { issues } => issues.iter().map(|s| s.as_str()).collect(),
         }
     }
 }
@@ -132,10 +128,7 @@ impl RewriteValidator {
     }
 
     /// Check if two rewrites conflict (overlap)
-    pub fn check_conflict(
-        range1: (usize, usize),
-        range2: (usize, usize),
-    ) -> bool {
+    pub fn check_conflict(range1: (usize, usize), range2: (usize, usize)) -> bool {
         let (start1, end1) = range1;
         let (start2, end2) = range2;
 

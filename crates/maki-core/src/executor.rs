@@ -448,8 +448,8 @@ impl DefaultExecutor {
                     }
                     Err(_) => {
                         // No runtime available - create a temporary one
-                        let rt = tokio::runtime::Runtime::new()
-                            .expect("Failed to create Tokio runtime");
+                        let rt =
+                            tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
                         rt.block_on(self.rule_engine.execute_rules(&semantic_model))
                     }
                 };

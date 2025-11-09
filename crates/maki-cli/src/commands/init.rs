@@ -261,6 +261,7 @@ fn generate_maki_config(meta: &ProjectMetadata) -> Result<()> {
             indent_size: Some(2),
             line_width: Some(100),
             align_carets: Some(true),
+            ..Default::default()
         }),
         files: Some(FilesConfiguration {
             include: Some(vec!["input/fsh/**/*.fsh".to_string()]),

@@ -155,10 +155,11 @@ impl FshGritNode {
         if let Some(pos) = text.find(keyword) {
             let after = text[pos + keyword.len()..].trim_start();
             if after.starts_with('"')
-                && let Some(end) = after[1..].find('"') {
-                    let quoted = &after[1..end + 1];
-                    return Some(quoted.to_string());
-                }
+                && let Some(end) = after[1..].find('"')
+            {
+                let quoted = &after[1..end + 1];
+                return Some(quoted.to_string());
+            }
         }
         None
     }

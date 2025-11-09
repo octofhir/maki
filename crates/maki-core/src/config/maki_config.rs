@@ -71,6 +71,16 @@ pub enum RuleSeverity {
     Error,
 }
 
+/// Indent style for formatting
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum IndentStyle {
+    /// Use spaces for indentation
+    Spaces,
+    /// Use tabs for indentation
+    Tabs,
+}
+
 /// Formatter configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -79,7 +89,11 @@ pub struct FormatterConfiguration {
     #[schemars(description = "Enable or disable the formatter")]
     pub enabled: Option<bool>,
 
-    /// Indentation size in spaces
+    /// Indent style (spaces or tabs)
+    #[schemars(description = "Indentation style: 'spaces' or 'tabs'")]
+    pub indent_style: Option<IndentStyle>,
+
+    /// Indentation size in spaces (when indent_style is 'spaces')
     #[schemars(description = "Number of spaces for indentation")]
     pub indent_size: Option<usize>,
 
@@ -90,6 +104,34 @@ pub struct FormatterConfiguration {
     /// Whether to align caret expressions
     #[schemars(description = "Align caret expressions for readability")]
     pub align_carets: Option<bool>,
+
+    /// Whether to add blank line before rules
+    #[schemars(description = "Add blank line before rule definitions")]
+    pub blank_line_before_rules: Option<bool>,
+
+    /// Whether to preserve existing blank lines
+    #[schemars(description = "Preserve blank lines from original source")]
+    pub preserve_blank_lines: Option<bool>,
+
+    /// Maximum consecutive blank lines to keep
+    #[schemars(description = "Maximum number of consecutive blank lines")]
+    pub max_blank_lines: Option<usize>,
+
+    /// Group rules by type (metadata, constraints, flags)
+    #[schemars(description = "Group rules by type for better organization")]
+    pub group_rules: Option<bool>,
+
+    /// Sort rules within groups
+    #[schemars(description = "Sort rules alphabetically within groups")]
+    pub sort_rules: Option<bool>,
+
+    /// Blank lines between rule groups
+    #[schemars(description = "Number of blank lines between rule groups")]
+    pub blank_lines_between_groups: Option<usize>,
+
+    /// Normalize spacing around operators (: and =)
+    #[schemars(description = "Normalize spacing around operators")]
+    pub normalize_spacing: Option<bool>,
 }
 
 /// Files configuration
@@ -153,9 +195,17 @@ impl Default for FormatterConfiguration {
     fn default() -> Self {
         Self {
             enabled: Some(true),
+            indent_style: Some(IndentStyle::Spaces),
             indent_size: Some(2),
             line_width: Some(100),
             align_carets: Some(true),
+            blank_line_before_rules: Some(true),
+            preserve_blank_lines: Some(true),
+            max_blank_lines: Some(2),
+            group_rules: Some(false),
+            sort_rules: Some(false),
+            blank_lines_between_groups: Some(1),
+            normalize_spacing: Some(true),
         }
     }
 }

@@ -19,33 +19,63 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-      
+
       - name: Install FSH Lint
         run: cargo install maki
-      
+
+      - name: Check formatting
+        run: maki format --check **/*.fsh
+
       - name: Lint FSH files
         run: maki lint **/*.fsh
 ```
 
-### With Caching
+### Format Check Only
+
+Check formatting without linting (useful for separate jobs):
 
 ```yaml
-name: Lint FSH Files
+name: Format Check
 
 on: [push, pull_request]
 
 jobs:
-  lint:
+  format:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-      
+
+      - name: Install FSH Lint
+        run: cargo install maki
+
+      - name: Check formatting
+        run: maki format --check **/*.fsh
+```
+
+### Auto-format and Auto-fix
+
+Automatically format and fix issues, then commit:
+
+```yaml
+name: Auto-format and Lint
+
+on: [push, pull_request]
+
+jobs:
+  auto-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -54,17 +84,20 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: ${{ runner.os }}-cargo-maki
-      
+
       - name: Install FSH Lint
         run: cargo install maki || true
-      
+
+      - name: Format FSH files
+        run: maki format **/*.fsh
+
       - name: Lint with fixes
         run: maki lint --fix **/*.fsh
-      
-      - name: Commit fixes
+
+      - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "style: auto-fix FSH lint issues"
+          commit_message: "style: auto-format and fix FSH issues"
 ```
 
 ### Matrix Testing
@@ -216,26 +249,110 @@ steps:
 
 ## Pre-commit Hook
 
-Install FSH Lint as a pre-commit hook:
+### Format and Lint
+
+Install FSH Lint as a pre-commit hook to format and lint before commits:
 
 ```.pre-commit-config.yaml
 repos:
   - repo: local
     hooks:
-      - id: maki
+      - id: maki-format
+        name: FSH Format
+        entry: maki format
+        language: system
+        files: \.fsh$
+      - id: maki-lint
         name: FSH Lint
         entry: maki lint --fix
         language: system
         files: \.fsh$
 ```
 
+### Format Check Only
+
+Or just check formatting without modifying files:
+
+```.pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: maki-format-check
+        name: FSH Format Check
+        entry: maki format --check
+        language: system
+        files: \.fsh$
+        pass_filenames: true
+```
+
+### Git Hook Script
+
+Alternatively, use a custom git hook (`.git/hooks/pre-commit`):
+
+```bash
+#!/bin/bash
+
+# Format FSH files
+echo "Formatting FSH files..."
+maki format **/*.fsh
+
+# Check if formatting changed files
+if ! git diff --quiet; then
+  echo "Files were formatted. Please review changes and commit again."
+  git add **/*.fsh
+fi
+
+# Lint FSH files
+echo "Linting FSH files..."
+maki lint --fix **/*.fsh
+
+if [ $? -ne 0 ]; then
+  echo "Linting failed. Please fix errors before committing."
+  exit 1
+fi
+```
+
+Make it executable:
+
+```bash
+chmod +x .git/hooks/pre-commit
+```
+
 ## Best Practices
 
-1. **Cache Dependencies** - Cache Cargo registry for faster builds
-2. **Auto-fix in CI** - Apply safe fixes automatically
-3. **Fail on Errors** - Treat errors as build failures
-4. **Report Artifacts** - Save lint reports as artifacts
-5. **Matrix Testing** - Test on multiple OS if needed
+1. **Check Formatting First** - Run `maki format --check` before linting to catch style issues
+2. **Cache Dependencies** - Cache Cargo registry for faster builds
+3. **Auto-format and Auto-fix** - Apply formatting and safe fixes automatically in CI
+4. **Fail on Errors** - Treat errors as build failures
+5. **Report Artifacts** - Save lint reports as artifacts
+6. **Separate Jobs** - Use separate jobs for formatting and linting for parallel execution
+7. **Matrix Testing** - Test on multiple OS if needed
+
+### Recommended Workflow
+
+For best results, structure your workflow like this:
+
+1. Format check (fast, catches style issues)
+2. Linting (catches logical errors)
+3. Auto-fix and commit (optional, for automation)
+
+```yaml
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check formatting
+        run: maki format --check **/*.fsh
+
+  lint:
+    runs-on: ubuntu-latest
+    needs: format
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint FSH files
+        run: maki lint **/*.fsh
+```
 
 ## Troubleshooting
 

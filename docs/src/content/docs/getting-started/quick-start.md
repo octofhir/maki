@@ -74,7 +74,27 @@ error[correctness/duplicate-definition]: Duplicate profile definition
   i First defined at line 8
 ```
 
-## Step 5: Auto-fix Issues
+## Step 5: Format Your Code
+
+Format your FSH files for consistent style:
+
+```bash
+maki format **/*.fsh
+```
+
+The formatter will:
+- Normalize spacing around `:` and `=`
+- Align rules for better readability
+- Preserve all comments and blank lines
+- Maintain consistent indentation
+
+You can also check formatting without modifying files:
+
+```bash
+maki format --check **/*.fsh
+```
+
+## Step 6: Auto-fix Issues
 
 Many issues can be fixed automatically:
 
@@ -84,7 +104,7 @@ maki lint --fix **/*.fsh
 
 FSH Lint will apply safe fixes and report what was changed.
 
-## Step 6: Customize Rules
+## Step 7: Customize Rules
 
 Edit `maki.json` to customize rule behavior:
 
@@ -106,10 +126,11 @@ Edit `maki.json` to customize rule behavior:
 
 ## Next Steps
 
-- [Configure rules](/configuration/rules/) to match your project's needs
-- [Learn about built-in rules](/rules/) to understand what FSH Lint checks
-- [Write custom rules](/guides/custom-rules/) for project-specific validation
-- [Integrate with CI/CD](/guides/ci-cd/) to automate linting
+- [Learn about the formatter](/maki/guides/formatter/) for automatic code formatting
+- [Configure rules](/maki/configuration/rules/) to match your project's needs
+- [Learn about built-in rules](/maki/rules/) to understand what FSH Lint checks
+- [Write custom rules](/maki/guides/custom-rules/) for project-specific validation
+- [Integrate with CI/CD](/maki/guides/ci-cd/) to automate linting and formatting
 
 ## Common Commands
 
@@ -129,8 +150,8 @@ maki rules --detailed style/naming-convention
 # Format FSH files
 maki format **/*.fsh
 
-# Format with automatic fixes
-maki format --fix **/*.fsh
+# Check formatting (useful for CI)
+maki format --check **/*.fsh
 ```
 
 ## Help and Support

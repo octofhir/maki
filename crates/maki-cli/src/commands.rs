@@ -99,11 +99,11 @@ pub async fn lint_command(
             ..Default::default()
         };
 
-        let facade = CanonicalFacade::new(canonical_options)
-            .await
-            .map_err(|e| maki_core::MakiError::ConfigError {
+        let facade = CanonicalFacade::new(canonical_options).await.map_err(|e| {
+            maki_core::MakiError::ConfigError {
                 message: format!("Failed to create CanonicalFacade: {}", e),
-            })?;
+            }
+        })?;
 
         // Get FHIR versions from build config
         let fhir_releases: Vec<FhirRelease> = if let Some(build_config) = &config.build {
@@ -136,14 +136,11 @@ pub async fn lint_command(
         };
 
         // Create session
-        let session = Arc::new(
-            facade
-                .session(fhir_releases.clone())
-                .await
-                .map_err(|e| maki_core::MakiError::ConfigError {
-                    message: format!("Failed to create DefinitionSession: {}", e),
-                })?,
-        );
+        let session = Arc::new(facade.session(fhir_releases.clone()).await.map_err(|e| {
+            maki_core::MakiError::ConfigError {
+                message: format!("Failed to create DefinitionSession: {}", e),
+            }
+        })?);
 
         // Get all dependencies (top-level takes precedence over build section)
         let all_deps = config.all_dependencies();
@@ -161,12 +158,11 @@ pub async fn lint_command(
                 .collect();
 
             info!("Installing {} FHIR package dependencies...", coords.len());
-            session
-                .ensure_packages(coords)
-                .await
-                .map_err(|e| maki_core::MakiError::ConfigError {
+            session.ensure_packages(coords).await.map_err(|e| {
+                maki_core::MakiError::ConfigError {
                     message: format!("Failed to install FHIR packages: {}", e),
-                })?;
+                }
+            })?;
             info!("✓ Dependencies installed successfully");
         }
 
@@ -465,6 +461,9 @@ pub async fn format_command(
     exclude: Vec<String>,
     line_width: Option<usize>,
     indent_size: Option<usize>,
+    progress: bool,
+    quiet: bool,
+    show_config: bool,
     config_path: Option<PathBuf>,
 ) -> Result<()> {
     debug!("Running format command on paths: {:?}", paths);
@@ -522,6 +521,50 @@ pub async fn format_command(
 
     debug!("Loaded configuration");
 
+    // If show_config is true, display configuration and exit
+    if show_config {
+        if !quiet {
+            println!("Current formatting configuration:");
+            println!(
+                "  Enabled:        {}",
+                formatter_config.enabled.unwrap_or(true)
+            );
+            println!(
+                "  Indent size:    {}",
+                formatter_config.indent_size.unwrap_or(2)
+            );
+            println!(
+                "  Line width:     {}",
+                formatter_config.line_width.unwrap_or(100)
+            );
+            println!(
+                "  Align carets:   {}",
+                formatter_config.align_carets.unwrap_or(false)
+            );
+            println!(
+                "  Group rules:    {}",
+                formatter_config.group_rules.unwrap_or(false)
+            );
+            println!(
+                "  Sort rules:     {}",
+                formatter_config.sort_rules.unwrap_or(false)
+            );
+            println!(
+                "  Normalize spacing: {}",
+                formatter_config.normalize_spacing.unwrap_or(true)
+            );
+            println!(
+                "  Blank line before rules: {}",
+                formatter_config.blank_line_before_rules.unwrap_or(true)
+            );
+            println!(
+                "  Blank lines between groups: {}",
+                formatter_config.blank_lines_between_groups.unwrap_or(1)
+            );
+        }
+        return Ok(());
+    }
+
     let start_time = Instant::now();
 
     // Determine which files to format
@@ -557,19 +600,69 @@ pub async fn format_command(
     };
 
     if fsh_files.is_empty() {
-        println!("No FSH files found in specified paths.");
+        if !quiet {
+            println!("No FSH files found in specified paths.");
+        }
         return Ok(());
     }
 
     debug!("Found {} FSH files to format", fsh_files.len());
 
-    // Create formatter with parser
-    let parser = CachedFshParser::new()?;
-    let mut formatter = AstFormatter::new(parser);
+    if progress && !quiet {
+        println!(
+            "Formatting {} file{}...",
+            fsh_files.len(),
+            if fsh_files.len() == 1 { "" } else { "s" }
+        );
+    }
 
     // Generate diagnostics for files that need formatting
-    let file_refs: Vec<&Path> = fsh_files.iter().map(|p| p.as_path()).collect();
-    let diagnostics = formatter.format_files_with_diagnostics(&file_refs, &formatter_config)?;
+    // For better performance with large projects, we process files in parallel using rayon
+    use rayon::prelude::*;
+    use std::sync::{Arc, Mutex};
+
+    // Create a progress bar if progress mode is enabled
+    let progress_bar = if progress && !quiet {
+        let pb = indicatif::ProgressBar::new(fsh_files.len() as u64);
+        pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+                )
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+        Some(Arc::new(pb))
+    } else {
+        None
+    };
+
+    let diagnostics: Vec<_> = fsh_files
+        .par_iter()
+        .filter_map(|file_path| {
+            let result = {
+                // Each thread needs its own parser and formatter
+                let thread_parser = CachedFshParser::new().ok()?;
+                let mut thread_formatter = AstFormatter::new(thread_parser);
+                thread_formatter
+                    .format_file_with_diagnostic(file_path.as_path(), &formatter_config)
+                    .ok()
+            };
+
+            // Update progress bar
+            if let Some(ref pb) = progress_bar {
+                pb.inc(1);
+            }
+
+            result
+        })
+        .flatten()
+        .collect();
+
+    // Finish progress bar
+    if let Some(pb) = progress_bar {
+        pb.finish_with_message("Formatting complete");
+    }
 
     // Build summary
     let mut summary = LintSummary::new();
@@ -603,21 +696,53 @@ pub async fn format_command(
 
     // Apply formatting fixes if requested
     if write {
-        for diagnostic in &diagnostics {
+        let fixes_applied = Arc::new(Mutex::new(0usize));
+
+        // Create progress bar for writing if progress mode is enabled
+        let write_progress_bar = if progress && !quiet && !diagnostics.is_empty() {
+            let pb = indicatif::ProgressBar::new(diagnostics.len() as u64);
+            pb.set_style(
+                indicatif::ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} Writing fixes...")
+                    .unwrap()
+                    .progress_chars("#>-"),
+            );
+            Some(Arc::new(pb))
+        } else {
+            None
+        };
+
+        diagnostics.par_iter().for_each(|diagnostic| {
+            // Each thread needs its own formatter
+            let thread_parser = match CachedFshParser::new() {
+                Ok(p) => p,
+                Err(_) => return,
+            };
+            let mut thread_formatter = AstFormatter::new(thread_parser);
+
             // Get the formatted content for this file
-            if let Some(formatted_content) =
-                formatter.get_formatted_content(&diagnostic.location.file, &formatter_config)?
+            if let Ok(Some(formatted_content)) =
+                thread_formatter.get_formatted_content(&diagnostic.location.file, &formatter_config)
             {
                 // Write the formatted content
-                std::fs::write(&diagnostic.location.file, &formatted_content).map_err(|e| {
-                    maki_core::MakiError::IoError {
-                        path: diagnostic.location.file.clone(),
-                        source: e,
-                    }
-                })?;
-                summary.fixes_applied += 1;
+                if std::fs::write(&diagnostic.location.file, &formatted_content).is_ok() {
+                    let mut applied = fixes_applied.lock().unwrap();
+                    *applied += 1;
+                }
             }
+
+            // Update progress bar
+            if let Some(ref pb) = write_progress_bar {
+                pb.inc(1);
+            }
+        });
+
+        // Finish progress bar
+        if let Some(pb) = write_progress_bar {
+            pb.finish_and_clear();
         }
+
+        summary.fixes_applied = *fixes_applied.lock().unwrap();
     }
 
     // Format and print results using same system as lint
@@ -625,37 +750,39 @@ pub async fn format_command(
     let use_colors = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
 
     // Only show diagnostics if in check mode or if nothing was written
-    if check || !write {
-        let formatter_output = OutputFormatter::new(format, use_colors);
-        formatter_output.print_results(&diagnostics, &summary, false)?;
-    } else {
-        // In write mode, just show summary
-        println!("{} files checked", summary.files_checked);
-        if summary.fixes_applied > 0 {
-            if use_colors {
-                println!(
-                    "\x1b[32m✓\x1b[0m Applied formatting to {} file{}",
-                    summary.fixes_applied,
-                    if summary.fixes_applied == 1 { "" } else { "s" }
-                );
-            } else {
-                println!(
-                    "Applied formatting to {} file{}",
-                    summary.fixes_applied,
-                    if summary.fixes_applied == 1 { "" } else { "s" }
-                );
-            }
-        } else if use_colors {
-            println!("\x1b[32m✓\x1b[0m All files are formatted correctly");
+    if !quiet {
+        if check || !write {
+            let formatter_output = OutputFormatter::new(format, use_colors);
+            formatter_output.print_results(&diagnostics, &summary, false)?;
         } else {
-            println!("All files are formatted correctly");
+            // In write mode, just show summary
+            println!("{} files checked", summary.files_checked);
+            if summary.fixes_applied > 0 {
+                if use_colors {
+                    println!(
+                        "\x1b[32m✓\x1b[0m Applied formatting to {} file{}",
+                        summary.fixes_applied,
+                        if summary.fixes_applied == 1 { "" } else { "s" }
+                    );
+                } else {
+                    println!(
+                        "Applied formatting to {} file{}",
+                        summary.fixes_applied,
+                        if summary.fixes_applied == 1 { "" } else { "s" }
+                    );
+                }
+            } else if use_colors {
+                println!("\x1b[32m✓\x1b[0m All files are formatted correctly");
+            } else {
+                println!("All files are formatted correctly");
+            }
         }
-    }
 
-    println!(
-        "Completed in {}",
-        crate::output::utils::format_duration(start_time.elapsed())
-    );
+        println!(
+            "Completed in {}",
+            crate::output::utils::format_duration(start_time.elapsed())
+        );
+    }
 
     // Exit with error code if check mode and files need formatting
     if check && !diagnostics.is_empty() {

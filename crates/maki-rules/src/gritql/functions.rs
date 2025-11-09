@@ -87,14 +87,12 @@ impl RewriteFunctionRegistry {
 
     /// Call a function by name
     pub fn call(&self, name: &str, args: &[FunctionValue]) -> Result<FunctionValue> {
-        let func = self.functions
-            .get(name)
-            .ok_or_else(|| {
-                maki_core::MakiError::rule_error(
-                    "gritql-functions",
-                    format!("Unknown function: {}", name),
-                )
-            })?;
+        let func = self.functions.get(name).ok_or_else(|| {
+            maki_core::MakiError::rule_error(
+                "gritql-functions",
+                format!("Unknown function: {}", name),
+            )
+        })?;
         func(args)
     }
 
@@ -285,35 +283,32 @@ mod tests {
 
     #[test]
     fn test_capitalize() {
-        let result = RewriteFunctions::capitalize(&[FunctionValue::String("badName".to_string())])
-            .unwrap();
+        let result =
+            RewriteFunctions::capitalize(&[FunctionValue::String("badName".to_string())]).unwrap();
         assert_eq!(result.as_string().unwrap(), "BadName");
     }
 
     #[test]
     fn test_to_kebab_case() {
-        let result = RewriteFunctions::to_kebab_case(&[FunctionValue::String(
-            "BadName".to_string(),
-        )])
-        .unwrap();
+        let result =
+            RewriteFunctions::to_kebab_case(&[FunctionValue::String("BadName".to_string())])
+                .unwrap();
         assert_eq!(result.as_string().unwrap(), "bad-name");
     }
 
     #[test]
     fn test_to_pascal_case() {
-        let result = RewriteFunctions::to_pascal_case(&[FunctionValue::String(
-            "bad-name".to_string(),
-        )])
-        .unwrap();
+        let result =
+            RewriteFunctions::to_pascal_case(&[FunctionValue::String("bad-name".to_string())])
+                .unwrap();
         assert_eq!(result.as_string().unwrap(), "BadName");
     }
 
     #[test]
     fn test_to_snake_case() {
-        let result = RewriteFunctions::to_snake_case(&[FunctionValue::String(
-            "BadName".to_string(),
-        )])
-        .unwrap();
+        let result =
+            RewriteFunctions::to_snake_case(&[FunctionValue::String("BadName".to_string())])
+                .unwrap();
         assert_eq!(result.as_string().unwrap(), "bad_name");
     }
 
@@ -347,19 +342,15 @@ mod tests {
 
     #[test]
     fn test_lowercase() {
-        let result = RewriteFunctions::lowercase(&[FunctionValue::String(
-            "BadName".to_string(),
-        )])
-        .unwrap();
+        let result =
+            RewriteFunctions::lowercase(&[FunctionValue::String("BadName".to_string())]).unwrap();
         assert_eq!(result.as_string().unwrap(), "badname");
     }
 
     #[test]
     fn test_uppercase() {
-        let result = RewriteFunctions::uppercase(&[FunctionValue::String(
-            "badname".to_string(),
-        )])
-        .unwrap();
+        let result =
+            RewriteFunctions::uppercase(&[FunctionValue::String("badname".to_string())]).unwrap();
         assert_eq!(result.as_string().unwrap(), "BADNAME");
     }
 
@@ -375,10 +366,7 @@ mod tests {
     fn test_registry_call() {
         let registry = RewriteFunctionRegistry::new();
         let result = registry
-            .call(
-                "capitalize",
-                &[FunctionValue::String("hello".to_string())],
-            )
+            .call("capitalize", &[FunctionValue::String("hello".to_string())])
             .unwrap();
         assert_eq!(result.as_string().unwrap(), "Hello");
     }

@@ -7,4 +7,4 @@ Parent: Patient
 
 * ^version = ""1.0.0""
 * ^status = "#active"
-* name
+* name     1..1

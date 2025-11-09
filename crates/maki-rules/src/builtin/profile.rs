@@ -351,7 +351,8 @@ fn check_entity_slice_collisions(
 
     for rule in rules {
         if let Rule::Contains(contains_rule) = rule
-            && let Some(path) = contains_rule.path() {
+            && let Some(path) = contains_rule.path()
+        {
             let base_path = path.syntax().text().to_string().trim().to_string();
 
             // Get slice names
@@ -586,9 +587,11 @@ Parent: Patient
             !diagnostics.is_empty(),
             "Should warn about missing MS on child"
         );
-        assert!(diagnostics
-            .iter()
-            .any(|d| d.message.contains("name.family") && d.message.contains("MustSupport")));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.message.contains("name.family") && d.message.contains("MustSupport"))
+        );
     }
 
     #[test]
@@ -603,7 +606,11 @@ Parent: Patient
         let model = create_test_model(source);
         let diagnostics = check_must_support_propagation(&model);
 
-        assert_eq!(diagnostics.len(), 0, "Should not warn when MS is consistent");
+        assert_eq!(
+            diagnostics.len(),
+            0,
+            "Should not warn when MS is consistent"
+        );
     }
 
     #[test]

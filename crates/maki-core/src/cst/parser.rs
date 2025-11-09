@@ -1841,6 +1841,33 @@ impl<'a> Parser<'a> {
         self.builder.finish_node(); // PATH_SEGMENT
     }
 
+    /// Parse cardinality as a structured node (e.g., "0..1", "1..*", "1")
+    fn parse_cardinality(&mut self) {
+        self.builder.start_node(FshSyntaxKind::CardinalityNode);
+
+        // min: Integer
+        if self.at(FshSyntaxKind::Integer) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+
+            // Range operator ".."
+            if self.at(FshSyntaxKind::Range) {
+                self.add_current_token();
+                self.advance();
+                self.consume_trivia();
+
+                // max: Integer or Asterisk (*)
+                if self.at(FshSyntaxKind::Integer) || self.at(FshSyntaxKind::Asterisk) {
+                    self.add_current_token();
+                    self.advance();
+                }
+            }
+        }
+
+        self.builder.finish_node(); // CARDINALITYNODE
+    }
+
     // Helper methods
 
     fn at_end(&self) -> bool {
@@ -2645,21 +2672,10 @@ impl<'a> Parser<'a> {
                 self.parse_code_insert_body();
             }
             FshSyntaxKind::CardRule => {
-                // Cardinality and flags
+                // Parse cardinality as a structured CardinalityNode
                 if self.at(FshSyntaxKind::Integer) {
-                    self.add_current_token();
-                    self.advance();
+                    self.parse_cardinality();
                     self.consume_trivia();
-                    if self.at(FshSyntaxKind::Range) {
-                        self.add_current_token();
-                        self.advance();
-                        self.consume_trivia();
-                        if self.at(FshSyntaxKind::Integer) || self.at(FshSyntaxKind::Asterisk) {
-                            self.add_current_token();
-                            self.advance();
-                            self.consume_trivia();
-                        }
-                    }
                 }
                 self.parse_flag_sequence();
             }

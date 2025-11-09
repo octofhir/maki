@@ -83,6 +83,7 @@ export default defineConfig({
 				{
 					label: 'Guides',
 					items: [
+						{ label: 'FSH Formatter', slug: 'guides/formatter' },
 						{ label: 'Automatic Fixes', slug: 'guides/autofix' },
 						{ label: 'Writing Custom Rules', slug: 'guides/custom-rules' },
 						{ label: 'CI/CD Integration', slug: 'guides/ci-cd' },

@@ -29,6 +29,10 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
     Extensive rule set covering FHIR and FSH best practices, from correctness to style.
   </Card>
 
+  <Card title="✨ Automatic Formatting" icon="pencil">
+    Lossless code formatter with configurable style. Format on save, in CI, or on demand.
+  </Card>
+
   <Card title="🎨 Beautiful Errors" icon="approve-check">
     Rich, colorful diagnostics with code frames, diffs, and actionable suggestions.
   </Card>
@@ -44,6 +48,10 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
   <Card title="🚀 CI/CD Ready" icon="github">
     First-class support for GitHub Actions, GitLab CI, and other platforms.
   </Card>
+
+  <Card title="🔄 Auto-fix" icon="add-document">
+    Automatically fix common issues with safe and unsafe fix modes.
+  </Card>
 </CardGrid>
 
 ## Quick Example
@@ -55,8 +63,14 @@ cargo install maki
 # Initialize configuration
 maki init
 
+# Format your FSH files
+maki format input/fsh/**/*.fsh
+
 # Lint your FSH files
 maki lint **/*.fsh
+
+# Auto-fix issues
+maki lint --fix **/*.fsh
 ```
 
 ## Rich Diagnostics

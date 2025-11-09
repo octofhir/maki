@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use maki_core::config::{
-    BuildConfiguration, DependencyVersion, FilesConfiguration, FormatterConfiguration,
+    BuildConfiguration, DependencyVersion, FilesConfiguration, FormatterConfiguration, IndentStyle,
     LinterConfiguration, RuleSeverity, RulesConfiguration, UnifiedConfig,
 };
 use std::collections::HashMap;
@@ -123,9 +123,17 @@ impl ConfigGenerator {
         // Create formatter configuration
         let formatter = FormatterConfiguration {
             enabled: Some(true),
+            indent_style: Some(IndentStyle::Spaces),
             indent_size: Some(2),
             line_width: Some(100),
             align_carets: Some(true),
+            blank_line_before_rules: Some(true),
+            preserve_blank_lines: Some(true),
+            max_blank_lines: Some(2),
+            group_rules: Some(true),
+            sort_rules: Some(false),
+            blank_lines_between_groups: Some(1),
+            normalize_spacing: Some(true),
         };
 
         // Create files configuration

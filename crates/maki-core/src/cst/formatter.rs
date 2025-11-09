@@ -29,11 +29,44 @@ use super::{
     parse_fsh,
 };
 
+/// Indent style configuration
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndentStyle {
+    /// Use spaces for indentation
+    Spaces(usize),
+    /// Use tabs for indentation
+    Tabs,
+}
+
+impl IndentStyle {
+    /// Convert to string representation for given indentation level
+    pub fn to_string(&self, level: usize) -> String {
+        match self {
+            IndentStyle::Spaces(size) => " ".repeat(size * level),
+            IndentStyle::Tabs => "\t".repeat(level),
+        }
+    }
+
+    /// Get the size (number of spaces or 1 for tabs)
+    pub fn size(&self) -> usize {
+        match self {
+            IndentStyle::Spaces(size) => *size,
+            IndentStyle::Tabs => 1,
+        }
+    }
+}
+
+impl Default for IndentStyle {
+    fn default() -> Self {
+        IndentStyle::Spaces(2)
+    }
+}
+
 /// Formatting options
 #[derive(Debug, Clone)]
 pub struct FormatOptions {
-    /// Number of spaces for indentation
-    pub indent_size: usize,
+    /// Indent style (spaces or tabs)
+    pub indent_style: IndentStyle,
 
     /// Whether to align carets in rules
     pub align_carets: bool,
@@ -46,16 +79,36 @@ pub struct FormatOptions {
 
     /// Whether to preserve existing blank lines
     pub preserve_blank_lines: bool,
+
+    /// Maximum consecutive blank lines to keep
+    pub max_blank_lines: usize,
+
+    /// Group rules by type (metadata, constraints, flags)
+    pub group_rules: bool,
+
+    /// Sort rules within groups
+    pub sort_rules: bool,
+
+    /// Blank lines between rule groups
+    pub blank_lines_between_groups: usize,
+
+    /// Normalize spacing around operators (: and =)
+    pub normalize_spacing: bool,
 }
 
 impl Default for FormatOptions {
     fn default() -> Self {
         Self {
-            indent_size: 2,
+            indent_style: IndentStyle::default(),
             align_carets: true,
             max_line_length: 100,
             blank_line_before_rules: true,
-            preserve_blank_lines: false,
+            preserve_blank_lines: true,
+            max_blank_lines: 2,
+            group_rules: false,
+            sort_rules: false,
+            blank_lines_between_groups: 1,
+            normalize_spacing: true,
         }
     }
 }
@@ -87,7 +140,7 @@ impl FormatContext {
 
     /// Write current indentation
     fn write_indent(&mut self) {
-        let indent = " ".repeat(self.indent_level * self.options.indent_size);
+        let indent = self.options.indent_style.to_string(self.indent_level);
         self.output.push_str(&indent);
     }
 

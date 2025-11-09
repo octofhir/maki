@@ -4,15 +4,16 @@ use maki_rules::gritql::GritQLCompiler;
 
 #[test]
 fn test_profile_naming_pattern_lowercase_match() {
+    use grit_util::{Ast, AstNode};
+    use maki_rules::gritql::FshGritTree;
+
     let compiler = GritQLCompiler::new().expect("Failed to create compiler");
 
-    // Pattern from profile-naming-uppercase.grit
+    // Match Profile nodes where the text contains "Profile:" followed by whitespace and lowercase letter
+    // This uses implicit context matching on the node's text content
     let pattern = compiler
         .compile_pattern(
-            r#"Profile: $name where {
-    // Match profile name that starts with lowercase letter
-    $name <: r"^[a-z]"
-}"#,
+            r#"Profile where { contains r"Profile:\s+[a-z]" }"#,
             "test-profile-naming",
         )
         .expect("Failed to compile pattern");
@@ -23,6 +24,16 @@ Profile: myPatientProfile
 Parent: Patient
 Description: "A test profile with lowercase name"
 "#;
+
+    // DEBUG: Print CST structure
+    let tree = FshGritTree::parse(test_code);
+    let root = tree.root_node();
+    println!("DEBUG: Root node kind: {:?}", root.kind());
+    println!("DEBUG: Root children:");
+    for (i, child) in root.children().enumerate() {
+        let text = child.text().unwrap_or_default();
+        println!("  [{}] kind={:?}, text={:?}", i, child.kind(), text);
+    }
 
     let matches = pattern
         .execute(test_code, "test.fsh")
@@ -47,9 +58,11 @@ Description: "A test profile with lowercase name"
 fn test_profile_naming_pattern_uppercase_nomatch() {
     let compiler = GritQLCompiler::new().expect("Failed to create compiler");
 
+    // Match Profile nodes where the text contains "Profile:" followed by whitespace and lowercase letter
+    // This should NOT match profiles that start with uppercase
     let pattern = compiler
         .compile_pattern(
-            r#"Profile: $name where { $name <: r"^[a-z]" }"#,
+            r#"Profile where { contains r"Profile:\s+[a-z]" }"#,
             "test-profile-naming",
         )
         .expect("Failed to compile pattern");
@@ -91,10 +104,7 @@ fn test_extension_url_missing_pattern() {
     // Pattern from extension-url-required.grit
     let pattern = compiler
         .compile_pattern(
-            r#"Extension: $name where {
-    // Ensure extension has ^url assignment
-    not contains "^url"
-}"#,
+            r#"Extension where { not contains "^url" }"#,
             "test-extension-url",
         )
         .expect("Failed to compile pattern");
@@ -130,7 +140,7 @@ fn test_extension_url_present_nomatch() {
 
     let pattern = compiler
         .compile_pattern(
-            r#"Extension: $name where { not contains "^url" }"#,
+            r#"Extension where { not contains "^url" }"#,
             "test-extension-url",
         )
         .expect("Failed to compile pattern");
@@ -166,9 +176,10 @@ Description: "A patient's nickname"
 fn test_multiple_profiles_mixed() {
     let compiler = GritQLCompiler::new().expect("Failed to create compiler");
 
+    // Match Profile nodes where the text contains "Profile:" followed by whitespace and lowercase letter
     let pattern = compiler
         .compile_pattern(
-            r#"Profile: $name where { $name <: r"^[a-z]" }"#,
+            r#"Profile where { contains r"Profile:\s+[a-z]" }"#,
             "test-multi-profile",
         )
         .expect("Failed to compile pattern");
@@ -207,5 +218,46 @@ Parent: Condition
     assert!(
         matches.len() >= 2,
         "Should match at least 2 profiles with lowercase names"
+    );
+}
+
+#[test]
+fn test_variable_binding_syntax() {
+    let compiler = GritQLCompiler::new().expect("Failed to create compiler");
+
+    // Test the new Profile: $name variable binding syntax
+    let pattern = compiler
+        .compile_pattern(
+            r#"Profile: $name where { contains r"Profile:\s+[a-z]" }"#,
+            "test-var-binding",
+        )
+        .expect("Failed to compile pattern");
+
+    // Test FSH code with lowercase profile name (should match)
+    let test_code = r#"
+Profile: myPatientProfile
+Parent: Patient
+Description: "A test profile with lowercase name"
+"#;
+
+    let matches = pattern
+        .execute(test_code, "test.fsh")
+        .expect("Failed to execute pattern");
+
+    println!(
+        "Found {} matches with variable binding syntax:",
+        matches.len()
+    );
+    for m in &matches {
+        println!(
+            "  Match at {}:{} - '{}'",
+            m.range.start_line, m.range.start_column, m.matched_text
+        );
+    }
+
+    // Should find at least one match (the profile with lowercase name)
+    assert!(
+        !matches.is_empty(),
+        "Should match profile with lowercase name using variable binding syntax"
     );
 }

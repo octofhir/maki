@@ -21,10 +21,7 @@ pub enum Effect {
     },
 
     /// Insert text at position
-    Insert {
-        position: usize,
-        text: String,
-    },
+    Insert { position: usize, text: String },
 
     /// Delete node
     Delete {
@@ -57,7 +54,8 @@ impl Effect {
             } => {
                 let interpolated = Self::interpolate_variables(replacement, variables)?;
 
-                let location = Self::create_location(file_path, source, *start_offset, *end_offset)?;
+                let location =
+                    Self::create_location(file_path, source, *start_offset, *end_offset)?;
 
                 Ok(CodeSuggestion {
                     message: format!("Replace with '{}'", interpolated),
@@ -155,7 +153,12 @@ impl Effect {
     }
 
     /// Create a Location from byte offsets
-    fn create_location(file_path: &str, source: &str, start: usize, end: usize) -> Result<Location> {
+    fn create_location(
+        file_path: &str,
+        source: &str,
+        start: usize,
+        end: usize,
+    ) -> Result<Location> {
         let (start_line, start_col) = offset_to_line_col(source, start);
         let (end_line, end_col) = offset_to_line_col(source, end);
 

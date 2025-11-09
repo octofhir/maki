@@ -77,17 +77,26 @@ See the [Automatic Fixes guide](/guides/autofix/) for detailed information.
 
 ## `maki format`
 
-Format FSH files.
+Automatically format FSH files to maintain consistent code style.
 
 ```bash
 maki format [OPTIONS] <FILES>...
 ```
 
+The formatter uses a lossless Concrete Syntax Tree (CST) to ensure perfect preservation of:
+- All comments (line and block)
+- Blank lines and whitespace
+- Semantic content
+
+See the [FSH Formatter Guide](/maki/guides/formatter/) for detailed documentation.
+
 ### Options
 
-- `--check` - Check if files are formatted (don't modify)
-- `--diff` - Show formatting differences
+- `--check` - Check if files are formatted without modifying them (exit code 1 if formatting needed)
+- `--diff` - Show formatting differences without modifying files
 - `--config <PATH>` - Path to configuration file
+- `--no-config` - Don't load configuration files
+- `-v, --verbose` - Enable verbose output
 
 ### Examples
 
@@ -95,9 +104,74 @@ maki format [OPTIONS] <FILES>...
 # Format all FSH files
 maki format **/*.fsh
 
-# Check formatting without modifying
+# Format specific directory
+maki format input/fsh/*.fsh
+
+# Check formatting without modifying (useful for CI)
 maki format --check **/*.fsh
+
+# Show what would change
+maki format --diff input/fsh/*.fsh
+
+# Use custom configuration
+maki format --config custom-config.json **/*.fsh
 ```
+
+### Formatting Features
+
+The formatter provides:
+
+- **Consistent indentation** - Configurable spaces or tabs
+- **Rule alignment** - Align cardinality and flags for readability
+- **Spacing normalization** - Consistent spacing around `:` and `=`
+- **Blank line control** - Maintain intentional spacing
+- **Comment preservation** - All comments are preserved exactly
+
+**Example:**
+
+```fsh
+// Before formatting
+Profile:MyProfile
+Parent:Patient
+Id:  my-profile
+* name 1..1 MS
+* birthDate 1..1 MS
+* gender 1..1 MS
+
+// After formatting
+Profile: MyProfile
+Parent: Patient
+Id: my-profile
+
+* name      1..1 MS
+* birthDate 1..1 MS
+* gender    1..1 MS
+```
+
+### CI/CD Integration
+
+Use `--check` mode in continuous integration:
+
+```bash
+# Exit code 0 if formatted, 1 if needs formatting
+maki format --check input/fsh/**/*.fsh
+```
+
+Exit codes:
+- `0` - All files are properly formatted
+- `1` - Some files need formatting
+- `2` - Error occurred during formatting
+
+### Performance
+
+The formatter is highly optimized:
+
+- Single files: <50ms
+- Large projects: Parallel processing enabled automatically
+- Memory efficient: Streaming processing
+- Token optimization: 2-5% performance boost
+
+See the [Formatter Guide](/maki/guides/formatter/) for configuration options and best practices.
 
 ## `maki init`
 

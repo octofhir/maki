@@ -8,8 +8,8 @@
 //! - Duplicate/conflicting rules within profiles
 //! - Duplicate aliases with different values
 
-use maki_core::cst::ast::{AstNode, Document, Rule};
 use maki_core::cst::FshSyntaxNode;
+use maki_core::cst::ast::{AstNode, Document, Rule};
 use maki_core::{Diagnostic, SemanticModel, Severity};
 use std::collections::HashMap;
 
@@ -162,11 +162,10 @@ fn create_unified_duplicate_name_diagnostics(
     let mut diagnostics = Vec::new();
 
     for (i, (res_type, node)) in occurrences.iter().enumerate() {
-        let location = model.source_map.node_to_diagnostic_location(
-            node,
-            &model.source,
-            &model.source_file,
-        );
+        let location =
+            model
+                .source_map
+                .node_to_diagnostic_location(node, &model.source, &model.source_file);
 
         let message = if i == 0 {
             format!(
@@ -207,11 +206,10 @@ fn create_duplicate_id_diagnostics(
     let mut diagnostics = Vec::new();
 
     for (i, (res_type, node)) in occurrences.iter().enumerate() {
-        let location = model.source_map.node_to_diagnostic_location(
-            node,
-            &model.source,
-            &model.source_file,
-        );
+        let location =
+            model
+                .source_map
+                .node_to_diagnostic_location(node, &model.source, &model.source_file);
 
         let message = if i == 0 {
             format!(
@@ -384,10 +382,7 @@ fn check_rule_conflicts(
 
     if only_rules.len() > 1 {
         // Extract type lists from each rule
-        let types: Vec<Vec<String>> = only_rules
-            .iter()
-            .map(|(only, _)| only.types())
-            .collect();
+        let types: Vec<Vec<String>> = only_rules.iter().map(|(only, _)| only.types()).collect();
 
         // Check if all type lists are the same
         if !all_type_lists_same(&types) {
@@ -488,8 +483,7 @@ pub fn check_duplicate_aliases(model: &SemanticModel) -> Vec<Diagnostic> {
     };
 
     // Collect all aliases with their names and values
-    let mut aliases_by_name: HashMap<String, Vec<(Option<String>, FshSyntaxNode)>> =
-        HashMap::new();
+    let mut aliases_by_name: HashMap<String, Vec<(Option<String>, FshSyntaxNode)>> = HashMap::new();
 
     for alias in document.aliases() {
         if let Some(name) = alias.name() {
@@ -590,9 +584,9 @@ fn all_type_lists_same(type_lists: &[Vec<String>]) -> bool {
     }
 
     let first = &type_lists[0];
-    type_lists.iter().all(|list| {
-        list.len() == first.len() && list.iter().zip(first.iter()).all(|(a, b)| a == b)
-    })
+    type_lists
+        .iter()
+        .all(|list| list.len() == first.len() && list.iter().zip(first.iter()).all(|(a, b)| a == b))
 }
 
 #[cfg(test)]
@@ -631,7 +625,10 @@ Id: my-profile-2
         let model = create_test_model(source);
         let diagnostics = check_duplicates(&model);
 
-        assert!(!diagnostics.is_empty(), "Should detect duplicate profile names");
+        assert!(
+            !diagnostics.is_empty(),
+            "Should detect duplicate profile names"
+        );
         assert!(diagnostics.iter().any(|d| d.message.contains("MyProfile")));
     }
 
@@ -681,8 +678,15 @@ Parent: Patient
         let model = create_test_model(source);
         let diagnostics = check_duplicate_rules(&model);
 
-        assert!(!diagnostics.is_empty(), "Should detect conflicting cardinality rules");
-        assert!(diagnostics.iter().any(|d| d.message.contains("Conflicting")));
+        assert!(
+            !diagnostics.is_empty(),
+            "Should detect conflicting cardinality rules"
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.message.contains("Conflicting"))
+        );
     }
 
     #[test]
@@ -710,7 +714,10 @@ Alias: $SCT = http://different-url.org
         let model = create_test_model(source);
         let diagnostics = check_duplicate_aliases(&model);
 
-        assert!(!diagnostics.is_empty(), "Should detect duplicate aliases with different values");
+        assert!(
+            !diagnostics.is_empty(),
+            "Should detect duplicate aliases with different values"
+        );
         assert!(
             diagnostics
                 .iter()
@@ -751,7 +758,10 @@ Id: my-valueset
         // Different entity types can have the same name (different namespaces)
         // But our current implementation treats all entity names in same namespace
         // This is actually correct as FHIR treats all as resource names
-        assert!(!diagnostics.is_empty(), "Should detect duplicate names across types");
+        assert!(
+            !diagnostics.is_empty(),
+            "Should detect duplicate names across types"
+        );
     }
 
     #[test]
@@ -768,8 +778,15 @@ Id: my-extension-2
         let model = create_test_model(source);
         let diagnostics = check_duplicates(&model);
 
-        assert!(!diagnostics.is_empty(), "Should detect duplicate extension names");
-        assert!(diagnostics.iter().any(|d| d.message.contains("MyExtension")));
+        assert!(
+            !diagnostics.is_empty(),
+            "Should detect duplicate extension names"
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.message.contains("MyExtension"))
+        );
     }
 
     #[test]
@@ -783,7 +800,10 @@ Parent: Observation
         let model = create_test_model(source);
         let diagnostics = check_duplicate_rules(&model);
 
-        assert!(!diagnostics.is_empty(), "Should detect conflicting type constraints");
+        assert!(
+            !diagnostics.is_empty(),
+            "Should detect conflicting type constraints"
+        );
         assert!(diagnostics.iter().any(|d| d.message.contains("type")));
     }
 
@@ -798,7 +818,10 @@ Parent: Observation
         let model = create_test_model(source);
         let diagnostics = check_duplicate_rules(&model);
 
-        assert!(!diagnostics.is_empty(), "Should detect conflicting value set bindings");
+        assert!(
+            !diagnostics.is_empty(),
+            "Should detect conflicting value set bindings"
+        );
         assert!(diagnostics.iter().any(|d| d.message.contains("value set")));
     }
 

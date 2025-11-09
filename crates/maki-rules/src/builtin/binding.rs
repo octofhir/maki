@@ -335,8 +335,12 @@ fn find_element_binding_strength(
                 // We need to convert it to our BindingStrength
                 return match binding.strength {
                     maki_core::export::BindingStrength::Required => Some(BindingStrength::Required),
-                    maki_core::export::BindingStrength::Extensible => Some(BindingStrength::Extensible),
-                    maki_core::export::BindingStrength::Preferred => Some(BindingStrength::Preferred),
+                    maki_core::export::BindingStrength::Extensible => {
+                        Some(BindingStrength::Extensible)
+                    }
+                    maki_core::export::BindingStrength::Preferred => {
+                        Some(BindingStrength::Preferred)
+                    }
                     maki_core::export::BindingStrength::Example => Some(BindingStrength::Example),
                 };
             }
@@ -351,8 +355,12 @@ fn find_element_binding_strength(
             {
                 return match binding.strength {
                     maki_core::export::BindingStrength::Required => Some(BindingStrength::Required),
-                    maki_core::export::BindingStrength::Extensible => Some(BindingStrength::Extensible),
-                    maki_core::export::BindingStrength::Preferred => Some(BindingStrength::Preferred),
+                    maki_core::export::BindingStrength::Extensible => {
+                        Some(BindingStrength::Extensible)
+                    }
+                    maki_core::export::BindingStrength::Preferred => {
+                        Some(BindingStrength::Preferred)
+                    }
                     maki_core::export::BindingStrength::Example => Some(BindingStrength::Example),
                 };
             }
@@ -379,10 +387,7 @@ pub fn check_binding_strength_inconsistent(model: &SemanticModel) -> Vec<Diagnos
 }
 
 /// Check a profile for binding strength consistency
-fn check_profile_binding_consistency(
-    profile: &Profile,
-    model: &SemanticModel,
-) -> Vec<Diagnostic> {
+fn check_profile_binding_consistency(profile: &Profile, model: &SemanticModel) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
     // Group bindings by element name pattern
@@ -467,10 +472,8 @@ pub fn check_binding_without_valueset(model: &SemanticModel) -> Vec<Diagnostic> 
     };
 
     // Collect all defined ValueSets in the document
-    let defined_valuesets: std::collections::HashSet<_> = document
-        .value_sets()
-        .filter_map(|vs| vs.name())
-        .collect();
+    let defined_valuesets: std::collections::HashSet<_> =
+        document.value_sets().filter_map(|vs| vs.name()).collect();
 
     // Check profiles for undefined ValueSet references
     for profile in document.profiles() {

@@ -2,10 +2,12 @@
 //!
 //! Compiles parsed GritQL AST into executable grit-pattern-matcher Pattern structs.
 
-use super::parser::{GritPattern, GritPredicate};
+use super::parser::{GritMatchValue, GritPattern, GritPredicate};
 use super::query_context::{FshNodePattern, FshQueryContext};
+use grit_pattern_matcher::pattern::Match as MatchPredicate;
 use grit_pattern_matcher::pattern::{
-    And, Container, Not, Pattern, PrAnd, PrNot, PrOr, Predicate, Variable, Where,
+    And, Container, Equal, Not, Pattern, PrAnd, PrNot, PrOr, Predicate, RegexLike, RegexPattern,
+    StringConstant, Variable, Where,
 };
 use maki_core::cst::FshSyntaxKind;
 use maki_core::{MakiError, Result};
@@ -35,6 +37,12 @@ impl PatternCompiler {
             GritPattern::Assignment { var, value } => self.compile_assignment(var, value),
             GritPattern::And(patterns) => self.compile_and(patterns),
             GritPattern::Or(patterns) => self.compile_or(patterns),
+            GritPattern::Maybe(inner) => self.compile_maybe(inner),
+            GritPattern::Any(patterns) => self.compile_any(patterns),
+            GritPattern::Contains(inner) => self.compile_contains(inner),
+            GritPattern::Within(inner) => self.compile_within(inner),
+            GritPattern::After(inner) => self.compile_after(inner),
+            GritPattern::Bubble { pattern, args } => self.compile_bubble(pattern, args),
         }
     }
 
@@ -102,6 +110,58 @@ impl PatternCompiler {
         })))
     }
 
+    fn compile_maybe(&mut self, inner: &GritPattern) -> Result<Pattern<FshQueryContext>> {
+        let compiled_inner = self.compile(inner)?;
+        Ok(Pattern::Maybe(Box::new(
+            grit_pattern_matcher::pattern::Maybe::new(compiled_inner),
+        )))
+    }
+
+    fn compile_any(&mut self, patterns: &[GritPattern]) -> Result<Pattern<FshQueryContext>> {
+        let compiled: Result<Vec<_>> = patterns.iter().map(|p| self.compile(p)).collect();
+        Ok(Pattern::Any(Box::new(
+            grit_pattern_matcher::pattern::Any::new(compiled?),
+        )))
+    }
+
+    fn compile_contains(&mut self, inner: &GritPattern) -> Result<Pattern<FshQueryContext>> {
+        let compiled_inner = self.compile(inner)?;
+        Ok(Pattern::Contains(Box::new(
+            grit_pattern_matcher::pattern::Contains::new(
+                compiled_inner,
+                None, // until
+            ),
+        )))
+    }
+
+    fn compile_within(&mut self, inner: &GritPattern) -> Result<Pattern<FshQueryContext>> {
+        let compiled_inner = self.compile(inner)?;
+        Ok(Pattern::Within(Box::new(
+            grit_pattern_matcher::pattern::Within::new(
+                compiled_inner,
+                None, // until
+            ),
+        )))
+    }
+
+    fn compile_after(&mut self, inner: &GritPattern) -> Result<Pattern<FshQueryContext>> {
+        let compiled_inner = self.compile(inner)?;
+        Ok(Pattern::After(Box::new(
+            grit_pattern_matcher::pattern::After::new(compiled_inner),
+        )))
+    }
+
+    fn compile_bubble(
+        &mut self,
+        _pattern: &GritPattern,
+        _args: &[String],
+    ) -> Result<Pattern<FshQueryContext>> {
+        // Bubble is complex and requires PatternDefinition
+        // For now, just return Underscore (matches anything)
+        // Will be properly implemented in Phase 2
+        Ok(Pattern::Underscore)
+    }
+
     #[allow(clippy::only_used_in_recursion)]
     fn compile_predicate_to_predicate(
         &mut self,
@@ -127,14 +187,205 @@ impl PatternCompiler {
                     .collect();
                 Ok(Predicate::Or(Box::new(PrOr::new(compiled?))))
             }
-            // Regex match, contains, etc. - for now just return true
-            // These will be evaluated during pattern execution
-            GritPredicate::RegexMatch { .. } => Ok(Predicate::True),
-            GritPredicate::Contains { .. } => Ok(Predicate::True),
-            GritPredicate::StartsWith { .. } => Ok(Predicate::True),
-            GritPredicate::EndsWith { .. } => Ok(Predicate::True),
-            GritPredicate::Equality { .. } => Ok(Predicate::True),
-            GritPredicate::Inequality { .. } => Ok(Predicate::True),
+            GritPredicate::Match { var, value } => {
+                let var_index = self.get_or_create_variable(var);
+                self.compile_match_predicate(var_index, value)
+            }
+            GritPredicate::Contains { var, value } => {
+                let var_index = self.get_or_create_variable(var);
+                self.compile_contains_predicate(var_index, value)
+            }
+            GritPredicate::StartsWith { var, value } => {
+                let var_index = self.get_or_create_variable(var);
+                self.compile_starts_with_predicate(var_index, value)
+            }
+            GritPredicate::EndsWith { var, value } => {
+                let var_index = self.get_or_create_variable(var);
+                self.compile_ends_with_predicate(var_index, value)
+            }
+            GritPredicate::Equality { left, right } => {
+                let var_index = self.get_or_create_variable(left);
+                Ok(Predicate::Equal(Box::new(Equal::new(
+                    Variable::new(var_index, self.current_scope),
+                    Pattern::StringConstant(StringConstant::new(right.clone())),
+                ))))
+            }
+            GritPredicate::Inequality { left, right } => {
+                let var_index = self.get_or_create_variable(left);
+                Ok(Predicate::Not(Box::new(PrNot::new(Predicate::Equal(
+                    Box::new(Equal::new(
+                        Variable::new(var_index, self.current_scope),
+                        Pattern::StringConstant(StringConstant::new(right.clone())),
+                    )),
+                )))))
+            }
+            GritPredicate::VariablePattern { var, constraint } => {
+                // For now, just compile the constraint and track the variable
+                // The variable binding will be handled in the executor
+                let _var_index = self.get_or_create_variable(var);
+                self.compile_predicate_to_predicate(constraint)
+            }
+        }
+    }
+
+    /// Compile a match predicate (regex or string match)
+    fn compile_match_predicate(
+        &mut self,
+        var_index: usize,
+        value: &GritMatchValue,
+    ) -> Result<Predicate<FshQueryContext>> {
+        match value {
+            GritMatchValue::String(s) => Ok(Predicate::Equal(Box::new(Equal::new(
+                Variable::new(var_index, self.current_scope),
+                Pattern::StringConstant(StringConstant::new(s.clone())),
+            )))),
+            GritMatchValue::Regex(pattern) => Ok(Predicate::Match(Box::new(MatchPredicate::new(
+                Container::Variable(Variable::new(var_index, self.current_scope)),
+                Some(Pattern::Regex(Box::new(RegexPattern::new(
+                    RegexLike::Regex(pattern.clone()),
+                    vec![],
+                )))),
+            )))),
+            GritMatchValue::Or(values) => {
+                let preds: Result<Vec<_>> = values
+                    .iter()
+                    .map(|v| self.compile_match_predicate(var_index, v))
+                    .collect();
+                Ok(Predicate::Or(Box::new(PrOr::new(preds?))))
+            }
+            GritMatchValue::And(values) => {
+                let preds: Result<Vec<_>> = values
+                    .iter()
+                    .map(|v| self.compile_match_predicate(var_index, v))
+                    .collect();
+                Ok(Predicate::And(Box::new(PrAnd::new(preds?))))
+            }
+        }
+    }
+
+    /// Compile a contains predicate using regex
+    fn compile_contains_predicate(
+        &mut self,
+        var_index: usize,
+        value: &GritMatchValue,
+    ) -> Result<Predicate<FshQueryContext>> {
+        match value {
+            GritMatchValue::String(s) => {
+                // Convert contains "foo" to regex .*foo.*
+                let regex_pattern = format!(".*{}.*", regex::escape(s));
+                Ok(Predicate::Match(Box::new(MatchPredicate::new(
+                    Container::Variable(Variable::new(var_index, self.current_scope)),
+                    Some(Pattern::Regex(Box::new(RegexPattern::new(
+                        RegexLike::Regex(regex_pattern),
+                        vec![],
+                    )))),
+                ))))
+            }
+            GritMatchValue::Regex(pattern) => Ok(Predicate::Match(Box::new(MatchPredicate::new(
+                Container::Variable(Variable::new(var_index, self.current_scope)),
+                Some(Pattern::Regex(Box::new(RegexPattern::new(
+                    RegexLike::Regex(pattern.clone()),
+                    vec![],
+                )))),
+            )))),
+            GritMatchValue::Or(values) => {
+                let preds: Result<Vec<_>> = values
+                    .iter()
+                    .map(|v| self.compile_contains_predicate(var_index, v))
+                    .collect();
+                Ok(Predicate::Or(Box::new(PrOr::new(preds?))))
+            }
+            GritMatchValue::And(values) => {
+                let preds: Result<Vec<_>> = values
+                    .iter()
+                    .map(|v| self.compile_contains_predicate(var_index, v))
+                    .collect();
+                Ok(Predicate::And(Box::new(PrAnd::new(preds?))))
+            }
+        }
+    }
+
+    /// Compile a starts with predicate using regex
+    fn compile_starts_with_predicate(
+        &mut self,
+        var_index: usize,
+        value: &GritMatchValue,
+    ) -> Result<Predicate<FshQueryContext>> {
+        match value {
+            GritMatchValue::String(s) => {
+                // Convert startsWith "foo" to regex ^foo
+                let regex_pattern = format!("^{}", regex::escape(s));
+                Ok(Predicate::Match(Box::new(MatchPredicate::new(
+                    Container::Variable(Variable::new(var_index, self.current_scope)),
+                    Some(Pattern::Regex(Box::new(RegexPattern::new(
+                        RegexLike::Regex(regex_pattern),
+                        vec![],
+                    )))),
+                ))))
+            }
+            GritMatchValue::Regex(pattern) => Ok(Predicate::Match(Box::new(MatchPredicate::new(
+                Container::Variable(Variable::new(var_index, self.current_scope)),
+                Some(Pattern::Regex(Box::new(RegexPattern::new(
+                    RegexLike::Regex(pattern.clone()),
+                    vec![],
+                )))),
+            )))),
+            GritMatchValue::Or(values) => {
+                let preds: Result<Vec<_>> = values
+                    .iter()
+                    .map(|v| self.compile_starts_with_predicate(var_index, v))
+                    .collect();
+                Ok(Predicate::Or(Box::new(PrOr::new(preds?))))
+            }
+            GritMatchValue::And(values) => {
+                let preds: Result<Vec<_>> = values
+                    .iter()
+                    .map(|v| self.compile_starts_with_predicate(var_index, v))
+                    .collect();
+                Ok(Predicate::And(Box::new(PrAnd::new(preds?))))
+            }
+        }
+    }
+
+    /// Compile an ends with predicate using regex
+    fn compile_ends_with_predicate(
+        &mut self,
+        var_index: usize,
+        value: &GritMatchValue,
+    ) -> Result<Predicate<FshQueryContext>> {
+        match value {
+            GritMatchValue::String(s) => {
+                // Convert endsWith "foo" to regex foo$
+                let regex_pattern = format!("{}$", regex::escape(s));
+                Ok(Predicate::Match(Box::new(MatchPredicate::new(
+                    Container::Variable(Variable::new(var_index, self.current_scope)),
+                    Some(Pattern::Regex(Box::new(RegexPattern::new(
+                        RegexLike::Regex(regex_pattern),
+                        vec![],
+                    )))),
+                ))))
+            }
+            GritMatchValue::Regex(pattern) => Ok(Predicate::Match(Box::new(MatchPredicate::new(
+                Container::Variable(Variable::new(var_index, self.current_scope)),
+                Some(Pattern::Regex(Box::new(RegexPattern::new(
+                    RegexLike::Regex(pattern.clone()),
+                    vec![],
+                )))),
+            )))),
+            GritMatchValue::Or(values) => {
+                let preds: Result<Vec<_>> = values
+                    .iter()
+                    .map(|v| self.compile_ends_with_predicate(var_index, v))
+                    .collect();
+                Ok(Predicate::Or(Box::new(PrOr::new(preds?))))
+            }
+            GritMatchValue::And(values) => {
+                let preds: Result<Vec<_>> = values
+                    .iter()
+                    .map(|v| self.compile_ends_with_predicate(var_index, v))
+                    .collect();
+                Ok(Predicate::And(Box::new(PrAnd::new(preds?))))
+            }
         }
     }
 
@@ -142,20 +393,37 @@ impl PatternCompiler {
         let normalized = kind.to_uppercase().replace('-', "_");
 
         match normalized.as_str() {
-            "PROFILE" => Ok(FshSyntaxKind::Profile),
-            "EXTENSION" => Ok(FshSyntaxKind::Extension),
-            "VALUESET" | "VALUE_SET" => Ok(FshSyntaxKind::ValueSet),
-            "CODESYSTEM" | "CODE_SYSTEM" => Ok(FshSyntaxKind::CodeSystem),
-            "INSTANCE" => Ok(FshSyntaxKind::Instance),
-            "INVARIANT" => Ok(FshSyntaxKind::Invariant),
-            "MAPPING" => Ok(FshSyntaxKind::Mapping),
-            "LOGICAL" => Ok(FshSyntaxKind::Logical),
-            "RESOURCE" => Ok(FshSyntaxKind::Resource),
-            "ALIAS" => Ok(FshSyntaxKind::Alias),
+            "PROFILE" | "PROFILE_DECLARATION" => Ok(FshSyntaxKind::Profile),
+            "EXTENSION" | "EXTENSION_DECLARATION" => Ok(FshSyntaxKind::Extension),
+            "VALUESET" | "VALUE_SET" | "VALUESET_DECLARATION" => Ok(FshSyntaxKind::ValueSet),
+            "CODESYSTEM" | "CODE_SYSTEM" | "CODESYSTEM_DECLARATION" => {
+                Ok(FshSyntaxKind::CodeSystem)
+            }
+            "INSTANCE" | "INSTANCE_DECLARATION" => Ok(FshSyntaxKind::Instance),
+            "INVARIANT" | "INVARIANT_DECLARATION" => Ok(FshSyntaxKind::Invariant),
+            "MAPPING" | "MAPPING_DECLARATION" => Ok(FshSyntaxKind::Mapping),
+            "LOGICAL" | "LOGICAL_DECLARATION" => Ok(FshSyntaxKind::Logical),
+            "RESOURCE" | "RESOURCE_DECLARATION" => Ok(FshSyntaxKind::Resource),
+            "ALIAS" | "ALIAS_DECLARATION" => Ok(FshSyntaxKind::Alias),
             "PARENT" => Ok(FshSyntaxKind::ParentKw),
             "ID" => Ok(FshSyntaxKind::IdKw),
             "TITLE" => Ok(FshSyntaxKind::TitleKw),
             "DESCRIPTION" => Ok(FshSyntaxKind::DescriptionKw),
+            // Generic node types - map to closest equivalent
+            "IDENTIFIER" | "STATUS_FIELD" | "FIELD" => Ok(FshSyntaxKind::Ident),
+            "SLICING_RULE" | "SLICING" => Ok(FshSyntaxKind::PathRule), // closest match
+            "CARET_RULE" | "CARET_PATH" => Ok(FshSyntaxKind::CardRule),
+            "ASSIGNMENT_RULE" => Ok(FshSyntaxKind::PathRule), // closest match
+            "BINDING_RULE" => Ok(FshSyntaxKind::PathRule),    // closest match
+            "CARDINALITY_RULE" | "CARDINALITY" => Ok(FshSyntaxKind::CardRule),
+            "FLAG_RULE" => Ok(FshSyntaxKind::PathRule), // closest match
+            "VALUE_SET_COMPONENT" => Ok(FshSyntaxKind::ValueSet),
+            "CODE_CARDINALITY_RULE" => Ok(FshSyntaxKind::CardRule),
+            "CONTAINS_RULE" => Ok(FshSyntaxKind::ContainsRule),
+            "ONLY_RULE" => Ok(FshSyntaxKind::OnlyRule),
+            "OBEYS_RULE" => Ok(FshSyntaxKind::ObeysRule),
+            "INSERT_RULE" => Ok(FshSyntaxKind::InsertRule),
+            "PATH_RULE" => Ok(FshSyntaxKind::PathRule),
             _ => Err(MakiError::rule_error(
                 "gritql-compiler",
                 format!("Unknown FSH syntax kind: {kind}"),
