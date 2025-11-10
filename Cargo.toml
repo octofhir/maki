@@ -8,7 +8,7 @@ members = [
   "crates/maki-test",
   "crates/maki-devtools",
   "crates/maki-bench",
-  "crates/maki-integration-tests",
+  "crates/maki-integration-tests", "crates/maki-decompiler",
 ]
 resolver = "3"
 
