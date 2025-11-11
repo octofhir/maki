@@ -12,8 +12,8 @@ pub enum Error {
     #[error("Failed to parse {file}: {message}")]
     ParseError { file: PathBuf, message: String },
 
-    #[error("Missing base definition for StructureDefinition")]
-    MissingBaseDefinition,
+    #[error("Missing base definition for StructureDefinition '{0}'")]
+    MissingBaseDefinition(String),
 
     #[error("Invalid FHIR version: {0}")]
     InvalidFhirVersion(String),

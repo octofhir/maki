@@ -10,6 +10,9 @@ pub mod models;
 pub mod lake;
 pub mod loader;
 pub mod canonical;
+pub mod exportable;
+pub mod processor;
+pub mod extractor;
 
 // Re-exports for convenience
 pub use error::{Error, Result};
@@ -22,3 +25,6 @@ pub use canonical::{
     parse_package_spec,
     parse_cli_dependencies,
 };
+pub use exportable::*;
+pub use processor::*;
+pub use extractor::*;
