@@ -7,6 +7,18 @@
 
 pub mod error;
 pub mod models;
+pub mod lake;
+pub mod loader;
+pub mod canonical;
 
 // Re-exports for convenience
 pub use error::{Error, Result};
+pub use lake::{ResourceLake, LakeStats};
+pub use loader::{FileLoader, LoadStats, LoadError};
+pub use canonical::{
+    setup_canonical_environment,
+    create_lake_with_session,
+    parse_fhir_release,
+    parse_package_spec,
+    parse_cli_dependencies,
+};

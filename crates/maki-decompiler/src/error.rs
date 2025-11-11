@@ -21,6 +21,9 @@ pub enum Error {
     #[error("Invalid package specification: {0}")]
     InvalidPackageSpec(String),
 
+    #[error("Canonical manager error: {0}")]
+    CanonicalError(String),
+
     #[error("No element definitions found")]
     NoElementDefinitions,
 
