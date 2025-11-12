@@ -65,6 +65,10 @@ impl Exportable for ExportableLogical {
     fn name(&self) -> &str {
         &self.name
     }
+
+    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule>> {
+        &mut self.rules
+    }
 }
 
 impl ExportableLogical {

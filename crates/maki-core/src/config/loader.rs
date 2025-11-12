@@ -13,9 +13,15 @@ pub struct ConfigLoader;
 impl ConfigLoader {
     /// Auto-discover config file by traversing upward from start_path
     ///
-    /// Searches for `maki.yaml`, `maki.yml`, or `maki.json` files starting from
-    /// the given directory and moving up the directory tree until a config
-    /// is found or the filesystem root is reached.
+    /// Searches for config files in the following order:
+    /// 1. `.makirc.json` - Maki dotfile config (JSON)
+    /// 2. `.makirc.toml` - Maki dotfile config (TOML)
+    /// 3. `maki.yaml` - Unified config (YAML)
+    /// 4. `maki.yml` - Unified config (YAML, short extension)
+    /// 5. `maki.json` - Unified config (JSON)
+    ///
+    /// Starts from the given directory and moves up the directory tree until
+    /// a config is found or the filesystem root is reached.
     pub fn auto_discover(start_path: &Path) -> Result<Option<PathBuf>> {
         let mut current = start_path
             .canonicalize()
@@ -24,8 +30,16 @@ impl ConfigLoader {
             })?;
 
         loop {
-            // Try config file names: maki.yaml, maki.yml, maki.json
-            for filename in &["maki.yaml", "maki.yml", "maki.json"] {
+            // Try config file names in priority order:
+            // 1. Dotfile configs (.makirc.*)
+            // 2. Legacy unified configs (maki.*)
+            for filename in &[
+                ".makirc.json",
+                ".makirc.toml",
+                "maki.yaml",
+                "maki.yml",
+                "maki.json",
+            ] {
                 let config_path = current.join(filename);
                 if config_path.exists() && config_path.is_file() {
                     tracing::debug!("Found config: {}", config_path.display());
@@ -81,7 +95,7 @@ impl ConfigLoader {
                 })?;
 
             Self::auto_discover(&current_dir)?.ok_or_else(|| MakiError::ConfigError {
-                message: "No maki.yaml or maki.json found. Run 'maki migrate' to convert sushi-config.yaml to maki.yaml".to_string(),
+                message: "No config file found (.makirc.json, .makirc.toml, maki.yaml, maki.yml, or maki.json). Run 'maki config init' to create one, or 'maki migrate' to convert sushi-config.yaml".to_string(),
             })?
         };
 
@@ -192,5 +206,103 @@ mod tests {
 
         let result = ConfigLoader::load_from_file(&config_path);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_auto_discover_makirc_json() {
+        let temp_dir = TempDir::new().unwrap();
+        let nested = temp_dir.path().join("src/nested");
+        fs::create_dir_all(&nested).unwrap();
+
+        // Create .makirc.json config in root
+        create_temp_config(
+            temp_dir.path(),
+            ".makirc.json",
+            r#"{"linter": {"enabled": true}}"#,
+        );
+
+        // Search from nested directory
+        let found = ConfigLoader::auto_discover(&nested).unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().file_name().unwrap(), ".makirc.json");
+    }
+
+    #[test]
+    fn test_auto_discover_makirc_toml() {
+        let temp_dir = TempDir::new().unwrap();
+        let nested = temp_dir.path().join("src/nested");
+        fs::create_dir_all(&nested).unwrap();
+
+        // Create .makirc.toml config in root
+        create_temp_config(
+            temp_dir.path(),
+            ".makirc.toml",
+            r#"
+[linter]
+enabled = true
+"#,
+        );
+
+        // Search from nested directory
+        let found = ConfigLoader::auto_discover(&nested).unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().file_name().unwrap(), ".makirc.toml");
+    }
+
+    #[test]
+    fn test_auto_discover_priority() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create multiple config files
+        create_temp_config(
+            temp_dir.path(),
+            ".makirc.json",
+            r#"{"linter": {"enabled": true}}"#,
+        );
+        create_temp_config(temp_dir.path(), "maki.yaml", "linter:\n  enabled: true");
+        create_temp_config(temp_dir.path(), "maki.json", r#"{"linter": {"enabled": true}}"#);
+
+        // Should find .makirc.json first (highest priority)
+        let found = ConfigLoader::auto_discover(temp_dir.path()).unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().file_name().unwrap(), ".makirc.json");
+    }
+
+    #[test]
+    fn test_load_makirc_json() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = create_temp_config(
+            temp_dir.path(),
+            ".makirc.json",
+            r#"{
+                "files": {
+                    "include": ["**/*.fsh"],
+                    "exclude": ["node_modules/**", "target/**"]
+                },
+                "formatter": {
+                    "enabled": true,
+                    "indentSize": 2,
+                    "lineWidth": 100,
+                    "alignCarets": true
+                },
+                "linter": {
+                    "enabled": true,
+                    "ruleDirectories": [],
+                    "rules": {
+                        "recommended": true
+                    }
+                }
+            }"#,
+        );
+
+        let config = ConfigLoader::load_from_file(&config_path).unwrap();
+        assert!(config.files.is_some());
+        assert!(config.formatter.is_some());
+        assert!(config.linter.is_some());
+
+        let formatter = config.formatter.unwrap();
+        assert_eq!(formatter.enabled, Some(true));
+        assert_eq!(formatter.indent_size, Some(2));
+        assert_eq!(formatter.line_width, Some(100));
     }
 }

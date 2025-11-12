@@ -27,6 +27,9 @@ pub enum Error {
     #[error("No element definitions found")]
     NoElementDefinitions,
 
+    #[error("Processing error: {0}")]
+    Processing(String),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 

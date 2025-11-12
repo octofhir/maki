@@ -5,11 +5,19 @@
 //! - FlagExtractor: MS, ?!, SU, D, N, TU flags
 //! - BindingExtractor: ValueSet bindings
 //! - CaretValueExtractor: Metadata (^short, ^definition, etc.)
+//! - TypeExtractor: Type constraints (only rules)
+//! - AssignmentExtractor: fixed[x] and pattern[x] values
+//! - ContainsExtractor: Slicing definitions
+//! - ObeysExtractor: Invariants/constraints
 
 pub mod cardinality;
 pub mod flags;
 pub mod binding;
 pub mod caret;
+pub mod type_constraint;
+pub mod assignment;
+pub mod contains;
+pub mod obeys;
 
 use crate::{
     processor::ProcessableElementDefinition,
@@ -22,6 +30,10 @@ pub use cardinality::*;
 pub use flags::*;
 pub use binding::*;
 pub use caret::*;
+pub use type_constraint::*;
+pub use assignment::*;
+pub use contains::*;
+pub use obeys::*;
 
 /// Trait for rule extractors
 pub trait RuleExtractor {

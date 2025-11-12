@@ -135,6 +135,45 @@ enum Commands {
         default: bool,
     },
 
+    /// Convert FHIR resources (JSON/XML) back to FSH (GoFSH functionality)
+    #[command(name = "gofsh")]
+    Gofsh {
+        /// Input directory or file containing FHIR resources
+        #[arg(help = "Input directory with FHIR resources (JSON/XML)")]
+        input: PathBuf,
+
+        /// Output directory for generated FSH files
+        #[arg(short, long, help = "Output directory for FSH files (default: output)")]
+        output: Option<PathBuf>,
+
+        /// FHIR version (R4 or R5)
+        #[arg(long, default_value = "R4", help = "FHIR version (R4 or R5)")]
+        fhir_version: String,
+
+        /// Package dependencies (e.g., hl7.fhir.us.core@5.0.1)
+        #[arg(short = 'd', long = "dependency", help = "FHIR package dependencies")]
+        dependencies: Vec<String>,
+
+        /// File organization strategy (file, type, profile, single)
+        #[arg(
+            long,
+            help = "Organization strategy: file (one per def), type (group by type), profile (group by profile), single (all in one)"
+        )]
+        strategy: Option<String>,
+
+        /// Indentation size for FSH files
+        #[arg(long, help = "Number of spaces for indentation (default: 2)")]
+        indent_size: Option<usize>,
+
+        /// Maximum line width
+        #[arg(long, help = "Maximum line width for FSH files (default: 100)")]
+        line_width: Option<usize>,
+
+        /// Show progress during conversion
+        #[arg(long, help = "Show progress bar and detailed output")]
+        progress: bool,
+    },
+
     /// Lint FSH files for syntax errors, semantic issues, and best practice violations
     #[command(alias = "check")]
     Lint {
@@ -524,6 +563,29 @@ async fn run_command(cli: Cli) -> Result<()> {
         }
 
         Some(Commands::Init { name, default }) => commands::init::init_command(name, default).await,
+
+        Some(Commands::Gofsh {
+            input,
+            output,
+            fhir_version,
+            dependencies,
+            strategy,
+            indent_size,
+            line_width,
+            progress,
+        }) => {
+            commands::gofsh::gofsh_command(
+                input,
+                output,
+                fhir_version,
+                dependencies,
+                strategy,
+                progress,
+                indent_size,
+                line_width,
+            )
+            .await
+        }
 
         Some(Commands::Lint {
             paths,

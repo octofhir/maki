@@ -5,6 +5,8 @@
 use crate::{
     models::{Derivation, StructureDefinition, StructureDefinitionKind},
     exportable::*,
+    extractor::*,
+    processor::ProcessableElementDefinition,
     lake::ResourceLake,
     Error, Result,
 };
@@ -85,6 +87,42 @@ impl<'a> StructureDefinitionProcessor<'a> {
         Ok(DefinitionType::Profile)
     }
 
+    /// Extract rules from element definitions
+    fn extract_rules(
+        &self,
+        elements: &mut [ProcessableElementDefinition],
+    ) -> Result<Vec<Box<dyn ExportableRule>>> {
+        let mut rules: Vec<Box<dyn ExportableRule>> = Vec::new();
+
+        // First pass: ContainsExtractor (requires analyzing multiple elements)
+        let contains_rules = ContainsExtractor::extract_slicing(elements)?;
+        for rule in contains_rules {
+            rules.push(Box::new(rule) as Box<dyn ExportableRule>);
+        }
+
+        // Second pass: Per-element extractors
+        let extractors: Vec<Box<dyn RuleExtractor>> = vec![
+            Box::new(CardinalityExtractor),
+            Box::new(FlagExtractor),
+            Box::new(BindingExtractor),
+            Box::new(TypeExtractor),
+            Box::new(AssignmentExtractor),
+            Box::new(ObeysExtractor),
+            Box::new(CaretValueExtractor),
+        ];
+
+        for elem in elements.iter_mut() {
+            for extractor in &extractors {
+                let elem_rules = extractor.extract(elem)?;
+                rules.extend(elem_rules);
+            }
+        }
+
+        debug!("Extracted {} rules total", rules.len());
+
+        Ok(rules)
+    }
+
     /// Process a Profile
     async fn process_profile(&self, sd: &StructureDefinition) -> Result<ExportableProfile> {
         let parent = self.resolve_parent(sd).await?;
@@ -104,8 +142,23 @@ impl<'a> StructureDefinitionProcessor<'a> {
             profile.description = Some(desc.clone());
         }
 
-        // Note: Rules will be extracted in Phase 3 (Tasks 09-12)
-        // For now, we just create the profile structure
+        // Extract rules from differential elements
+        if let Some(ref differential) = sd.differential {
+            let mut processable_elements: Vec<ProcessableElementDefinition> = differential
+                .element
+                .iter()
+                .cloned()
+                .map(ProcessableElementDefinition::new)
+                .collect();
+
+            profile.rules = self.extract_rules(&mut processable_elements)?;
+
+            debug!(
+                "Profile '{}' has {} rules",
+                profile.name(),
+                profile.rules.len()
+            );
+        }
 
         debug!(
             "Created ExportableProfile '{}' with parent '{}'",
@@ -154,7 +207,24 @@ impl<'a> StructureDefinitionProcessor<'a> {
             }
         }
 
-        // Note: Rules will be extracted in Phase 3
+        // Extract rules from differential elements
+        if let Some(ref differential) = sd.differential {
+            let mut processable_elements: Vec<ProcessableElementDefinition> = differential
+                .element
+                .iter()
+                .cloned()
+                .map(ProcessableElementDefinition::new)
+                .collect();
+
+            extension.rules = self.extract_rules(&mut processable_elements)?;
+
+            debug!(
+                "Extension '{}' has {} rules",
+                extension.name(),
+                extension.rules.len()
+            );
+        }
+
         debug!("Created ExportableExtension '{}'", extension.name());
 
         Ok(extension)
@@ -186,7 +256,24 @@ impl<'a> StructureDefinitionProcessor<'a> {
         }
 
         // Note: Characteristics extraction will be added in Phase 3
-        // Note: Rules will be extracted in Phase 3
+
+        // Extract rules from differential elements
+        if let Some(ref differential) = sd.differential {
+            let mut processable_elements: Vec<ProcessableElementDefinition> = differential
+                .element
+                .iter()
+                .cloned()
+                .map(ProcessableElementDefinition::new)
+                .collect();
+
+            logical.rules = self.extract_rules(&mut processable_elements)?;
+
+            debug!(
+                "Logical '{}' has {} rules",
+                logical.name(),
+                logical.rules.len()
+            );
+        }
 
         debug!("Created ExportableLogical '{}'", logical.name());
 
@@ -223,7 +310,23 @@ impl<'a> StructureDefinitionProcessor<'a> {
             resource.description = Some(desc.clone());
         }
 
-        // Note: Rules will be extracted in Phase 3
+        // Extract rules from differential elements
+        if let Some(ref differential) = sd.differential {
+            let mut processable_elements: Vec<ProcessableElementDefinition> = differential
+                .element
+                .iter()
+                .cloned()
+                .map(ProcessableElementDefinition::new)
+                .collect();
+
+            resource.rules = self.extract_rules(&mut processable_elements)?;
+
+            debug!(
+                "Resource '{}' has {} rules",
+                resource.name(),
+                resource.rules.len()
+            );
+        }
 
         debug!("Created ExportableResource '{}'", resource.name());
 

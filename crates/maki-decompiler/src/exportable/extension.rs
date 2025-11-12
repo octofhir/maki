@@ -90,6 +90,10 @@ impl Exportable for ExportableExtension {
     fn name(&self) -> &str {
         &self.name
     }
+
+    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule>> {
+        &mut self.rules
+    }
 }
 
 impl ExportableExtension {

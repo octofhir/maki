@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 maki-core = { path = "../maki-core" }
 maki-rules = { path = "../maki-rules" }
+maki-decompiler = { path = "../maki-decompiler" }
 clap = { version = "4", features = ["derive", "env", "color", "suggestions"] }
 clap_complete = "4"
 tokio = { workspace = true }

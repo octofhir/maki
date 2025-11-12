@@ -36,6 +36,9 @@ pub trait Exportable {
 
     /// Get the name of this exportable
     fn name(&self) -> &str;
+
+    /// Get mutable access to rules (for optimizers)
+    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule>>;
 }
 
 /// FSH value types that can appear in rules
@@ -95,19 +98,32 @@ impl FshCode {
     }
 }
 
-/// FSH Quantity: value 'unit'
+/// FSH Quantity: value 'unit' or value system#code "display"
 #[derive(Debug, Clone, PartialEq)]
 pub struct FshQuantity {
-    pub value: f64,
+    pub value: Option<f64>,
     pub unit: Option<String>,
+    pub system: Option<String>,
+    pub code: Option<String>,
 }
 
 impl FshQuantity {
     pub fn to_fsh(&self) -> String {
-        match &self.unit {
-            Some(unit) => format!("{} '{}'", self.value, unit),
-            None => self.value.to_string(),
+        let mut parts = Vec::new();
+
+        if let Some(val) = self.value {
+            parts.push(val.to_string());
         }
+
+        // If we have system and code, use system#code format
+        if let (Some(sys), Some(c)) = (&self.system, &self.code) {
+            parts.push(format!("{}#{}", sys, c));
+        } else if let Some(u) = &self.unit {
+            // Otherwise use unit format
+            parts.push(format!("'{}'", u));
+        }
+
+        parts.join(" ")
     }
 }
 
@@ -153,15 +169,20 @@ impl FshCoding {
     }
 }
 
-/// FSH Reference: Reference(Type)
+/// FSH Reference: Reference(Type) "display"
 #[derive(Debug, Clone, PartialEq)]
 pub struct FshReference {
     pub reference: String,
+    pub display: Option<String>,
 }
 
 impl FshReference {
     pub fn to_fsh(&self) -> String {
-        format!("Reference({})", self.reference)
+        if let Some(display) = &self.display {
+            format!("Reference({}) \"{}\"", self.reference, escape_string(display))
+        } else {
+            format!("Reference({})", self.reference)
+        }
     }
 }
 
@@ -232,16 +253,28 @@ mod tests {
     #[test]
     fn test_fsh_quantity() {
         let qty = FshQuantity {
-            value: 5.0,
+            value: Some(5.0),
             unit: Some("mg".to_string()),
+            system: None,
+            code: None,
         };
         assert_eq!(qty.to_fsh(), "5 'mg'");
 
         let qty_no_unit = FshQuantity {
-            value: 10.5,
+            value: Some(10.5),
             unit: None,
+            system: None,
+            code: None,
         };
         assert_eq!(qty_no_unit.to_fsh(), "10.5");
+
+        let qty_with_code = FshQuantity {
+            value: Some(100.0),
+            unit: None,
+            system: Some("http://unitsofmeasure.org".to_string()),
+            code: Some("mg".to_string()),
+        };
+        assert_eq!(qty_with_code.to_fsh(), "100 http://unitsofmeasure.org#mg");
     }
 
     #[test]

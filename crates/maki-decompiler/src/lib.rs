@@ -13,6 +13,10 @@ pub mod canonical;
 pub mod exportable;
 pub mod processor;
 pub mod extractor;
+pub mod optimizer;
+pub mod writer;
+pub mod organizer;
+pub mod config_generator;
 
 // Re-exports for convenience
 pub use error::{Error, Result};
@@ -28,3 +32,7 @@ pub use canonical::{
 pub use exportable::*;
 pub use processor::*;
 pub use extractor::*;
+pub use optimizer::{Optimizer, OptimizerRegistry, OptimizationStats};
+pub use writer::FshWriter;
+pub use organizer::{FileOrganizer, OrganizationStrategy};
+pub use config_generator::{ConfigGenerator, MakiConfig};

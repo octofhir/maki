@@ -12,6 +12,12 @@ pub trait ExportableRule: std::fmt::Debug {
 
     /// Get rule type name (for debugging)
     fn rule_type(&self) -> &'static str;
+
+    /// Support downcasting to concrete rule types
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Support mutable downcasting to concrete rule types
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
 /// Cardinality Rule: * element 0..1
@@ -30,6 +36,46 @@ impl ExportableRule for CardinalityRule {
     fn rule_type(&self) -> &'static str {
         "CardinalityRule"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+/// Combined Cardinality and Flag Rule: * element 0..1 MS
+#[derive(Debug, Clone, PartialEq)]
+pub struct CardinalityFlagRule {
+    pub path: String,
+    pub min: u32,
+    pub max: String, // Can be "*"
+    pub flags: Vec<Flag>,
+}
+
+impl ExportableRule for CardinalityFlagRule {
+    fn to_fsh(&self) -> String {
+        let flags_str = self.flags
+            .iter()
+            .map(|f| f.to_fsh())
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("{} {}..{} {}", self.path, self.min, self.max, flags_str)
+    }
+
+    fn rule_type(&self) -> &'static str {
+        "CardinalityFlagRule"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// Assignment Rule: * element = value
@@ -47,6 +93,14 @@ impl ExportableRule for AssignmentRule {
 
     fn rule_type(&self) -> &'static str {
         "AssignmentRule"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -84,6 +138,14 @@ impl ExportableRule for BindingRule {
 
     fn rule_type(&self) -> &'static str {
         "BindingRule"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -129,6 +191,14 @@ impl ExportableRule for TypeRule {
     fn rule_type(&self) -> &'static str {
         "TypeRule"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// Flag Rule: * element MS SU ?!
@@ -173,6 +243,14 @@ impl ExportableRule for FlagRule {
     fn rule_type(&self) -> &'static str {
         "FlagRule"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// Contains Rule: * element contains slice1 0..1 and slice2 0..*
@@ -211,6 +289,14 @@ impl ExportableRule for ContainsRule {
     fn rule_type(&self) -> &'static str {
         "ContainsRule"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// Obeys Rule: * obeys invariant-1
@@ -230,6 +316,14 @@ impl ExportableRule for ObeysRule {
 
     fn rule_type(&self) -> &'static str {
         "ObeysRule"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -252,6 +346,14 @@ impl ExportableRule for CaretValueRule {
     fn rule_type(&self) -> &'static str {
         "CaretValueRule"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// Insert Rule: * insert RuleSet
@@ -272,6 +374,14 @@ impl ExportableRule for InsertRule {
 
     fn rule_type(&self) -> &'static str {
         "InsertRule"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -304,6 +414,14 @@ impl ExportableRule for MappingRule {
 
     fn rule_type(&self) -> &'static str {
         "MappingRule"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -352,6 +470,14 @@ impl ExportableRule for AddElementRule {
     fn rule_type(&self) -> &'static str {
         "AddElementRule"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// Local Code Rule (CodeSystem): * #code "display" "definition"
@@ -379,6 +505,14 @@ impl ExportableRule for LocalCodeRule {
 
     fn rule_type(&self) -> &'static str {
         "LocalCodeRule"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -441,6 +575,14 @@ impl ExportableRule for IncludeRule {
     fn rule_type(&self) -> &'static str {
         "IncludeRule"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// Exclude Rule (ValueSet): * exclude codes from system
@@ -473,6 +615,14 @@ impl ExportableRule for ExcludeRule {
 
     fn rule_type(&self) -> &'static str {
         "ExcludeRule"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 

@@ -12,6 +12,7 @@
 // Command modules organized hierarchically
 pub mod build;
 pub mod config;
+pub mod gofsh;
 pub mod init;
 
 use maki_core::config::{DependencyVersion, UnifiedConfig};
