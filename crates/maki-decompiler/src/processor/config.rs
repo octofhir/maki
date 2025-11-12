@@ -3,22 +3,22 @@
 //! Extracts sushi-config.yaml from ImplementationGuide resources
 
 use crate::{
-    models::ImplementationGuide,
-    exportable::{ExportableConfiguration, FhirDependency, ConfigParameter},
-    lake::ResourceLake,
     Result,
+    exportable::{ConfigParameter, ExportableConfiguration, FhirDependency},
+    lake::ResourceLake,
+    models::ImplementationGuide,
 };
 use log::debug;
 
 /// Config processor for ImplementationGuide resources
 pub struct ConfigProcessor<'a> {
-    lake: &'a ResourceLake,
+    _lake: &'a ResourceLake,
 }
 
 impl<'a> ConfigProcessor<'a> {
     /// Create a new Config processor
     pub fn new(lake: &'a ResourceLake) -> Self {
-        Self { lake }
+        Self { _lake: lake }
     }
 
     /// Extract sushi-config from an ImplementationGuide resource
@@ -60,14 +60,14 @@ impl<'a> ConfigProcessor<'a> {
         }
 
         // Extract parameters from definition
-        if let Some(definition) = &ig.definition {
-            if let Some(parameters) = &definition.parameter {
-                for p in parameters {
-                    config.parameters.push(ConfigParameter {
-                        code: p.code.clone(),
-                        value: p.value.clone(),
-                    });
-                }
+        if let Some(definition) = &ig.definition
+            && let Some(parameters) = &definition.parameter
+        {
+            for p in parameters {
+                config.parameters.push(ConfigParameter {
+                    code: p.code.clone(),
+                    value: p.value.clone(),
+                });
             }
         }
 
@@ -81,10 +81,10 @@ impl<'a> ConfigProcessor<'a> {
 fn extract_package_id_from_uri(uri: &str) -> String {
     // Try to extract from URI like:
     // http://hl7.org/fhir/us/core/ImplementationGuide/hl7.fhir.us.core
-    if let Some(package_id) = uri.split('/').last() {
-        if package_id.contains('.') {
-            return package_id.to_string();
-        }
+    if let Some(package_id) = uri.split('/').next_back()
+        && package_id.contains('.')
+    {
+        return package_id.to_string();
     }
 
     // Fallback: use the URI itself
@@ -94,7 +94,7 @@ fn extract_package_id_from_uri(uri: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ImplementationGuideDependsOn, ContactDetail};
+    use crate::models::{ContactDetail, ImplementationGuideDependsOn};
     use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use std::sync::Arc;
 
@@ -164,8 +164,7 @@ mod tests {
         let mut ig = create_test_ig();
         ig.depends_on = Some(vec![
             ImplementationGuideDependsOn {
-                uri: "http://hl7.org/fhir/us/core/ImplementationGuide/hl7.fhir.us.core"
-                    .to_string(),
+                uri: "http://hl7.org/fhir/us/core/ImplementationGuide/hl7.fhir.us.core".to_string(),
                 package_id: Some("hl7.fhir.us.core".to_string()),
                 version: Some("3.1.0".to_string()),
             },

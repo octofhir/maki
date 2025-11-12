@@ -4,10 +4,10 @@
 //! This can happen when extracting rules from FHIR resources with redundant constraints.
 
 use crate::{
-    exportable::{Exportable, ExportableRule},
-    lake::ResourceLake,
-    optimizer::{Optimizer, OptimizationStats},
     Result,
+    exportable::Exportable,
+    lake::ResourceLake,
+    optimizer::{OptimizationStats, Optimizer},
 };
 use log::debug;
 use std::collections::HashSet;
@@ -60,9 +60,9 @@ impl Optimizer for RemoveDuplicateRulesOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exportable::{ExportableProfile, CardinalityRule, FlagRule, Flag};
-    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
+    use crate::exportable::{CardinalityRule, ExportableProfile, Flag, FlagRule};
     use crate::lake::ResourceLake;
+    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use std::sync::Arc;
 
     async fn create_test_lake() -> ResourceLake {
@@ -105,7 +105,7 @@ mod tests {
         let stats = optimizer.optimize(&mut profile, &lake).unwrap();
 
         assert_eq!(stats.redundant_rules, 1); // One duplicate removed
-        assert_eq!(profile.rules.len(), 2);   // Two unique rules remain
+        assert_eq!(profile.rules.len(), 2); // Two unique rules remain
     }
 
     #[tokio::test]
@@ -150,6 +150,6 @@ mod tests {
         let stats = optimizer.optimize(&mut profile, &lake).unwrap();
 
         assert_eq!(stats.redundant_rules, 2); // Two duplicates removed
-        assert_eq!(profile.rules.len(), 1);   // One remains
+        assert_eq!(profile.rules.len(), 1); // One remains
     }
 }

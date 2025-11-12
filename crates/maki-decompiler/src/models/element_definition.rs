@@ -1,7 +1,7 @@
 //! ElementDefinition model - represents FHIR element constraints
 
-use serde::{Deserialize, Serialize};
 use super::common::*;
+use serde::{Deserialize, Serialize};
 
 /// List of element definitions
 #[derive(Debug, Clone, Deserialize, Serialize)]

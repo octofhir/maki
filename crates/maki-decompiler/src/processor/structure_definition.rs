@@ -3,12 +3,12 @@
 //! Converts FHIR StructureDefinitions into Exportable objects (Profile, Extension, Logical, Resource)
 
 use crate::{
-    models::{Derivation, StructureDefinition, StructureDefinitionKind},
+    Error, Result,
     exportable::*,
     extractor::*,
-    processor::ProcessableElementDefinition,
     lake::ResourceLake,
-    Error, Result,
+    models::{Derivation, StructureDefinition, StructureDefinitionKind},
+    processor::ProcessableElementDefinition,
 };
 use log::{debug, warn};
 use maki_core::canonical::fishable::Fishable;
@@ -65,10 +65,10 @@ impl<'a> StructureDefinitionProcessor<'a> {
     /// Determine the type of StructureDefinition
     pub fn determine_type(&self, sd: &StructureDefinition) -> Result<DefinitionType> {
         // Extension: baseDefinition = .../Extension
-        if let Some(base) = &sd.base_definition {
-            if base.contains("/Extension") {
-                return Ok(DefinitionType::Extension);
-            }
+        if let Some(base) = &sd.base_definition
+            && base.contains("/Extension")
+        {
+            return Ok(DefinitionType::Extension);
         }
 
         // Logical: kind=logical
@@ -240,11 +240,12 @@ impl<'a> StructureDefinitionProcessor<'a> {
         }
 
         // Parent is optional for logical models
-        if let Some(base) = &sd.base_definition {
-            if !base.contains("/Element") && !base.contains("/Base") {
-                let parent = self.resolve_parent(sd).await?;
-                logical.parent = Some(parent);
-            }
+        if let Some(base) = &sd.base_definition
+            && !base.contains("/Element")
+            && !base.contains("/Base")
+        {
+            let parent = self.resolve_parent(sd).await?;
+            logical.parent = Some(parent);
         }
 
         if let Some(title) = &sd.title {
@@ -296,7 +297,7 @@ impl<'a> StructureDefinitionProcessor<'a> {
                 resource.parent = Some(parent);
             } else {
                 // Extract just the resource name from URL
-                if let Some(name) = base.split('/').last() {
+                if let Some(name) = base.split('/').next_back() {
                     resource.parent = Some(name.to_string());
                 }
             }
@@ -347,14 +348,16 @@ impl<'a> StructureDefinitionProcessor<'a> {
             Ok(Some(parent_resource)) => {
                 // Parse the parent resource to extract the name
                 // The content is a serde_json::Value, convert it to StructureDefinition
-                if let Ok(parent_sd) = serde_json::from_value::<StructureDefinition>((*parent_resource.content).clone()) {
+                if let Ok(parent_sd) = serde_json::from_value::<StructureDefinition>(
+                    (*parent_resource.content).clone(),
+                ) {
                     debug!("Found parent in lake: {}", parent_sd.name);
                     Ok(parent_sd.name)
                 } else {
                     // If parsing fails, extract name from URL
                     let name = parent_url
                         .split('/')
-                        .last()
+                        .next_back()
                         .unwrap_or(parent_url)
                         .to_string();
                     debug!("Could not parse parent, using URL-derived name: {}", name);
@@ -365,14 +368,11 @@ impl<'a> StructureDefinitionProcessor<'a> {
                 // Parent not found, extract name from URL
                 let name = parent_url
                     .split('/')
-                    .last()
+                    .next_back()
                     .unwrap_or(parent_url)
                     .to_string();
 
-                debug!(
-                    "Parent not found in lake, using URL-derived name: {}",
-                    name
-                );
+                debug!("Parent not found in lake, using URL-derived name: {}", name);
                 Ok(name)
             }
             Err(e) => {
@@ -384,7 +384,7 @@ impl<'a> StructureDefinitionProcessor<'a> {
                 // Fallback to URL-derived name
                 let name = parent_url
                     .split('/')
-                    .last()
+                    .next_back()
                     .unwrap_or(parent_url)
                     .to_string();
                 Ok(name)
@@ -406,8 +406,8 @@ mod tests {
         use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
 
         let options = CanonicalOptions {
-            quick_init: true,  // Fast initialization for tests
-            auto_install_core: false,  // Don't install packages in tests
+            quick_init: true,         // Fast initialization for tests
+            auto_install_core: false, // Don't install packages in tests
             ..Default::default()
         };
 

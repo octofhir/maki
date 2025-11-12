@@ -3,10 +3,10 @@
 //! Simplifies array notation by removing [0] indices since they're the default.
 
 use crate::{
+    Result,
     exportable::{Exportable, ExportableRule},
     lake::ResourceLake,
-    optimizer::{Optimizer, OptimizationStats},
-    Result,
+    optimizer::{OptimizationStats, Optimizer},
 };
 use log::debug;
 use regex::Regex;
@@ -46,7 +46,7 @@ impl Optimizer for SimplifyArrayIndexingOptimizer {
 
         // Simplify paths in all rules
         for rule in rules.iter_mut() {
-            if let Some(simplified) = Self::simplify_path(rule) {
+            if let Some(_simplified) = Self::simplify_path(rule) {
                 debug!("Simplified array indexing in rule");
                 stats.record_simplification();
             }
@@ -77,9 +77,8 @@ impl SimplifyArrayIndexingOptimizer {
     /// Simplify paths in a rule by removing [0] indices
     fn simplify_path(rule: &mut Box<dyn ExportableRule>) -> Option<()> {
         use crate::exportable::{
-            AssignmentRule, CardinalityRule, FlagRule, BindingRule, TypeRule,
-            ContainsRule, CaretValueRule, ObeysRule, CardinalityFlagRule,
-            MappingRule, AddElementRule,
+            AddElementRule, AssignmentRule, BindingRule, CardinalityFlagRule, CardinalityRule,
+            CaretValueRule, ContainsRule, FlagRule, MappingRule, ObeysRule, TypeRule,
         };
 
         let any = rule.as_any_mut();
@@ -116,11 +115,11 @@ impl SimplifyArrayIndexingOptimizer {
                 return Some(());
             }
         } else if let Some(r) = any.downcast_mut::<CaretValueRule>() {
-            if let Some(path) = &r.path {
-                if let Some(simplified) = Self::simplify_path_string(path) {
-                    r.path = Some(simplified);
-                    return Some(());
-                }
+            if let Some(path) = &r.path
+                && let Some(simplified) = Self::simplify_path_string(path)
+            {
+                r.path = Some(simplified);
+                return Some(());
             }
             if let Some(simplified) = Self::simplify_path_string(&r.caret_path) {
                 r.caret_path = simplified;
@@ -128,11 +127,11 @@ impl SimplifyArrayIndexingOptimizer {
             }
         } else if let Some(r) = any.downcast_mut::<ObeysRule>() {
             // ObeysRule has Option<String> path
-            if let Some(path) = &r.path {
-                if let Some(simplified) = Self::simplify_path_string(path) {
-                    r.path = Some(simplified);
-                    return Some(());
-                }
+            if let Some(path) = &r.path
+                && let Some(simplified) = Self::simplify_path_string(path)
+            {
+                r.path = Some(simplified);
+                return Some(());
             }
         } else if let Some(r) = any.downcast_mut::<CardinalityFlagRule>() {
             if let Some(simplified) = Self::simplify_path_string(&r.path) {
@@ -141,17 +140,17 @@ impl SimplifyArrayIndexingOptimizer {
             }
         } else if let Some(r) = any.downcast_mut::<MappingRule>() {
             // MappingRule has Option<String> path
-            if let Some(path) = &r.path {
-                if let Some(simplified) = Self::simplify_path_string(path) {
-                    r.path = Some(simplified);
-                    return Some(());
-                }
-            }
-        } else if let Some(r) = any.downcast_mut::<AddElementRule>() {
-            if let Some(simplified) = Self::simplify_path_string(&r.path) {
-                r.path = simplified;
+            if let Some(path) = &r.path
+                && let Some(simplified) = Self::simplify_path_string(path)
+            {
+                r.path = Some(simplified);
                 return Some(());
             }
+        } else if let Some(r) = any.downcast_mut::<AddElementRule>()
+            && let Some(simplified) = Self::simplify_path_string(&r.path)
+        {
+            r.path = simplified;
+            return Some(());
         }
 
         None
@@ -161,9 +160,9 @@ impl SimplifyArrayIndexingOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exportable::{ExportableProfile, AssignmentRule, CardinalityRule, FshValue};
-    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
+    use crate::exportable::{AssignmentRule, CardinalityRule, ExportableProfile, FshValue};
     use crate::lake::ResourceLake;
+    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use std::sync::Arc;
 
     async fn create_test_lake() -> ResourceLake {
@@ -202,10 +201,16 @@ mod tests {
         assert_eq!(stats.simplified_rules, 2);
 
         // Verify paths were simplified
-        let rule1 = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let rule1 = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(rule1.path, "name.given");
 
-        let rule2 = profile.rules[1].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let rule2 = profile.rules[1]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(rule2.path, "name.family");
     }
 
@@ -234,10 +239,16 @@ mod tests {
         assert_eq!(stats.simplified_rules, 0);
 
         // Verify paths were NOT changed
-        let rule1 = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let rule1 = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(rule1.path, "name[1].given");
 
-        let rule2 = profile.rules[1].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let rule2 = profile.rules[1]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(rule2.path, "name[2].family");
     }
 
@@ -260,7 +271,10 @@ mod tests {
         assert_eq!(stats.simplified_rules, 1);
 
         // Verify both [0] indices were removed
-        let rule = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(rule.path, "entry.resource.name.given");
     }
 
@@ -282,13 +296,17 @@ mod tests {
 
         assert_eq!(stats.simplified_rules, 1);
 
-        let rule = profile.rules[0].as_any().downcast_ref::<CardinalityRule>().unwrap();
+        let rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<CardinalityRule>()
+            .unwrap();
         assert_eq!(rule.path, "name.given");
     }
 
     #[tokio::test]
     async fn test_keep_slice_names_with_zero() {
-        let mut profile = ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
+        let mut profile =
+            ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
 
         // Slice name containing "0" should NOT be simplified
         profile.add_rule(Box::new(AssignmentRule {
@@ -305,7 +323,10 @@ mod tests {
         // Should not simplify since [slice0] is a slice name, not [0] index
         assert_eq!(stats.simplified_rules, 0);
 
-        let rule = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(rule.path, "component[slice0].code.coding.code");
     }
 }

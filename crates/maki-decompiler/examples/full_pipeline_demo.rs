@@ -3,13 +3,15 @@
 //! This example demonstrates the complete decompiler pipeline from loading a FHIR
 //! StructureDefinition JSON file to extracting all rules and generating FSH output.
 
-use maki_decompiler::{
-    models::{StructureDefinition, Derivation, ElementList, ElementDefinition, common::{TypeRef, Binding, BindingStrength, Coding}},
-    processor::{StructureDefinitionProcessor},
-    lake::ResourceLake,
-    exportable::{Exportable, ExportableRule},
-};
 use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
+use maki_decompiler::{
+    lake::ResourceLake,
+    models::{
+        Derivation, ElementDefinition, ElementList, StructureDefinition,
+        common::{Binding, BindingStrength},
+    },
+    processor::StructureDefinitionProcessor,
+};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -34,8 +36,13 @@ async fn main() {
     let sd = create_us_core_patient_profile();
     println!("   ✓ Profile: {}", sd.name);
     println!("   ✓ Base: {}", sd.base_definition.as_ref().unwrap());
-    println!("   ✓ Elements: {} differential elements\n",
-        sd.differential.as_ref().map(|d| d.element.len()).unwrap_or(0));
+    println!(
+        "   ✓ Elements: {} differential elements\n",
+        sd.differential
+            .as_ref()
+            .map(|d| d.element.len())
+            .unwrap_or(0)
+    );
 
     // Step 3: Process the StructureDefinition
     println!("Step 3: Processing StructureDefinition...");

@@ -3,22 +3,22 @@
 //! Converts FHIR CodeSystem resources into ExportableCodeSystem objects
 
 use crate::{
-    models::{CodeSystem, ConceptDefinition},
-    exportable::{ExportableCodeSystem, LocalCodeRule, Exportable},
-    lake::ResourceLake,
     Result,
+    exportable::{Exportable, ExportableCodeSystem, LocalCodeRule},
+    lake::ResourceLake,
+    models::{CodeSystem, ConceptDefinition},
 };
 use log::debug;
 
 /// CodeSystem processor
 pub struct CodeSystemProcessor<'a> {
-    lake: &'a ResourceLake,
+    _lake: &'a ResourceLake,
 }
 
 impl<'a> CodeSystemProcessor<'a> {
     /// Create a new CodeSystem processor
     pub fn new(lake: &'a ResourceLake) -> Self {
-        Self { lake }
+        Self { _lake: lake }
     }
 
     /// Process a CodeSystem into an ExportableCodeSystem
@@ -55,6 +55,7 @@ impl<'a> CodeSystemProcessor<'a> {
     }
 
     /// Process concept definitions recursively
+    #[allow(clippy::only_used_in_recursion)]
     fn process_concepts(
         &self,
         exportable: &mut ExportableCodeSystem,

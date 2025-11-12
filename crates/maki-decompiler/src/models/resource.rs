@@ -1,7 +1,7 @@
 //! FHIR resource enum for deserialization
 
+use super::{CodeSystem, StructureDefinition, ValueSet};
 use serde::{Deserialize, Serialize};
-use super::{StructureDefinition, ValueSet, CodeSystem};
 
 /// FHIR resource discriminated union
 ///

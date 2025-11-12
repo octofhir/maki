@@ -4,12 +4,12 @@
 //! slices into FSH contains rules. Slicing is one of the most complex aspects of FHIR
 //! profiling, allowing profiles to subdivide repeating elements into named slices.
 
-use crate::{
-    processor::ProcessableElementDefinition,
-    exportable::{ExportableRule, ContainsRule, ContainsItem},
-    Result,
-};
 use super::RuleExtractor;
+use crate::{
+    Result,
+    exportable::{ContainsItem, ContainsRule, ExportableRule},
+    processor::ProcessableElementDefinition,
+};
 
 /// Extractor for contains rules (slicing)
 ///
@@ -65,23 +65,24 @@ impl ContainsExtractor {
 
         for elem in elements.iter_mut() {
             // Look for elements with same path and a slice name
-            if elem.element.path == path && elem.element.is_slice() {
-                if let Some(slice_name) = &elem.element.slice_name {
-                    // Check if this is an extension slice with a URL
-                    let type_name = Self::get_extension_url(elem);
+            if elem.element.path == path
+                && elem.element.is_slice()
+                && let Some(slice_name) = &elem.element.slice_name
+            {
+                // Check if this is an extension slice with a URL
+                let type_name = Self::get_extension_url(elem);
 
-                    items.push(ContainsItem {
-                        name: slice_name.clone(),
-                        type_name,
-                        min: elem.element.min.unwrap_or(0),
-                        max: elem.element.max.clone().unwrap_or_else(|| "*".to_string()),
-                    });
+                items.push(ContainsItem {
+                    name: slice_name.clone(),
+                    type_name,
+                    min: elem.element.min.unwrap_or(0),
+                    max: elem.element.max.clone().unwrap_or_else(|| "*".to_string()),
+                });
 
-                    // Mark the slice element's cardinality as processed since
-                    // it's included in the contains rule
-                    elem.mark_processed("min");
-                    elem.mark_processed("max");
-                }
+                // Mark the slice element's cardinality as processed since
+                // it's included in the contains rule
+                elem.mark_processed("min");
+                elem.mark_processed("max");
             }
         }
 
@@ -103,10 +104,10 @@ impl ContainsExtractor {
             for type_ref in types {
                 if type_ref.code == "Extension" {
                     // Get the first profile URL if it exists
-                    if let Some(profiles) = &type_ref.profile {
-                        if let Some(profile_url) = profiles.first() {
-                            return Some(profile_url.clone());
-                        }
+                    if let Some(profiles) = &type_ref.profile
+                        && let Some(profile_url) = profiles.first()
+                    {
+                        return Some(profile_url.clone());
                     }
                 }
             }
@@ -119,7 +120,7 @@ impl ContainsExtractor {
 impl RuleExtractor for ContainsExtractor {
     fn extract(
         &self,
-        elem: &mut ProcessableElementDefinition,
+        _elem: &mut ProcessableElementDefinition,
     ) -> Result<Vec<Box<dyn ExportableRule>>> {
         // ContainsExtractor requires analyzing multiple elements together
         // So this single-element extract method is not suitable
@@ -131,7 +132,10 @@ impl RuleExtractor for ContainsExtractor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ElementDefinition, common::{Slicing, TypeRef}};
+    use crate::models::{
+        ElementDefinition,
+        common::{Slicing, TypeRef},
+    };
 
     fn create_test_element(path: &str, slice_name: Option<String>) -> ProcessableElementDefinition {
         ProcessableElementDefinition::new(ElementDefinition {

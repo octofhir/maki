@@ -3,11 +3,11 @@
 //! This module handles discovery and loading of FHIR resources from JSON and XML files.
 //! It supports single files, directories (recursive), and FHIR Bundles.
 
-use std::path::{Path, PathBuf};
-use std::fs;
-use crate::models::*;
+use crate::error::{Error, Result};
 use crate::lake::ResourceLake;
-use crate::error::{Result, Error};
+use crate::models::*;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// File loader for FHIR resources
 ///
@@ -97,11 +97,11 @@ impl FileLoader {
 
             if entry_path.is_file() {
                 // Skip package.json and other non-FHIR files
-                if let Some(name) = entry_path.file_name().and_then(|n| n.to_str()) {
-                    if name == "package.json" || name.starts_with('.') {
-                        log::debug!("Skipping {}", name);
-                        continue;
-                    }
+                if let Some(name) = entry_path.file_name().and_then(|n| n.to_str())
+                    && (name == "package.json" || name.starts_with('.'))
+                {
+                    log::debug!("Skipping {}", name);
+                    continue;
                 }
 
                 // Load file, but continue on error
@@ -127,8 +127,8 @@ impl FileLoader {
         log::debug!("Loading JSON file: {}", path.display());
 
         let content = fs::read_to_string(path)?;
-        let resource: FhirResource = serde_json::from_str(&content)
-            .map_err(|e| Error::ParseError {
+        let resource: FhirResource =
+            serde_json::from_str(&content).map_err(|e| Error::ParseError {
                 file: path.to_path_buf(),
                 message: e.to_string(),
             })?;
@@ -144,8 +144,8 @@ impl FileLoader {
         log::debug!("Loading XML file: {}", path.display());
 
         let content = fs::read_to_string(path)?;
-        let resource: FhirResource = quick_xml::de::from_str(&content)
-            .map_err(|e| Error::ParseError {
+        let resource: FhirResource =
+            quick_xml::de::from_str(&content).map_err(|e| Error::ParseError {
                 file: path.to_path_buf(),
                 message: e.to_string(),
             })?;
@@ -200,11 +200,11 @@ impl Default for FileLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use maki_core::canonical::{CanonicalFacade, CanonicalOptions, DefinitionSession};
-    use tempfile::TempDir;
     use std::fs::File;
     use std::io::Write;
+    use std::sync::Arc;
+    use tempfile::TempDir;
 
     // Helper to create a test session
     // Note: This requires async context and proper initialization
@@ -234,7 +234,8 @@ mod tests {
 
         // Write test JSON
         let mut file = File::create(&file_path).unwrap();
-        file.write_all(create_test_structure_definition_json().as_bytes()).unwrap();
+        file.write_all(create_test_structure_definition_json().as_bytes())
+            .unwrap();
 
         // Create loader and lake
         let session = Arc::new(create_test_session().await);
@@ -248,7 +249,8 @@ mod tests {
         assert_eq!(stats.errors, 0);
 
         // Verify resource was added
-        let sd = lake.get_structure_definition("http://example.org/StructureDefinition/TestProfile");
+        let sd =
+            lake.get_structure_definition("http://example.org/StructureDefinition/TestProfile");
         assert!(sd.is_some());
         assert_eq!(sd.unwrap().name, "TestProfile");
     }
@@ -260,12 +262,15 @@ mod tests {
         // Create multiple JSON files
         for i in 1..=3 {
             let file_path = temp_dir.path().join(format!("profile{}.json", i));
-            let json = format!(r#"{{
+            let json = format!(
+                r#"{{
                 "resourceType": "StructureDefinition",
                 "url": "http://example.org/StructureDefinition/Profile{}",
                 "name": "Profile{}",
                 "status": "active"
-            }}"#, i, i);
+            }}"#,
+                i, i
+            );
 
             let mut file = File::create(&file_path).unwrap();
             file.write_all(json.as_bytes()).unwrap();
@@ -306,7 +311,8 @@ mod tests {
         // Create valid FHIR file
         let fhir_path = temp_dir.path().join("profile.json");
         let mut file = File::create(&fhir_path).unwrap();
-        file.write_all(create_test_structure_definition_json().as_bytes()).unwrap();
+        file.write_all(create_test_structure_definition_json().as_bytes())
+            .unwrap();
 
         // Create loader and lake
         let session = Arc::new(create_test_session().await);
@@ -365,7 +371,10 @@ mod tests {
         let stats = loader.load_into_lake(&file_path, &mut lake).unwrap();
 
         assert_eq!(stats.loaded, 1);
-        assert!(lake.get_value_set("http://example.org/ValueSet/TestVS").is_some());
+        assert!(
+            lake.get_value_set("http://example.org/ValueSet/TestVS")
+                .is_some()
+        );
     }
 
     #[tokio::test]
@@ -391,6 +400,9 @@ mod tests {
         let stats = loader.load_into_lake(&file_path, &mut lake).unwrap();
 
         assert_eq!(stats.loaded, 1);
-        assert!(lake.get_code_system("http://example.org/CodeSystem/TestCS").is_some());
+        assert!(
+            lake.get_code_system("http://example.org/CodeSystem/TestCS")
+                .is_some()
+        );
     }
 }

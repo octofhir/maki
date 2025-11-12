@@ -156,28 +156,31 @@ impl ConfigGenerator {
 
         // Publisher
         if let Some(publisher) = &ig.publisher {
-            yaml.push_str(&format!("publisher:\n  name: \"{}\"\n", escape_yaml_string(publisher)));
+            yaml.push_str(&format!(
+                "publisher:\n  name: \"{}\"\n",
+                escape_yaml_string(publisher)
+            ));
         }
 
         // Contact
-        if let Some(contacts) = &ig.contact {
-            if !contacts.is_empty() {
-                yaml.push_str("contact:\n");
-                for contact in contacts {
-                    if let Some(name) = &contact.name {
-                        yaml.push_str(&format!("  - name: \"{}\"\n", escape_yaml_string(name)));
-                    }
-                    if let Some(telecom_list) = &contact.telecom {
-                        if !telecom_list.is_empty() {
-                            yaml.push_str("    telecom:\n");
-                            for telecom in telecom_list {
-                                if let Some(system) = &telecom.system {
-                                    yaml.push_str(&format!("      - system: {}\n", system));
-                                }
-                                if let Some(value) = &telecom.value {
-                                    yaml.push_str(&format!("        value: {}\n", value));
-                                }
-                            }
+        if let Some(contacts) = &ig.contact
+            && !contacts.is_empty()
+        {
+            yaml.push_str("contact:\n");
+            for contact in contacts {
+                if let Some(name) = &contact.name {
+                    yaml.push_str(&format!("  - name: \"{}\"\n", escape_yaml_string(name)));
+                }
+                if let Some(telecom_list) = &contact.telecom
+                    && !telecom_list.is_empty()
+                {
+                    yaml.push_str("    telecom:\n");
+                    for telecom in telecom_list {
+                        if let Some(system) = &telecom.system {
+                            yaml.push_str(&format!("      - system: {}\n", system));
+                        }
+                        if let Some(value) = &telecom.value {
+                            yaml.push_str(&format!("        value: {}\n", value));
                         }
                     }
                 }
@@ -190,15 +193,15 @@ impl ConfigGenerator {
         }
 
         // Dependencies
-        if let Some(deps) = &ig.depends_on {
-            if !deps.is_empty() {
-                yaml.push_str("dependencies:\n");
-                for dep in deps {
-                    if let Some(package_id) = &dep.package_id {
-                        yaml.push_str(&format!("  {}:\n", package_id));
-                        if let Some(version) = &dep.version {
-                            yaml.push_str(&format!("    version: {}\n", version));
-                        }
+        if let Some(deps) = &ig.depends_on
+            && !deps.is_empty()
+        {
+            yaml.push_str("dependencies:\n");
+            for dep in deps {
+                if let Some(package_id) = &dep.package_id {
+                    yaml.push_str(&format!("  {}:\n", package_id));
+                    if let Some(version) = &dep.version {
+                        yaml.push_str(&format!("    version: {}\n", version));
                     }
                 }
             }
@@ -388,7 +391,9 @@ mod tests {
         let config_path = temp_dir.path().join("sushi-config.yaml");
 
         let generator = ConfigGenerator::new();
-        generator.generate_minimal_sushi_config(&config_path).unwrap();
+        generator
+            .generate_minimal_sushi_config(&config_path)
+            .unwrap();
 
         assert!(config_path.exists());
 
@@ -441,7 +446,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         let generator = ConfigGenerator::new();
-        generator.generate_all_configs(None, temp_dir.path()).unwrap();
+        generator
+            .generate_all_configs(None, temp_dir.path())
+            .unwrap();
 
         let sushi_config = temp_dir.path().join("sushi-config.yaml");
         let maki_config = temp_dir.path().join(".makirc.json");

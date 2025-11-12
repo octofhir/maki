@@ -3,26 +3,26 @@
 //! This module contains types that represent FSH constructs in memory.
 //! Each Exportable knows how to convert itself to FSH text via the `to_fsh()` method.
 
-pub mod rules;
-pub mod profile;
-pub mod extension;
-pub mod logical;
-pub mod resource;
-pub mod value_set;
 pub mod code_system;
-pub mod instance;
 pub mod config;
+pub mod extension;
+pub mod instance;
+pub mod logical;
+pub mod profile;
+pub mod resource;
+pub mod rules;
+pub mod value_set;
 
 // Re-exports
-pub use rules::*;
-pub use profile::*;
-pub use extension::*;
-pub use logical::*;
-pub use resource::*;
-pub use value_set::*;
 pub use code_system::*;
-pub use instance::*;
 pub use config::*;
+pub use extension::*;
+pub use instance::*;
+pub use logical::*;
+pub use profile::*;
+pub use resource::*;
+pub use rules::*;
+pub use value_set::*;
 
 use std::fmt;
 
@@ -179,7 +179,11 @@ pub struct FshReference {
 impl FshReference {
     pub fn to_fsh(&self) -> String {
         if let Some(display) = &self.display {
-            format!("Reference({}) \"{}\"", self.reference, escape_string(display))
+            format!(
+                "Reference({}) \"{}\"",
+                self.reference,
+                escape_string(display)
+            )
         } else {
             format!("Reference({})", self.reference)
         }
@@ -247,7 +251,10 @@ mod tests {
             system: Some("http://hl7.org/fhir/status".to_string()),
             code: "active".to_string(),
         };
-        assert_eq!(code_with_system.to_fsh(), "http://hl7.org/fhir/status#active");
+        assert_eq!(
+            code_with_system.to_fsh(),
+            "http://hl7.org/fhir/status#active"
+        );
     }
 
     #[test]

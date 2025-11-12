@@ -8,8 +8,8 @@
 
 use maki_decompiler::exportable::*;
 use maki_decompiler::organizer::{FileOrganizer, OrganizationStrategy};
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== File Organizer Demo ===\n");
@@ -92,10 +92,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     use maki_decompiler::writer::FshWriter;
     let custom_writer = FshWriter::new(4, 120); // 4 spaces indent, 120 line width
-    let organizer = FileOrganizer::with_writer(
-        OrganizationStrategy::FilePerDefinition,
-        custom_writer,
-    );
+    let organizer =
+        FileOrganizer::with_writer(OrganizationStrategy::FilePerDefinition, custom_writer);
     let output_dir = Path::new("demo-output/custom-config");
     organizer.organize(&exportables, output_dir)?;
 
@@ -121,13 +119,11 @@ fn create_sample_exportables() -> Vec<Box<dyn Exportable>> {
     let mut exportables: Vec<Box<dyn Exportable>> = Vec::new();
 
     // Patient profiles
-    let mut us_core_patient = ExportableProfile::new(
-        "USCorePatientProfile".to_string(),
-        "Patient".to_string(),
-    )
-    .with_id("us-core-patient".to_string())
-    .with_title("US Core Patient Profile".to_string())
-    .with_description("US Core Patient Profile for demographics".to_string());
+    let mut us_core_patient =
+        ExportableProfile::new("USCorePatientProfile".to_string(), "Patient".to_string())
+            .with_id("us-core-patient".to_string())
+            .with_title("US Core Patient Profile".to_string())
+            .with_description("US Core Patient Profile for demographics".to_string());
 
     us_core_patient.add_rule(Box::new(CardinalityRule {
         path: "identifier".to_string(),
@@ -169,11 +165,9 @@ fn create_sample_exportables() -> Vec<Box<dyn Exportable>> {
     exportables.push(Box::new(condition_profile));
 
     // ValueSets
-    let mut gender_vs = ExportableValueSet::new(
-        "AdministrativeGenderValueSet".to_string(),
-    )
-    .with_id("administrative-gender-vs".to_string())
-    .with_title("Administrative Gender".to_string());
+    let mut gender_vs = ExportableValueSet::new("AdministrativeGenderValueSet".to_string())
+        .with_id("administrative-gender-vs".to_string())
+        .with_title("Administrative Gender".to_string());
 
     gender_vs.add_rule(Box::new(IncludeRule {
         system: "http://hl7.org/fhir/administrative-gender".to_string(),
@@ -193,20 +187,16 @@ fn create_sample_exportables() -> Vec<Box<dyn Exportable>> {
 
     exportables.push(Box::new(gender_vs));
 
-    let observation_status_vs = ExportableValueSet::new(
-        "ObservationStatusValueSet".to_string(),
-    )
-    .with_id("observation-status-vs".to_string())
-    .with_title("Observation Status Codes".to_string());
+    let observation_status_vs = ExportableValueSet::new("ObservationStatusValueSet".to_string())
+        .with_id("observation-status-vs".to_string())
+        .with_title("Observation Status Codes".to_string());
 
     exportables.push(Box::new(observation_status_vs));
 
     // CodeSystems
-    let mut example_cs = ExportableCodeSystem::new(
-        "ExampleCodeSystem".to_string(),
-    )
-    .with_id("example-codes".to_string())
-    .with_title("Example Codes".to_string());
+    let mut example_cs = ExportableCodeSystem::new("ExampleCodeSystem".to_string())
+        .with_id("example-codes".to_string())
+        .with_title("Example Codes".to_string());
 
     example_cs.add_rule(Box::new(LocalCodeRule {
         code: "active".to_string(),
@@ -223,20 +213,16 @@ fn create_sample_exportables() -> Vec<Box<dyn Exportable>> {
     exportables.push(Box::new(example_cs));
 
     // Extension
-    let extension = ExportableExtension::new(
-        "BirthSexExtension".to_string(),
-    )
-    .with_id("birth-sex".to_string())
-    .with_title("Birth Sex".to_string());
+    let extension = ExportableExtension::new("BirthSexExtension".to_string())
+        .with_id("birth-sex".to_string())
+        .with_title("Birth Sex".to_string());
 
     exportables.push(Box::new(extension));
 
     // Logical model
-    let logical = ExportableLogical::new(
-        "PatientContactLogical".to_string(),
-    )
-    .with_id("patient-contact-logical".to_string())
-    .with_title("Patient Contact Logical Model".to_string());
+    let logical = ExportableLogical::new("PatientContactLogical".to_string())
+        .with_id("patient-contact-logical".to_string())
+        .with_title("Patient Contact Logical Model".to_string());
 
     exportables.push(Box::new(logical));
 
@@ -260,9 +246,7 @@ fn show_directory_recursive(
     prefix: &str,
     is_last: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let name = path.file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     if !name.is_empty() {
         let branch = if is_last { "└── " } else { "├── " };
@@ -270,9 +254,7 @@ fn show_directory_recursive(
     }
 
     if path.is_dir() {
-        let mut entries: Vec<_> = fs::read_dir(path)?
-            .filter_map(|e| e.ok())
-            .collect();
+        let mut entries: Vec<_> = fs::read_dir(path)?.filter_map(|e| e.ok()).collect();
 
         entries.sort_by_key(|e| e.path());
 

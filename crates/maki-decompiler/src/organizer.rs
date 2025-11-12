@@ -46,9 +46,9 @@
 //! //          output/valuesets/MyValueSet.fsh
 //! ```
 
+use crate::error::Result;
 use crate::exportable::Exportable;
 use crate::writer::FshWriter;
-use crate::error::Result;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -164,15 +164,11 @@ impl FileOrganizer {
             OrganizationStrategy::FilePerDefinition => {
                 self.organize_per_definition(exportables, output_dir)
             }
-            OrganizationStrategy::GroupByFshType => {
-                self.organize_by_type(exportables, output_dir)
-            }
+            OrganizationStrategy::GroupByFshType => self.organize_by_type(exportables, output_dir),
             OrganizationStrategy::GroupByProfile => {
                 self.organize_by_profile(exportables, output_dir)
             }
-            OrganizationStrategy::SingleFile => {
-                self.organize_single_file(exportables, output_dir)
-            }
+            OrganizationStrategy::SingleFile => self.organize_single_file(exportables, output_dir),
         }
     }
 
@@ -340,7 +336,7 @@ impl Default for FileOrganizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exportable::{ExportableProfile, ExportableValueSet, ExportableCodeSystem};
+    use crate::exportable::{ExportableCodeSystem, ExportableProfile, ExportableValueSet};
     use tempfile::TempDir;
 
     #[test]
@@ -360,7 +356,10 @@ mod tests {
     #[test]
     fn test_organizer_default() {
         let organizer = FileOrganizer::default();
-        assert_eq!(organizer.strategy(), OrganizationStrategy::FilePerDefinition);
+        assert_eq!(
+            organizer.strategy(),
+            OrganizationStrategy::FilePerDefinition
+        );
     }
 
     #[test]
@@ -373,10 +372,7 @@ mod tests {
         let profile1 = ExportableProfile::new("Profile1".to_string(), "Patient".to_string());
         let profile2 = ExportableProfile::new("Profile2".to_string(), "Observation".to_string());
 
-        let exportables: Vec<Box<dyn Exportable>> = vec![
-            Box::new(profile1),
-            Box::new(profile2),
-        ];
+        let exportables: Vec<Box<dyn Exportable>> = vec![Box::new(profile1), Box::new(profile2)];
 
         organizer.organize(&exportables, output_dir).unwrap();
 
@@ -426,13 +422,15 @@ mod tests {
 
         let organizer = FileOrganizer::new(OrganizationStrategy::GroupByProfile);
 
-        let patient_profile = ExportableProfile::new("MyPatientProfile".to_string(), "Patient".to_string());
-        let obs_profile = ExportableProfile::new("MyObservationProfile".to_string(), "Observation".to_string());
+        let patient_profile =
+            ExportableProfile::new("MyPatientProfile".to_string(), "Patient".to_string());
+        let obs_profile = ExportableProfile::new(
+            "MyObservationProfile".to_string(),
+            "Observation".to_string(),
+        );
 
-        let exportables: Vec<Box<dyn Exportable>> = vec![
-            Box::new(patient_profile),
-            Box::new(obs_profile),
-        ];
+        let exportables: Vec<Box<dyn Exportable>> =
+            vec![Box::new(patient_profile), Box::new(obs_profile)];
 
         organizer.organize(&exportables, output_dir).unwrap();
 
@@ -442,7 +440,11 @@ mod tests {
 
         // Verify files
         assert!(output_dir.join("Patient/MyPatientProfile.fsh").exists());
-        assert!(output_dir.join("Observation/MyObservationProfile.fsh").exists());
+        assert!(
+            output_dir
+                .join("Observation/MyObservationProfile.fsh")
+                .exists()
+        );
     }
 
     #[test]
@@ -455,10 +457,7 @@ mod tests {
         let profile1 = ExportableProfile::new("Profile1".to_string(), "Patient".to_string());
         let profile2 = ExportableProfile::new("Profile2".to_string(), "Observation".to_string());
 
-        let exportables: Vec<Box<dyn Exportable>> = vec![
-            Box::new(profile1),
-            Box::new(profile2),
-        ];
+        let exportables: Vec<Box<dyn Exportable>> = vec![Box::new(profile1), Box::new(profile2)];
 
         organizer.organize(&exportables, output_dir).unwrap();
 
@@ -478,10 +477,7 @@ mod tests {
         let output_dir = temp_dir.path();
 
         let writer = FshWriter::new(4, 120);
-        let organizer = FileOrganizer::with_writer(
-            OrganizationStrategy::FilePerDefinition,
-            writer,
-        );
+        let organizer = FileOrganizer::with_writer(OrganizationStrategy::FilePerDefinition, writer);
 
         let profile = ExportableProfile::new("MyProfile".to_string(), "Patient".to_string());
         let exportables: Vec<Box<dyn Exportable>> = vec![Box::new(profile)];

@@ -2,13 +2,13 @@
 //!
 //! Extracts type constraints (only rules) from ElementDefinition
 
-use crate::{
-    processor::ProcessableElementDefinition,
-    exportable::{ExportableRule, TypeRule, TypeReference},
-    models::TypeRef,
-    Result,
-};
 use super::RuleExtractor;
+use crate::{
+    Result,
+    exportable::{ExportableRule, TypeReference, TypeRule},
+    models::TypeRef,
+    processor::ProcessableElementDefinition,
+};
 use log::debug;
 
 /// Extracts type constraint rules (only Type1 or Type2)
@@ -35,10 +35,8 @@ impl RuleExtractor for TypeExtractor {
             let fsh_path = Self::element_path_to_fsh(&elem.element.path);
 
             // Convert FHIR TypeRef to FSH TypeReference
-            let type_references: Vec<TypeReference> = types
-                .iter()
-                .map(|t| self.convert_type_ref(t))
-                .collect();
+            let type_references: Vec<TypeReference> =
+                types.iter().map(|t| self.convert_type_ref(t)).collect();
 
             debug!(
                 "Extracting type constraint for path {} with {} types",

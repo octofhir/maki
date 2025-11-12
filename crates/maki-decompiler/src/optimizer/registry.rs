@@ -2,15 +2,11 @@
 //!
 //! Manages a collection of optimizers and executes them in dependency order.
 
-use super::{Optimizer, OptimizationStats};
-use crate::{
-    exportable::Exportable,
-    lake::ResourceLake,
-    Error, Result,
-};
+use super::{OptimizationStats, Optimizer};
+use crate::{Error, Result, exportable::Exportable, lake::ResourceLake};
 use log::{debug, info};
-use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::algo::toposort;
+use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
 
 /// Registry of optimizers with dependency-aware execution
@@ -59,7 +55,10 @@ impl OptimizerRegistry {
             return Ok(OptimizationStats::new());
         }
 
-        info!("Starting optimization with {} optimizers", self.optimizers.len());
+        info!(
+            "Starting optimization with {} optimizers",
+            self.optimizers.len()
+        );
 
         // Get optimizers in dependency order
         let ordered = self.topological_sort()?;
@@ -73,11 +72,7 @@ impl OptimizerRegistry {
             let stats = optimizer.optimize(exportable, lake)?;
 
             if stats.has_changes() {
-                info!(
-                    "Optimizer '{}' made changes: {}",
-                    optimizer.name(),
-                    stats
-                );
+                info!("Optimizer '{}' made changes: {}", optimizer.name(), stats);
             } else {
                 debug!("Optimizer '{}' made no changes", optimizer.name());
             }
@@ -278,7 +273,10 @@ mod tests {
         let execution_order = Arc::new(std::sync::Mutex::new(Vec::new()));
         let lake = create_test_lake().await;
 
-        registry.add(Box::new(MockOptimizer::new("opt1", execution_order.clone())));
+        registry.add(Box::new(MockOptimizer::new(
+            "opt1",
+            execution_order.clone(),
+        )));
 
         let mut profile = ExportableProfile::new("TestProfile".to_string(), "Patient".to_string());
         registry.optimize_all(&mut profile, &lake).unwrap();
@@ -300,7 +298,10 @@ mod tests {
         registry.add(Box::new(
             MockOptimizer::new("opt2", execution_order.clone()).with_run_before(vec!["opt3"]),
         ));
-        registry.add(Box::new(MockOptimizer::new("opt3", execution_order.clone())));
+        registry.add(Box::new(MockOptimizer::new(
+            "opt3",
+            execution_order.clone(),
+        )));
 
         let mut profile = ExportableProfile::new("TestProfile".to_string(), "Patient".to_string());
         registry.optimize_all(&mut profile, &lake).unwrap();
@@ -316,8 +317,14 @@ mod tests {
         let execution_order = Arc::new(std::sync::Mutex::new(Vec::new()));
         let lake = create_test_lake().await;
 
-        registry.add(Box::new(MockOptimizer::new("opt1", execution_order.clone())));
-        registry.add(Box::new(MockOptimizer::new("opt2", execution_order.clone())));
+        registry.add(Box::new(MockOptimizer::new(
+            "opt1",
+            execution_order.clone(),
+        )));
+        registry.add(Box::new(MockOptimizer::new(
+            "opt2",
+            execution_order.clone(),
+        )));
         registry.add(Box::new(
             MockOptimizer::new("opt3", execution_order.clone())
                 .with_run_after(vec!["opt1", "opt2"]),
@@ -355,7 +362,10 @@ mod tests {
         registry.add(Box::new(
             MockOptimizer::new("opt3", execution_order.clone()).with_run_before(vec!["opt4"]),
         ));
-        registry.add(Box::new(MockOptimizer::new("opt4", execution_order.clone())));
+        registry.add(Box::new(MockOptimizer::new(
+            "opt4",
+            execution_order.clone(),
+        )));
 
         let mut profile = ExportableProfile::new("TestProfile".to_string(), "Patient".to_string());
         registry.optimize_all(&mut profile, &lake).unwrap();

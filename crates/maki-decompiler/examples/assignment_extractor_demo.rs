@@ -5,7 +5,10 @@
 
 use maki_decompiler::{
     extractor::{AssignmentExtractor, RuleExtractor},
-    models::{ElementDefinition, common::{CodeableConcept, Coding, Quantity}},
+    models::{
+        ElementDefinition,
+        common::{CodeableConcept, Coding, Quantity},
+    },
     processor::ProcessableElementDefinition,
 };
 
@@ -63,7 +66,9 @@ fn demo_fixed_code() {
 
 fn demo_fixed_coding() {
     println!("3. Fixed Coding Value:");
-    println!("   FHIR: fixedCoding = {{ system: 'http://hl7.org/fhir/status', code: 'active', display: 'Active' }}");
+    println!(
+        "   FHIR: fixedCoding = {{ system: 'http://hl7.org/fhir/status', code: 'active', display: 'Active' }}"
+    );
 
     let mut elem = create_element("Observation.status");
     elem.element.fixed_coding = Some(Coding {

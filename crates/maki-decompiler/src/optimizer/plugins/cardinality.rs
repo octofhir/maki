@@ -6,10 +6,10 @@
 //! - Cardinality matching parent definition
 
 use crate::{
-    exportable::{Exportable, ExportableRule, CardinalityRule, FlagRule, Flag},
-    lake::ResourceLake,
-    optimizer::{Optimizer, OptimizationStats},
     Result,
+    exportable::{CardinalityRule, Exportable, ExportableRule, Flag, FlagRule},
+    lake::ResourceLake,
+    optimizer::{OptimizationStats, Optimizer},
 };
 use log::debug;
 
@@ -45,15 +45,15 @@ impl Optimizer for RemoveImpliedCardinalityOptimizer {
         let mut indices_to_remove = Vec::new();
 
         for (idx, rule) in rules.iter().enumerate() {
-            if let Some(card_rule) = rule.as_any().downcast_ref::<CardinalityRule>() {
-                if Self::should_remove_cardinality(card_rule, &must_support_paths) {
-                    debug!(
-                        "Removing redundant cardinality rule: {} {}..{}",
-                        card_rule.path, card_rule.min, card_rule.max
-                    );
-                    indices_to_remove.push(idx);
-                    stats.record_redundant();
-                }
+            if let Some(card_rule) = rule.as_any().downcast_ref::<CardinalityRule>()
+                && Self::should_remove_cardinality(card_rule, &must_support_paths)
+            {
+                debug!(
+                    "Removing redundant cardinality rule: {} {}..{}",
+                    card_rule.path, card_rule.min, card_rule.max
+                );
+                indices_to_remove.push(idx);
+                stats.record_redundant();
             }
         }
 
@@ -92,10 +92,10 @@ impl RemoveImpliedCardinalityOptimizer {
         let mut paths = std::collections::HashSet::new();
 
         for rule in rules {
-            if let Some(flag_rule) = rule.as_any().downcast_ref::<FlagRule>() {
-                if flag_rule.flags.contains(&Flag::MustSupport) {
-                    paths.insert(flag_rule.path.clone());
-                }
+            if let Some(flag_rule) = rule.as_any().downcast_ref::<FlagRule>()
+                && flag_rule.flags.contains(&Flag::MustSupport)
+            {
+                paths.insert(flag_rule.path.clone());
             }
         }
 
@@ -106,9 +106,9 @@ impl RemoveImpliedCardinalityOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exportable::{ExportableProfile, FlagRule, Flag, CardinalityRule};
-    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
+    use crate::exportable::{CardinalityRule, ExportableProfile, Flag, FlagRule};
     use crate::lake::ResourceLake;
+    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use std::sync::Arc;
 
     async fn create_test_lake() -> ResourceLake {

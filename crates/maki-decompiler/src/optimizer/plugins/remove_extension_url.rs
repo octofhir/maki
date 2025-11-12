@@ -3,10 +3,10 @@
 //! Removes extension.url assignment rules since SUSHI automatically sets these based on the extension definition.
 
 use crate::{
-    exportable::{Exportable, ExportableRule, AssignmentRule},
-    lake::ResourceLake,
-    optimizer::{Optimizer, OptimizationStats},
     Result,
+    exportable::{AssignmentRule, Exportable},
+    lake::ResourceLake,
+    optimizer::{OptimizationStats, Optimizer},
 };
 use log::debug;
 
@@ -48,7 +48,10 @@ impl Optimizer for RemoveExtensionURLAssignmentOptimizer {
             if let Some(assign_rule) = rule.as_any().downcast_ref::<AssignmentRule>() {
                 // Check if path ends with .url and contains "extension"
                 if Self::is_extension_url_path(&assign_rule.path) {
-                    debug!("Removing redundant extension.url assignment: {}", assign_rule.path);
+                    debug!(
+                        "Removing redundant extension.url assignment: {}",
+                        assign_rule.path
+                    );
                     indices_to_remove.push(idx);
                     stats.record_redundant();
                 }
@@ -80,10 +83,10 @@ impl RemoveExtensionURLAssignmentOptimizer {
         }
 
         // Check for extension patterns
-        path.contains("extension[") ||
-        path.contains("modifierExtension[") ||
-        path.ends_with("extension.url") ||
-        path.ends_with("modifierExtension.url")
+        path.contains("extension[")
+            || path.contains("modifierExtension[")
+            || path.ends_with("extension.url")
+            || path.ends_with("modifierExtension.url")
     }
 }
 
@@ -91,8 +94,8 @@ impl RemoveExtensionURLAssignmentOptimizer {
 mod tests {
     use super::*;
     use crate::exportable::{ExportableProfile, FshValue};
-    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use crate::lake::ResourceLake;
+    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use std::sync::Arc;
 
     async fn create_test_lake() -> ResourceLake {
@@ -133,13 +136,17 @@ mod tests {
         assert_eq!(profile.rules.len(), 1);
 
         // Verify remaining rule is the valueString assignment
-        let remaining = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let remaining = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(remaining.path, "extension[myExtension].valueString");
     }
 
     #[tokio::test]
     async fn test_remove_modifier_extension_url() {
-        let mut profile = ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
+        let mut profile =
+            ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
 
         // Add modifierExtension.url assignment (should be removed)
         profile.add_rule(Box::new(AssignmentRule {
@@ -163,7 +170,10 @@ mod tests {
         assert_eq!(stats.redundant_rules, 1);
         assert_eq!(profile.rules.len(), 1);
 
-        let remaining = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let remaining = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(remaining.path, "modifierExtension[special].valueBoolean");
     }
 
@@ -220,13 +230,17 @@ mod tests {
         assert_eq!(stats.redundant_rules, 1);
         assert_eq!(profile.rules.len(), 1);
 
-        let remaining = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let remaining = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert!(remaining.path.ends_with(".valueCode"));
     }
 
     #[tokio::test]
     async fn test_remove_simple_extension_url() {
-        let mut profile = ExportableProfile::new("TestProfile".to_string(), "DomainResource".to_string());
+        let mut profile =
+            ExportableProfile::new("TestProfile".to_string(), "DomainResource".to_string());
 
         // Add simple extension.url without slice name (should be removed)
         profile.add_rule(Box::new(AssignmentRule {

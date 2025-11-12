@@ -57,7 +57,8 @@ pub struct CardinalityFlagRule {
 
 impl ExportableRule for CardinalityFlagRule {
     fn to_fsh(&self) -> String {
-        let flags_str = self.flags
+        let flags_str = self
+            .flags
             .iter()
             .map(|f| f.to_fsh())
             .collect::<Vec<_>>()
@@ -133,7 +134,12 @@ impl BindingStrength {
 
 impl ExportableRule for BindingRule {
     fn to_fsh(&self) -> String {
-        format!("{} from {} ({})", self.path, self.value_set, self.strength.to_fsh())
+        format!(
+            "{} from {} ({})",
+            self.path,
+            self.value_set,
+            self.strength.to_fsh()
+        )
     }
 
     fn rule_type(&self) -> &'static str {
@@ -172,7 +178,10 @@ impl TypeReference {
         }
 
         if !self.target_profiles.is_empty() {
-            result.push_str(&format!(" References({})", self.target_profiles.join(" or ")));
+            result.push_str(&format!(
+                " References({})",
+                self.target_profiles.join(" or ")
+            ));
         }
 
         result
@@ -181,7 +190,9 @@ impl TypeReference {
 
 impl ExportableRule for TypeRule {
     fn to_fsh(&self) -> String {
-        let types_str = self.types.iter()
+        let types_str = self
+            .types
+            .iter()
             .map(|t| t.to_fsh())
             .collect::<Vec<_>>()
             .join(" or ");
@@ -210,12 +221,12 @@ pub struct FlagRule {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Flag {
-    MustSupport,      // MS
-    Summary,          // SU
-    Modifier,         // ?!
-    TrialUse,         // TU
-    Normative,        // N
-    Draft,            // D
+    MustSupport, // MS
+    Summary,     // SU
+    Modifier,    // ?!
+    TrialUse,    // TU
+    Normative,   // N
+    Draft,       // D
 }
 
 impl Flag {
@@ -233,7 +244,9 @@ impl Flag {
 
 impl ExportableRule for FlagRule {
     fn to_fsh(&self) -> String {
-        let flags_str = self.flags.iter()
+        let flags_str = self
+            .flags
+            .iter()
             .map(|f| f.to_fsh())
             .collect::<Vec<_>>()
             .join(" ");
@@ -270,15 +283,18 @@ pub struct ContainsItem {
 
 impl ExportableRule for ContainsRule {
     fn to_fsh(&self) -> String {
-        let items_str = self.items.iter()
-            .map(|item| {
-                match &item.type_name {
-                    Some(type_name) => {
-                        format!("{} named {} {}..{}", type_name, item.name, item.min, item.max)
-                    }
-                    None => {
-                        format!("{} {}..{}", item.name, item.min, item.max)
-                    }
+        let items_str = self
+            .items
+            .iter()
+            .map(|item| match &item.type_name {
+                Some(type_name) => {
+                    format!(
+                        "{} named {} {}..{}",
+                        type_name, item.name, item.min, item.max
+                    )
+                }
+                None => {
+                    format!("{} {}..{}", item.name, item.min, item.max)
                 }
             })
             .collect::<Vec<_>>()
@@ -439,10 +455,7 @@ pub struct AddElementRule {
 
 impl ExportableRule for AddElementRule {
     fn to_fsh(&self) -> String {
-        let mut parts = vec![
-            self.path.clone(),
-            format!("{}..{}", self.min, self.max),
-        ];
+        let mut parts = vec![self.path.clone(), format!("{}..{}", self.min, self.max)];
 
         // Add flags
         for flag in &self.flags {
@@ -542,15 +555,20 @@ impl ExportableRule for IncludeRule {
     fn to_fsh(&self) -> String {
         if !self.concepts.is_empty() {
             // Include specific codes
-            let codes_str = self.concepts.iter()
-                .map(|c| {
-                    match &c.display {
-                        Some(display) => {
-                            format!("{}#{} \"{}\"", self.system, c.code, super::escape_string(display))
-                        }
-                        None => {
-                            format!("{}#{}", self.system, c.code)
-                        }
+            let codes_str = self
+                .concepts
+                .iter()
+                .map(|c| match &c.display {
+                    Some(display) => {
+                        format!(
+                            "{}#{} \"{}\"",
+                            self.system,
+                            c.code,
+                            super::escape_string(display)
+                        )
+                    }
+                    None => {
+                        format!("{}#{}", self.system, c.code)
                     }
                 })
                 .collect::<Vec<_>>()
@@ -558,7 +576,9 @@ impl ExportableRule for IncludeRule {
             format!("include {}", codes_str)
         } else if !self.filters.is_empty() {
             // Include with filter
-            let filter_str = self.filters.iter()
+            let filter_str = self
+                .filters
+                .iter()
                 .map(|f| format!("{} {} {}", f.property, f.operator, f.value))
                 .collect::<Vec<_>>()
                 .join(" and ");
@@ -597,13 +617,17 @@ pub struct ExcludeRule {
 impl ExportableRule for ExcludeRule {
     fn to_fsh(&self) -> String {
         if !self.concepts.is_empty() {
-            let codes_str = self.concepts.iter()
+            let codes_str = self
+                .concepts
+                .iter()
                 .map(|c| format!("{}#{}", self.system, c.code))
                 .collect::<Vec<_>>()
                 .join(" and ");
             format!("exclude {}", codes_str)
         } else if !self.filters.is_empty() {
-            let filter_str = self.filters.iter()
+            let filter_str = self
+                .filters
+                .iter()
                 .map(|f| format!("{} {} {}", f.property, f.operator, f.value))
                 .collect::<Vec<_>>()
                 .join(" and ");
@@ -692,14 +716,14 @@ mod tests {
     fn test_contains_rule() {
         let rule = ContainsRule {
             path: "extension".to_string(),
-            items: vec![
-                ContainsItem {
-                    name: "race".to_string(),
-                    type_name: Some("http://hl7.org/fhir/us/core/StructureDefinition/us-core-race".to_string()),
-                    min: 0,
-                    max: "1".to_string(),
-                },
-            ],
+            items: vec![ContainsItem {
+                name: "race".to_string(),
+                type_name: Some(
+                    "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race".to_string(),
+                ),
+                min: 0,
+                max: "1".to_string(),
+            }],
         };
         assert!(rule.to_fsh().contains("extension contains"));
         assert!(rule.to_fsh().contains("race 0..1"));
@@ -731,6 +755,9 @@ mod tests {
             display: Some("Example Code".to_string()),
             definition: Some("This is an example".to_string()),
         };
-        assert_eq!(rule.to_fsh(), "#example \"Example Code\" \"This is an example\"");
+        assert_eq!(
+            rule.to_fsh(),
+            "#example \"Example Code\" \"This is an example\""
+        );
     }
 }

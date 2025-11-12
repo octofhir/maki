@@ -10,30 +10,26 @@
 //! - ContainsExtractor: Slicing definitions
 //! - ObeysExtractor: Invariants/constraints
 
-pub mod cardinality;
-pub mod flags;
-pub mod binding;
-pub mod caret;
-pub mod type_constraint;
 pub mod assignment;
+pub mod binding;
+pub mod cardinality;
+pub mod caret;
 pub mod contains;
+pub mod flags;
 pub mod obeys;
+pub mod type_constraint;
 
-use crate::{
-    processor::ProcessableElementDefinition,
-    exportable::ExportableRule,
-    Result,
-};
+use crate::{Result, exportable::ExportableRule, processor::ProcessableElementDefinition};
 
 // Re-exports
-pub use cardinality::*;
-pub use flags::*;
-pub use binding::*;
-pub use caret::*;
-pub use type_constraint::*;
 pub use assignment::*;
+pub use binding::*;
+pub use cardinality::*;
+pub use caret::*;
 pub use contains::*;
+pub use flags::*;
 pub use obeys::*;
+pub use type_constraint::*;
 
 /// Trait for rule extractors
 pub trait RuleExtractor {

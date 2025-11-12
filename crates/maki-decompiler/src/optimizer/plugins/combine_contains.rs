@@ -3,10 +3,10 @@
 //! Combines separate contains rules on the same path into a single contains rule with multiple items.
 
 use crate::{
-    exportable::{Exportable, ExportableRule, ContainsRule},
-    lake::ResourceLake,
-    optimizer::{Optimizer, OptimizationStats},
     Result,
+    exportable::{ContainsRule, Exportable},
+    lake::ResourceLake,
+    optimizer::{OptimizationStats, Optimizer},
 };
 use log::debug;
 use std::collections::HashMap;
@@ -42,7 +42,7 @@ impl Optimizer for CombineContainsRulesOptimizer {
             if let Some(contains_rule) = rule.as_any().downcast_ref::<ContainsRule>() {
                 contains_map
                     .entry(contains_rule.path.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(idx);
             }
         }
@@ -56,7 +56,11 @@ impl Optimizer for CombineContainsRulesOptimizer {
                 continue;
             }
 
-            debug!("Combining {} contains rules for path: {}", indices.len(), path);
+            debug!(
+                "Combining {} contains rules for path: {}",
+                indices.len(),
+                path
+            );
 
             // Keep the first rule, merge others into it
             let first_idx = indices[0];
@@ -64,10 +68,10 @@ impl Optimizer for CombineContainsRulesOptimizer {
 
             // Collect items from all other rules
             for &other_idx in &indices[1..] {
-                if let Some(other_rule) = rules.get(other_idx) {
-                    if let Some(other_contains) = other_rule.as_any().downcast_ref::<ContainsRule>() {
-                        collected_items.extend(other_contains.items.clone());
-                    }
+                if let Some(other_rule) = rules.get(other_idx)
+                    && let Some(other_contains) = other_rule.as_any().downcast_ref::<ContainsRule>()
+                {
+                    collected_items.extend(other_contains.items.clone());
                 }
 
                 indices_to_remove.push(other_idx);
@@ -80,10 +84,10 @@ impl Optimizer for CombineContainsRulesOptimizer {
 
         // Now append collected items to first rules
         for (first_idx, items) in items_to_add {
-            if let Some(first_rule) = rules.get_mut(first_idx) {
-                if let Some(first_contains) = first_rule.as_any_mut().downcast_mut::<ContainsRule>() {
-                    first_contains.items.extend(items);
-                }
+            if let Some(first_rule) = rules.get_mut(first_idx)
+                && let Some(first_contains) = first_rule.as_any_mut().downcast_mut::<ContainsRule>()
+            {
+                first_contains.items.extend(items);
             }
         }
 
@@ -100,9 +104,9 @@ impl Optimizer for CombineContainsRulesOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exportable::{ExportableProfile, ContainsItem};
-    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
+    use crate::exportable::{ContainsItem, ExportableProfile};
     use crate::lake::ResourceLake;
+    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use std::sync::Arc;
 
     async fn create_test_lake() -> ResourceLake {
@@ -118,7 +122,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_combine_multiple_contains_same_path() {
-        let mut profile = ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
+        let mut profile =
+            ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
 
         // Add multiple contains rules for same path
         profile.add_rule(Box::new(ContainsRule {
@@ -151,7 +156,10 @@ mod tests {
         assert_eq!(profile.rules.len(), 1);
 
         // Verify combined rule has both items
-        let combined_rule = profile.rules[0].as_any().downcast_ref::<ContainsRule>().unwrap();
+        let combined_rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<ContainsRule>()
+            .unwrap();
         assert_eq!(combined_rule.path, "extension");
         assert_eq!(combined_rule.items.len(), 2);
         assert_eq!(combined_rule.items[0].name, "SliceA");
@@ -160,7 +168,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_no_combination_different_paths() {
-        let mut profile = ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
+        let mut profile =
+            ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
 
         // Add contains rules for different paths
         profile.add_rule(Box::new(ContainsRule {
@@ -224,7 +233,10 @@ mod tests {
         assert_eq!(profile.rules.len(), 1);
 
         // Verify all three items combined
-        let combined_rule = profile.rules[0].as_any().downcast_ref::<ContainsRule>().unwrap();
+        let combined_rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<ContainsRule>()
+            .unwrap();
         assert_eq!(combined_rule.items.len(), 3);
         assert_eq!(combined_rule.items[0].name, "Entry1");
         assert_eq!(combined_rule.items[1].name, "Entry2");

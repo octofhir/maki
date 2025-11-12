@@ -6,10 +6,10 @@
 //! - Removes redundant notation when possible
 
 use crate::{
-    exportable::{Exportable, ExportableRule, CardinalityRule},
-    lake::ResourceLake,
-    optimizer::{Optimizer, OptimizationStats},
     Result,
+    exportable::{CardinalityRule, Exportable},
+    lake::ResourceLake,
+    optimizer::{OptimizationStats, Optimizer},
 };
 use log::debug;
 
@@ -38,12 +38,15 @@ impl Optimizer for SimplifyCardinalityOptimizer {
 
         // Find cardinality rules that can be simplified
         for rule in rules.iter_mut() {
-            if let Some(card_rule) = (rule.as_any() as &dyn std::any::Any)
-                .downcast_ref::<CardinalityRule>()
+            if let Some(card_rule) =
+                (rule.as_any() as &dyn std::any::Any).downcast_ref::<CardinalityRule>()
             {
                 // Check if this is 1..1 pattern
                 if card_rule.min == 1 && card_rule.max == "1" {
-                    debug!("Simplifying cardinality: {} 1..1 → {}.1", card_rule.path, card_rule.path);
+                    debug!(
+                        "Simplifying cardinality: {} 1..1 → {}.1",
+                        card_rule.path, card_rule.path
+                    );
                     // Note: In FSH, "* element 1" means exactly one (1..1)
                     // This is more concise than "* element 1..1"
                     // However, we cannot modify the rule in-place due to Box<dyn Trait>
@@ -64,8 +67,8 @@ impl Optimizer for SimplifyCardinalityOptimizer {
 mod tests {
     use super::*;
     use crate::exportable::ExportableProfile;
-    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use crate::lake::ResourceLake;
+    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use std::sync::Arc;
 
     async fn create_test_lake() -> ResourceLake {

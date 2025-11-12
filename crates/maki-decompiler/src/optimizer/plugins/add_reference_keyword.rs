@@ -6,10 +6,10 @@
 //! - Removes "#" prefix for contained resources
 
 use crate::{
-    exportable::{Exportable, ExportableRule, AssignmentRule, FshValue, FshReference},
-    lake::ResourceLake,
-    optimizer::{Optimizer, OptimizationStats},
     Result,
+    exportable::{AssignmentRule, Exportable, ExportableRule, FshReference, FshValue},
+    lake::ResourceLake,
+    optimizer::{OptimizationStats, Optimizer},
 };
 use log::debug;
 use std::collections::HashMap;
@@ -52,7 +52,9 @@ impl Optimizer for AddReferenceKeywordOptimizer {
                 debug!("Converting reference assignment for path: {}", base_path);
 
                 // Extract reference value and optional display
-                if let Some(reference_rule) = Self::create_reference_rule(base_path, components, rules) {
+                if let Some(reference_rule) =
+                    Self::create_reference_rule(base_path, components, rules)
+                {
                     rules_to_add.push(reference_rule);
 
                     // Mark original rules for removal
@@ -100,7 +102,7 @@ impl AddReferenceKeywordOptimizer {
                     if matches!(field, "reference" | "display") {
                         groups
                             .entry(base_path.to_string())
-                            .or_insert_with(HashMap::new)
+                            .or_default()
                             .insert(field.to_string(), idx);
                     }
                 }
@@ -132,20 +134,17 @@ impl AddReferenceKeywordOptimizer {
         // Extract optional display value
         let display = components.get("display").and_then(|&idx| {
             rules.get(idx).and_then(|rule| {
-                rule.as_any().downcast_ref::<AssignmentRule>().and_then(|assignment| {
-                    match &assignment.value {
+                rule.as_any()
+                    .downcast_ref::<AssignmentRule>()
+                    .and_then(|assignment| match &assignment.value {
                         FshValue::String(s) => Some(s.clone()),
                         _ => None,
-                    }
-                })
+                    })
             })
         });
 
         // Create Reference value
-        let reference_value = FshReference {
-            reference,
-            display,
-        };
+        let reference_value = FshReference { reference, display };
 
         // Create assignment rule with the Reference
         Some(Box::new(AssignmentRule {
@@ -160,8 +159,8 @@ impl AddReferenceKeywordOptimizer {
 mod tests {
     use super::*;
     use crate::exportable::ExportableProfile;
-    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use crate::lake::ResourceLake;
+    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use std::sync::Arc;
 
     async fn create_test_lake() -> ResourceLake {
@@ -198,7 +197,10 @@ mod tests {
         assert_eq!(profile.rules.len(), 1);
 
         // Verify the reference rule
-        let ref_rule = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let ref_rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(ref_rule.path, "subject");
         match &ref_rule.value {
             FshValue::Reference(reference) => {
@@ -238,7 +240,10 @@ mod tests {
         assert_eq!(profile.rules.len(), 1);
 
         // Verify the reference rule with display
-        let ref_rule = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let ref_rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(ref_rule.path, "subject");
         match &ref_rule.value {
             FshValue::Reference(reference) => {
@@ -269,7 +274,10 @@ mod tests {
         assert_eq!(profile.rules.len(), 1);
 
         // Verify # prefix is removed
-        let ref_rule = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let ref_rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         match &ref_rule.value {
             FshValue::Reference(reference) => {
                 assert_eq!(reference.reference, "contained-patient");

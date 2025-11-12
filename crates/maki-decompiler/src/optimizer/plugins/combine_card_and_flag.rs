@@ -4,10 +4,10 @@
 //! combined rule: element 0..1 + element MS → element 0..1 MS
 
 use crate::{
-    exportable::{Exportable, ExportableRule, CardinalityRule, FlagRule, CardinalityFlagRule},
-    lake::ResourceLake,
-    optimizer::{Optimizer, OptimizationStats},
     Result,
+    exportable::{CardinalityFlagRule, CardinalityRule, Exportable, FlagRule},
+    lake::ResourceLake,
+    optimizer::{OptimizationStats, Optimizer},
 };
 use log::debug;
 use std::collections::HashMap;
@@ -59,7 +59,10 @@ impl Optimizer for CombineCardAndFlagRulesOptimizer {
                 debug!("Combining cardinality and flag rules for path: {}", path);
 
                 // Extract cardinality and flag details
-                let card_rule = rules[*card_idx].as_any().downcast_ref::<CardinalityRule>().unwrap();
+                let card_rule = rules[*card_idx]
+                    .as_any()
+                    .downcast_ref::<CardinalityRule>()
+                    .unwrap();
                 let flag_rule = rules[flag_idx].as_any().downcast_ref::<FlagRule>().unwrap();
 
                 // Create combined rule
@@ -100,8 +103,8 @@ impl Optimizer for CombineCardAndFlagRulesOptimizer {
 mod tests {
     use super::*;
     use crate::exportable::{ExportableProfile, Flag};
-    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use crate::lake::ResourceLake;
+    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use std::sync::Arc;
 
     async fn create_test_lake() -> ResourceLake {
@@ -143,7 +146,10 @@ mod tests {
         assert_eq!(profile.rules.len(), 1);
 
         // Verify the combined rule
-        let combined = profile.rules[0].as_any().downcast_ref::<CardinalityFlagRule>().unwrap();
+        let combined = profile.rules[0]
+            .as_any()
+            .downcast_ref::<CardinalityFlagRule>()
+            .unwrap();
         assert_eq!(combined.path, "identifier");
         assert_eq!(combined.min, 1);
         assert_eq!(combined.max, "*");
@@ -242,7 +248,10 @@ mod tests {
         assert_eq!(profile.rules.len(), 1);
 
         // Verify both flags are preserved
-        let combined = profile.rules[0].as_any().downcast_ref::<CardinalityFlagRule>().unwrap();
+        let combined = profile.rules[0]
+            .as_any()
+            .downcast_ref::<CardinalityFlagRule>()
+            .unwrap();
         assert_eq!(combined.flags.len(), 2);
         assert!(combined.flags.contains(&Flag::MustSupport));
         assert!(combined.flags.contains(&Flag::Summary));

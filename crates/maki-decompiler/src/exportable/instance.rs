@@ -120,14 +120,12 @@ impl ExportableInstance {
 mod tests {
     use super::*;
     use crate::exportable::rules::*;
-    use crate::exportable::{FshValue, FshCode};
+    use crate::exportable::{FshCode, FshValue};
 
     #[test]
     fn test_minimal_instance() {
-        let instance = ExportableInstance::new(
-            "example-patient".to_string(),
-            "Patient".to_string(),
-        );
+        let instance =
+            ExportableInstance::new("example-patient".to_string(), "Patient".to_string());
 
         let fsh = instance.to_fsh();
         assert!(fsh.contains("Instance: example-patient"));
@@ -136,13 +134,11 @@ mod tests {
 
     #[test]
     fn test_instance_with_metadata() {
-        let instance = ExportableInstance::new(
-            "example-patient".to_string(),
-            "Patient".to_string(),
-        )
-        .with_title("Example Patient".to_string())
-        .with_description("An example patient instance".to_string())
-        .with_usage(InstanceUsage::Example);
+        let instance =
+            ExportableInstance::new("example-patient".to_string(), "Patient".to_string())
+                .with_title("Example Patient".to_string())
+                .with_description("An example patient instance".to_string())
+                .with_usage(InstanceUsage::Example);
 
         let fsh = instance.to_fsh();
         assert!(fsh.contains("Usage: #example"));
@@ -152,10 +148,8 @@ mod tests {
 
     #[test]
     fn test_instance_with_assignments() {
-        let mut instance = ExportableInstance::new(
-            "example-patient".to_string(),
-            "Patient".to_string(),
-        );
+        let mut instance =
+            ExportableInstance::new("example-patient".to_string(), "Patient".to_string());
 
         instance.add_rule(Box::new(AssignmentRule {
             path: "active".to_string(),

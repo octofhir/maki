@@ -18,19 +18,15 @@
 //!
 //! The registry uses topological sorting to determine the correct execution order.
 
+pub mod plugins;
 pub mod registry;
 pub mod stats;
-pub mod plugins;
 
+pub use plugins::*;
 pub use registry::*;
 pub use stats::*;
-pub use plugins::*;
 
-use crate::{
-    exportable::Exportable,
-    lake::ResourceLake,
-    Result,
-};
+use crate::{Result, exportable::Exportable, lake::ResourceLake};
 
 /// Base trait for all optimizers
 ///
@@ -78,9 +74,6 @@ pub trait Optimizer: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        exportable::{ExportableProfile, ExportableRule},
-    };
 
     // Mock optimizer for testing
     struct MockOptimizer {

@@ -3,22 +3,22 @@
 //! Converts generic FHIR resources into ExportableInstance objects
 
 use crate::{
-    exportable::{ExportableInstance, InstanceUsage, FshValue, Exportable},
-    lake::ResourceLake,
     Result,
+    exportable::{Exportable, ExportableInstance, FshValue, InstanceUsage},
+    lake::ResourceLake,
 };
 use log::{debug, warn};
 use serde_json::Value;
 
 /// Instance processor for generic FHIR resources
 pub struct InstanceProcessor<'a> {
-    lake: &'a ResourceLake,
+    _lake: &'a ResourceLake,
 }
 
 impl<'a> InstanceProcessor<'a> {
     /// Create a new Instance processor
     pub fn new(lake: &'a ResourceLake) -> Self {
-        Self { lake }
+        Self { _lake: lake }
     }
 
     /// Process a generic FHIR resource into an ExportableInstance
@@ -92,10 +92,8 @@ impl<'a> InstanceProcessor<'a> {
             Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
                     Some(FshValue::Integer(i as i32))
-                } else if let Some(f) = n.as_f64() {
-                    Some(FshValue::Decimal(f))
                 } else {
-                    None
+                    n.as_f64().map(FshValue::Decimal)
                 }
             }
             Value::String(s) => Some(FshValue::String(s.clone())),

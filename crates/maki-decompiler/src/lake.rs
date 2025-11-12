@@ -8,17 +8,16 @@
 //! The ResourceLake stores only resources from the current project/input files,
 //! while external dependencies are resolved through the DefinitionSession.
 
+use crate::error::Result;
+use crate::models::*;
+use async_trait::async_trait;
+use indexmap::IndexMap;
+use maki_core::canonical::{
+    CanonicalResult, DefinitionResource, DefinitionSession,
+    fishable::{FhirMetadata, FhirType, Fishable},
+};
 use std::collections::HashMap;
 use std::sync::Arc;
-use indexmap::IndexMap;
-use async_trait::async_trait;
-use maki_core::canonical::{
-    DefinitionSession, DefinitionResource,
-    fishable::{Fishable, FhirType, FhirMetadata},
-    CanonicalResult,
-};
-use crate::models::*;
-use crate::error::Result;
 
 /// Central repository for LOCAL FHIR resources
 ///
@@ -163,12 +162,12 @@ impl ResourceLake {
         // IndexMap already ensures unique keys
         // This method is mainly for logging duplicates
 
-        log::debug!("Deduplication: {} structure definitions",
-                    self.structure_definitions.len());
-        log::debug!("Deduplication: {} value sets",
-                    self.value_sets.len());
-        log::debug!("Deduplication: {} code systems",
-                    self.code_systems.len());
+        log::debug!(
+            "Deduplication: {} structure definitions",
+            self.structure_definitions.len()
+        );
+        log::debug!("Deduplication: {} value sets", self.value_sets.len());
+        log::debug!("Deduplication: {} code systems", self.code_systems.len());
     }
 
     /// Assign missing IDs based on name or URL
@@ -203,6 +202,26 @@ impl ResourceLake {
                 self.id_to_url.insert(generated_id, url.clone());
             }
         }
+    }
+
+    /// Iterate over all StructureDefinitions
+    pub fn structure_definitions(&self) -> impl Iterator<Item = (&String, &StructureDefinition)> {
+        self.structure_definitions.iter()
+    }
+
+    /// Iterate over all ValueSets
+    pub fn value_sets(&self) -> impl Iterator<Item = (&String, &ValueSet)> {
+        self.value_sets.iter()
+    }
+
+    /// Iterate over all CodeSystems
+    pub fn code_systems(&self) -> impl Iterator<Item = (&String, &CodeSystem)> {
+        self.code_systems.iter()
+    }
+
+    /// Iterate over all instances
+    pub fn instances(&self) -> impl Iterator<Item = (&String, &serde_json::Value)> {
+        self.instances.iter()
     }
 
     /// Get statistics about the lake
@@ -248,7 +267,10 @@ fn sd_to_metadata(sd: &StructureDefinition) -> FhirMetadata {
         name: Some(sd.name.clone()),
         version: sd.version.clone(),
         kind: sd.kind.as_ref().map(|k| format!("{:?}", k).to_lowercase()),
-        derivation: sd.derivation.as_ref().map(|d| format!("{:?}", d).to_lowercase()),
+        derivation: sd
+            .derivation
+            .as_ref()
+            .map(|d| format!("{:?}", d).to_lowercase()),
         base_definition: sd.base_definition.clone(),
         package_id: "local".to_string(), // Local resources don't have a package
     }
@@ -405,10 +427,7 @@ impl Fishable for ResourceLake {
         self.session.fish_for_metadata(item, types).await
     }
 
-    async fn fish_by_url(
-        &self,
-        url: &str,
-    ) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
+    async fn fish_by_url(&self, url: &str) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
         // Check local first
         if let Some(sd) = self.structure_definitions.get(url) {
             return convert_sd_to_resource(sd);
@@ -424,10 +443,7 @@ impl Fishable for ResourceLake {
         self.session.fish_by_url(url).await
     }
 
-    async fn fish_by_id(
-        &self,
-        id: &str,
-    ) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
+    async fn fish_by_id(&self, id: &str) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
         // Check local by ID
         if let Some(url) = self.id_to_url.get(id) {
             return self.fish_by_url(url).await;
@@ -437,10 +453,7 @@ impl Fishable for ResourceLake {
         self.session.fish_by_id(id).await
     }
 
-    async fn fish_by_name(
-        &self,
-        name: &str,
-    ) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
+    async fn fish_by_name(&self, name: &str) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
         // Check local by name
         if let Some(url) = self.name_to_url.get(name) {
             return self.fish_by_url(url).await;
@@ -458,14 +471,18 @@ impl Fishable for ResourceLake {
 
         // Collect local resources of the specified type
         match fhir_type {
-            FhirType::StructureDefinition | FhirType::Profile | FhirType::Extension |
-            FhirType::Logical | FhirType::Resource | FhirType::Any => {
+            FhirType::StructureDefinition
+            | FhirType::Profile
+            | FhirType::Extension
+            | FhirType::Logical
+            | FhirType::Resource
+            | FhirType::Any => {
                 for sd in self.structure_definitions.values() {
                     let metadata = sd_to_metadata(sd);
-                    if metadata.matches_types(&[fhir_type]) {
-                        if let Ok(Some(resource)) = convert_sd_to_resource(sd) {
-                            results.push(resource);
-                        }
+                    if metadata.matches_types(&[fhir_type])
+                        && let Ok(Some(resource)) = convert_sd_to_resource(sd)
+                    {
+                        results.push(resource);
                     }
                 }
             }
@@ -504,39 +521,53 @@ impl Fishable for ResourceLake {
 
 // Helper functions to convert models to DefinitionResource
 
-fn convert_sd_to_resource(sd: &StructureDefinition) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
+#[allow(clippy::result_large_err)]
+fn convert_sd_to_resource(
+    sd: &StructureDefinition,
+) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
     let json = serde_json::to_value(sd)
         .map_err(|e| maki_core::canonical::CanonicalLoaderError::Config(e.to_string()))?;
 
     Ok(Some(Arc::new(DefinitionResource {
         canonical_url: sd.url.clone(),
-        resource_type: sd.resource_type.clone().unwrap_or_else(|| "StructureDefinition".to_string()),
+        resource_type: sd
+            .resource_type
+            .clone()
+            .unwrap_or_else(|| "StructureDefinition".to_string()),
         package_id: "local".to_string(),
         version: sd.version.clone(),
         content: Arc::new(json),
     })))
 }
 
+#[allow(clippy::result_large_err)]
 fn convert_vs_to_resource(vs: &ValueSet) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
     let json = serde_json::to_value(vs)
         .map_err(|e| maki_core::canonical::CanonicalLoaderError::Config(e.to_string()))?;
 
     Ok(Some(Arc::new(DefinitionResource {
         canonical_url: vs.url.clone(),
-        resource_type: vs.resource_type.clone().unwrap_or_else(|| "ValueSet".to_string()),
+        resource_type: vs
+            .resource_type
+            .clone()
+            .unwrap_or_else(|| "ValueSet".to_string()),
         package_id: "local".to_string(),
         version: vs.version.clone(),
         content: Arc::new(json),
     })))
 }
 
+#[allow(clippy::result_large_err)]
 fn convert_cs_to_resource(cs: &CodeSystem) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
     let json = serde_json::to_value(cs)
         .map_err(|e| maki_core::canonical::CanonicalLoaderError::Config(e.to_string()))?;
 
     Ok(Some(Arc::new(DefinitionResource {
         canonical_url: cs.url.clone(),
-        resource_type: cs.resource_type.clone().unwrap_or_else(|| "CodeSystem".to_string()),
+        resource_type: cs
+            .resource_type
+            .clone()
+            .unwrap_or_else(|| "CodeSystem".to_string()),
         package_id: "local".to_string(),
         version: cs.version.clone(),
         content: Arc::new(json),
@@ -557,7 +588,10 @@ mod tests {
     fn test_generate_id_from_name() {
         assert_eq!(generate_id_from_name("MyProfile"), "myprofile");
         assert_eq!(generate_id_from_name("US Core Patient"), "us-core-patient");
-        assert_eq!(generate_id_from_name("Test-Profile-123"), "test-profile-123");
+        assert_eq!(
+            generate_id_from_name("Test-Profile-123"),
+            "test-profile-123"
+        );
         assert_eq!(generate_id_from_name("___Test___"), "test");
     }
 

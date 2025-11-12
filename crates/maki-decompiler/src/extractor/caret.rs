@@ -2,12 +2,12 @@
 //!
 //! Extracts metadata rules (^short, ^definition, ^comment) from ElementDefinition
 
-use crate::{
-    processor::ProcessableElementDefinition,
-    exportable::{ExportableRule, CaretValueRule, FshValue},
-    Result,
-};
 use super::RuleExtractor;
+use crate::{
+    Result,
+    exportable::{CaretValueRule, ExportableRule, FshValue},
+    processor::ProcessableElementDefinition,
+};
 use log::debug;
 
 /// Extracts caret value rules (metadata)
@@ -23,79 +23,79 @@ impl RuleExtractor for CaretValueExtractor {
         let fsh_path = Self::element_path_to_fsh(&elem.element.path);
 
         // Extract ^short
-        if let Some(short) = &elem.element.short {
-            if !elem.is_processed("short") {
-                debug!("Extracting ^short for path {}", fsh_path);
+        if let Some(short) = &elem.element.short
+            && !elem.is_processed("short")
+        {
+            debug!("Extracting ^short for path {}", fsh_path);
 
-                rules.push(Box::new(CaretValueRule {
-                    path: if fsh_path.is_empty() {
-                        None
-                    } else {
-                        Some(fsh_path.clone())
-                    },
-                    caret_path: "short".to_string(),
-                    value: FshValue::String(short.clone()),
-                }));
+            rules.push(Box::new(CaretValueRule {
+                path: if fsh_path.is_empty() {
+                    None
+                } else {
+                    Some(fsh_path.clone())
+                },
+                caret_path: "short".to_string(),
+                value: FshValue::String(short.clone()),
+            }));
 
-                elem.mark_processed("short");
-            }
+            elem.mark_processed("short");
         }
 
         // Extract ^definition
-        if let Some(definition) = &elem.element.definition {
-            if !elem.is_processed("definition") {
-                debug!("Extracting ^definition for path {}", fsh_path);
+        if let Some(definition) = &elem.element.definition
+            && !elem.is_processed("definition")
+        {
+            debug!("Extracting ^definition for path {}", fsh_path);
 
-                rules.push(Box::new(CaretValueRule {
-                    path: if fsh_path.is_empty() {
-                        None
-                    } else {
-                        Some(fsh_path.clone())
-                    },
-                    caret_path: "definition".to_string(),
-                    value: FshValue::String(definition.clone()),
-                }));
+            rules.push(Box::new(CaretValueRule {
+                path: if fsh_path.is_empty() {
+                    None
+                } else {
+                    Some(fsh_path.clone())
+                },
+                caret_path: "definition".to_string(),
+                value: FshValue::String(definition.clone()),
+            }));
 
-                elem.mark_processed("definition");
-            }
+            elem.mark_processed("definition");
         }
 
         // Extract ^comment
-        if let Some(comment) = &elem.element.comment {
-            if !elem.is_processed("comment") {
-                debug!("Extracting ^comment for path {}", fsh_path);
+        if let Some(comment) = &elem.element.comment
+            && !elem.is_processed("comment")
+        {
+            debug!("Extracting ^comment for path {}", fsh_path);
 
-                rules.push(Box::new(CaretValueRule {
-                    path: if fsh_path.is_empty() {
-                        None
-                    } else {
-                        Some(fsh_path.clone())
-                    },
-                    caret_path: "comment".to_string(),
-                    value: FshValue::String(comment.clone()),
-                }));
+            rules.push(Box::new(CaretValueRule {
+                path: if fsh_path.is_empty() {
+                    None
+                } else {
+                    Some(fsh_path.clone())
+                },
+                caret_path: "comment".to_string(),
+                value: FshValue::String(comment.clone()),
+            }));
 
-                elem.mark_processed("comment");
-            }
+            elem.mark_processed("comment");
         }
 
         // Extract ^requirements
-        if let Some(requirements) = &elem.element.requirements {
-            if !elem.is_processed("requirements") {
-                debug!("Extracting ^requirements for path {}", fsh_path);
+        if let Some(requirements) = &elem.element.requirements
+            && !elem.is_processed("requirements")
+        {
+            debug!("Extracting ^requirements for path {}", fsh_path);
 
-                rules.push(Box::new(CaretValueRule {
-                    path: if fsh_path.is_empty() {
-                        None
-                    } else {
-                        Some(fsh_path.clone())
-                    },
-                    caret_path: "requirements".to_string(),
-                    value: FshValue::String(requirements.clone()),
-                }));
+            rules.push(Box::new(CaretValueRule {
+                path: if fsh_path.is_empty() {
+                    None
+                } else {
+                    Some(fsh_path.clone())
+                },
+                caret_path: "requirements".to_string(),
+                value: FshValue::String(requirements.clone()),
+            }));
 
-                elem.mark_processed("requirements");
-            }
+            elem.mark_processed("requirements");
         }
 
         Ok(rules)

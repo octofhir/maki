@@ -6,12 +6,12 @@
 //! - File Loading (Task 03)
 //! - Canonical Integration (Task 04)
 
-use maki_decompiler::*;
-use maki_core::canonical::FhirRelease;
 use maki_core::Fishable;
-use tempfile::TempDir;
-use std::fs;
+use maki_core::canonical::FhirRelease;
+use maki_decompiler::*;
 use serial_test::serial;
+use std::fs;
+use tempfile::TempDir;
 
 /// Helper to create a test StructureDefinition JSON
 fn create_test_profile_json(url: &str, name: &str, base: &str) -> String {
@@ -62,8 +62,8 @@ async fn test_complete_foundation_pipeline() {
     assert_eq!(stats.errors, 0);
 
     // 5. Test local resource lookup
-    let local_profile = lake
-        .get_structure_definition("http://example.org/StructureDefinition/MyPatient");
+    let local_profile =
+        lake.get_structure_definition("http://example.org/StructureDefinition/MyPatient");
 
     assert!(local_profile.is_some());
     assert_eq!(local_profile.unwrap().name, "MyPatient");
@@ -213,11 +213,8 @@ fn test_parse_helpers() {
     assert!(parse_package_spec("invalid").is_err());
 
     // Test parse_cli_dependencies
-    let (release, deps) = parse_cli_dependencies(
-        "R4",
-        &["hl7.fhir.us.core@5.0.1".to_string()],
-    )
-    .unwrap();
+    let (release, deps) =
+        parse_cli_dependencies("R4", &["hl7.fhir.us.core@5.0.1".to_string()]).unwrap();
     assert_eq!(release, FhirRelease::R4);
     assert_eq!(deps.len(), 1);
     assert_eq!(deps[0].name, "hl7.fhir.us.core");

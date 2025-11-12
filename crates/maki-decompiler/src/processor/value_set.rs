@@ -3,22 +3,24 @@
 //! Converts FHIR ValueSet resources into ExportableValueSet objects
 
 use crate::{
-    models::{ValueSet, ValueSetCompose, ValueSetInclude, ValueSetExpansion},
-    exportable::{ExportableValueSet, IncludeRule, ExcludeRule, IncludeConcept, ValueSetFilter, Exportable},
-    lake::ResourceLake,
     Result,
+    exportable::{
+        ExcludeRule, Exportable, ExportableValueSet, IncludeConcept, IncludeRule, ValueSetFilter,
+    },
+    lake::ResourceLake,
+    models::{ValueSet, ValueSetCompose, ValueSetExpansion, ValueSetInclude},
 };
 use log::{debug, warn};
 
 /// ValueSet processor
 pub struct ValueSetProcessor<'a> {
-    lake: &'a ResourceLake,
+    _lake: &'a ResourceLake,
 }
 
 impl<'a> ValueSetProcessor<'a> {
     /// Create a new ValueSet processor
     pub fn new(lake: &'a ResourceLake) -> Self {
-        Self { lake }
+        Self { _lake: lake }
     }
 
     /// Process a ValueSet into an ExportableValueSet

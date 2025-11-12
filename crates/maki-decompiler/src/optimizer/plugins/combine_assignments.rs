@@ -7,10 +7,10 @@
 //! Matches GoFSH's CombineCodingAndQuantityValuesOptimizer behavior
 
 use crate::{
-    exportable::{Exportable, ExportableRule, AssignmentRule, FshValue, FshCoding, FshQuantity},
-    lake::ResourceLake,
-    optimizer::{Optimizer, OptimizationStats},
     Result,
+    exportable::{AssignmentRule, Exportable, ExportableRule, FshCoding, FshQuantity, FshValue},
+    lake::ResourceLake,
+    optimizer::{OptimizationStats, Optimizer},
 };
 use log::debug;
 use std::collections::HashMap;
@@ -54,7 +54,9 @@ impl Optimizer for CombineAssignmentsOptimizer {
             if Self::can_combine_quantity(components) {
                 debug!("Combining quantity components for path: {}", base_path);
 
-                if let Some(combined_rule) = Self::combine_quantity_assignments(base_path, components, rules) {
+                if let Some(combined_rule) =
+                    Self::combine_quantity_assignments(base_path, components, rules)
+                {
                     rules_to_add.push(combined_rule);
 
                     for &idx in components.values() {
@@ -68,7 +70,9 @@ impl Optimizer for CombineAssignmentsOptimizer {
             else if Self::can_combine_coding(components) {
                 debug!("Combining coding components for path: {}", base_path);
 
-                if let Some(combined_rule) = Self::combine_coding_assignments(base_path, components, rules) {
+                if let Some(combined_rule) =
+                    Self::combine_coding_assignments(base_path, components, rules)
+                {
                     rules_to_add.push(combined_rule);
 
                     for &idx in components.values() {
@@ -116,7 +120,7 @@ impl CombineAssignmentsOptimizer {
                     if matches!(field, "system" | "code" | "display" | "value" | "unit") {
                         groups
                             .entry(base_path.to_string())
-                            .or_insert_with(HashMap::new)
+                            .or_default()
                             .insert(field.to_string(), idx);
                     }
                 }
@@ -160,12 +164,12 @@ impl CombineAssignmentsOptimizer {
         // Extract optional display value
         let display = components.get("display").and_then(|&idx| {
             rules.get(idx).and_then(|rule| {
-                rule.as_any().downcast_ref::<AssignmentRule>().and_then(|assignment| {
-                    match &assignment.value {
+                rule.as_any()
+                    .downcast_ref::<AssignmentRule>()
+                    .and_then(|assignment| match &assignment.value {
                         FshValue::String(s) => Some(s.clone()),
                         _ => None,
-                    }
-                })
+                    })
             })
         });
 
@@ -209,37 +213,37 @@ impl CombineAssignmentsOptimizer {
         // Extract optional unit
         let unit = components.get("unit").and_then(|&idx| {
             rules.get(idx).and_then(|rule| {
-                rule.as_any().downcast_ref::<AssignmentRule>().and_then(|assignment| {
-                    match &assignment.value {
+                rule.as_any()
+                    .downcast_ref::<AssignmentRule>()
+                    .and_then(|assignment| match &assignment.value {
                         FshValue::String(s) => Some(s.clone()),
                         _ => None,
-                    }
-                })
+                    })
             })
         });
 
         // Extract optional system
         let system = components.get("system").and_then(|&idx| {
             rules.get(idx).and_then(|rule| {
-                rule.as_any().downcast_ref::<AssignmentRule>().and_then(|assignment| {
-                    match &assignment.value {
+                rule.as_any()
+                    .downcast_ref::<AssignmentRule>()
+                    .and_then(|assignment| match &assignment.value {
                         FshValue::String(s) => Some(s.clone()),
                         _ => None,
-                    }
-                })
+                    })
             })
         });
 
         // Extract optional code
         let code = components.get("code").and_then(|&idx| {
             rules.get(idx).and_then(|rule| {
-                rule.as_any().downcast_ref::<AssignmentRule>().and_then(|assignment| {
-                    match &assignment.value {
+                rule.as_any()
+                    .downcast_ref::<AssignmentRule>()
+                    .and_then(|assignment| match &assignment.value {
                         FshValue::Code(c) => Some(c.code.clone()),
                         FshValue::String(s) => Some(s.clone()),
                         _ => None,
-                    }
-                })
+                    })
             })
         });
 
@@ -264,8 +268,8 @@ impl CombineAssignmentsOptimizer {
 mod tests {
     use super::*;
     use crate::exportable::{ExportableProfile, FshCode};
-    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use crate::lake::ResourceLake;
+    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use std::sync::Arc;
 
     async fn create_test_lake() -> ResourceLake {
@@ -307,15 +311,21 @@ mod tests {
         // Should combine the two rules into one
         assert_eq!(stats.simplified_rules, 1);
         assert_eq!(stats.rules_removed, 2); // Removed system and code
-        assert_eq!(stats.rules_added, 1);   // Added combined coding
+        assert_eq!(stats.rules_added, 1); // Added combined coding
         assert_eq!(profile.rules.len(), 1); // One combined rule remains
 
         // Verify the combined rule
-        let combined_rule = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let combined_rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(combined_rule.path, "status");
         match &combined_rule.value {
             FshValue::Coding(coding) => {
-                assert_eq!(coding.system, Some("http://hl7.org/fhir/status".to_string()));
+                assert_eq!(
+                    coding.system,
+                    Some("http://hl7.org/fhir/status".to_string())
+                );
                 assert_eq!(coding.code, "active");
                 assert_eq!(coding.display, None);
             }
@@ -400,10 +410,16 @@ mod tests {
         assert_eq!(profile.rules.len(), 1);
 
         // Verify the combined rule includes display
-        let combined_rule = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let combined_rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         match &combined_rule.value {
             FshValue::Coding(coding) => {
-                assert_eq!(coding.system, Some("http://hl7.org/fhir/administrative-gender".to_string()));
+                assert_eq!(
+                    coding.system,
+                    Some("http://hl7.org/fhir/administrative-gender".to_string())
+                );
                 assert_eq!(coding.code, "male");
                 assert_eq!(coding.display, Some("Male".to_string()));
             }
@@ -413,7 +429,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_combine_quantity_value_and_unit() {
-        let mut profile = ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
+        let mut profile =
+            ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
 
         profile.add_rule(Box::new(AssignmentRule {
             path: "valueQuantity.value".to_string(),
@@ -437,7 +454,10 @@ mod tests {
         assert_eq!(stats.rules_added, 1);
         assert_eq!(profile.rules.len(), 1);
 
-        let combined_rule = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let combined_rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(combined_rule.path, "valueQuantity");
         match &combined_rule.value {
             FshValue::Quantity(qty) => {
@@ -452,7 +472,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_combine_quantity_with_system_and_code() {
-        let mut profile = ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
+        let mut profile =
+            ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
 
         profile.add_rule(Box::new(AssignmentRule {
             path: "valueQuantity.value".to_string(),
@@ -485,7 +506,10 @@ mod tests {
         assert_eq!(stats.rules_added, 1);
         assert_eq!(profile.rules.len(), 1);
 
-        let combined_rule = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let combined_rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         assert_eq!(combined_rule.path, "valueQuantity");
         match &combined_rule.value {
             FshValue::Quantity(qty) => {
@@ -500,7 +524,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_quantity_value_only_not_combined() {
-        let mut profile = ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
+        let mut profile =
+            ExportableProfile::new("TestProfile".to_string(), "Observation".to_string());
 
         profile.add_rule(Box::new(AssignmentRule {
             path: "valueQuantity.value".to_string(),
@@ -518,7 +543,10 @@ mod tests {
         assert_eq!(stats.rules_added, 1);
         assert_eq!(profile.rules.len(), 1);
 
-        let combined_rule = profile.rules[0].as_any().downcast_ref::<AssignmentRule>().unwrap();
+        let combined_rule = profile.rules[0]
+            .as_any()
+            .downcast_ref::<AssignmentRule>()
+            .unwrap();
         match &combined_rule.value {
             FshValue::Quantity(qty) => {
                 assert_eq!(qty.value, Some(42.0));

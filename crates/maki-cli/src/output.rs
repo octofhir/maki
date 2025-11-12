@@ -339,6 +339,89 @@ impl ProgressReporter {
     }
 }
 
+/// Enhanced progress reporter using indicatif for better progress bars
+pub struct IndicatifProgressReporter {
+    bar: Option<indicatif::ProgressBar>,
+}
+
+impl IndicatifProgressReporter {
+    /// Create a new progress reporter with indicatif
+    pub fn new(enabled: bool, total: u64, template: &str) -> Self {
+        if !enabled {
+            return Self { bar: None };
+        }
+
+        let pb = indicatif::ProgressBar::new(total);
+        pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template(template)
+                .unwrap_or_else(|_| indicatif::ProgressStyle::default_bar())
+                .progress_chars("#>-"),
+        );
+
+        Self { bar: Some(pb) }
+    }
+
+    /// Create a spinner-based progress reporter (for unknown total)
+    pub fn new_spinner(enabled: bool, template: &str) -> Self {
+        if !enabled {
+            return Self { bar: None };
+        }
+
+        let pb = indicatif::ProgressBar::new_spinner();
+        pb.set_style(
+            indicatif::ProgressStyle::default_spinner()
+                .template(template)
+                .unwrap_or_else(|_| indicatif::ProgressStyle::default_spinner()),
+        );
+
+        Self { bar: Some(pb) }
+    }
+
+    /// Update progress position
+    #[allow(dead_code)]
+    pub fn set_position(&self, pos: u64) {
+        if let Some(ref bar) = self.bar {
+            bar.set_position(pos);
+        }
+    }
+
+    /// Increment progress by 1
+    pub fn inc(&self) {
+        if let Some(ref bar) = self.bar {
+            bar.inc(1);
+        }
+    }
+
+    /// Set message displayed with the progress bar
+    pub fn set_message(&self, msg: impl Into<std::borrow::Cow<'static, str>>) {
+        if let Some(ref bar) = self.bar {
+            bar.set_message(msg);
+        }
+    }
+
+    /// Finish the progress bar with a message
+    pub fn finish_with_message(&self, msg: impl Into<std::borrow::Cow<'static, str>>) {
+        if let Some(ref bar) = self.bar {
+            bar.finish_with_message(msg);
+        }
+    }
+
+    /// Finish the progress bar and clear it
+    #[allow(dead_code)]
+    pub fn finish_and_clear(&self) {
+        if let Some(ref bar) = self.bar {
+            bar.finish_and_clear();
+        }
+    }
+
+    /// Get the underlying progress bar (for advanced usage)
+    #[allow(dead_code)]
+    pub fn inner(&self) -> Option<&indicatif::ProgressBar> {
+        self.bar.as_ref()
+    }
+}
+
 /// Utility functions for output formatting
 pub mod utils {
     /// Format duration in human-readable format

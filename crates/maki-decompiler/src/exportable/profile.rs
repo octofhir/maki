@@ -102,14 +102,10 @@ impl ExportableProfile {
 mod tests {
     use super::*;
     use crate::exportable::rules::*;
-    use crate::exportable::FshValue;
 
     #[test]
     fn test_minimal_profile() {
-        let profile = ExportableProfile::new(
-            "MyPatient".to_string(),
-            "Patient".to_string(),
-        );
+        let profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string());
 
         let fsh = profile.to_fsh();
         assert!(fsh.contains("Profile: MyPatient"));
@@ -118,13 +114,10 @@ mod tests {
 
     #[test]
     fn test_profile_with_metadata() {
-        let profile = ExportableProfile::new(
-            "MyPatient".to_string(),
-            "Patient".to_string(),
-        )
-        .with_id("my-patient".to_string())
-        .with_title("My Patient Profile".to_string())
-        .with_description("A custom patient profile".to_string());
+        let profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string())
+            .with_id("my-patient".to_string())
+            .with_title("My Patient Profile".to_string())
+            .with_description("A custom patient profile".to_string());
 
         let fsh = profile.to_fsh();
         assert!(fsh.contains("Id: my-patient"));
@@ -134,10 +127,7 @@ mod tests {
 
     #[test]
     fn test_profile_with_rules() {
-        let mut profile = ExportableProfile::new(
-            "MyPatient".to_string(),
-            "Patient".to_string(),
-        );
+        let mut profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string());
 
         profile.add_rule(Box::new(CardinalityRule {
             path: "identifier".to_string(),
@@ -157,11 +147,8 @@ mod tests {
 
     #[test]
     fn test_profile_with_multiline_description() {
-        let profile = ExportableProfile::new(
-            "MyPatient".to_string(),
-            "Patient".to_string(),
-        )
-        .with_description("Line 1\nLine 2\nLine 3".to_string());
+        let profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string())
+            .with_description("Line 1\nLine 2\nLine 3".to_string());
 
         let fsh = profile.to_fsh();
         assert!(fsh.contains("Description: \"\"\"Line 1\nLine 2\nLine 3\"\"\""));

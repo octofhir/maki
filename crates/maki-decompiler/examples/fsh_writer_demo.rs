@@ -65,12 +65,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n6. Batch Writing:");
     println!("{}", "=".repeat(60));
     let batch_dir = Path::new("fsh-batch");
-    let exportables: Vec<&dyn Exportable> = vec![
-        &simple_profile,
-        &complex_profile,
-        &value_set,
-        &code_system,
-    ];
+    let exportables: Vec<&dyn Exportable> =
+        vec![&simple_profile, &complex_profile, &value_set, &code_system];
     writer.write_batch(&exportables, batch_dir)?;
     println!("✓ Batch written to {}/", batch_dir.display());
 
@@ -94,13 +90,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Create a simple profile example
 fn create_simple_profile() -> ExportableProfile {
-    ExportableProfile::new(
-        "SimplePatient".to_string(),
-        "Patient".to_string(),
-    )
-    .with_id("simple-patient".to_string())
-    .with_title("Simple Patient Profile".to_string())
-    .with_description("A minimal patient profile for demonstration".to_string())
+    ExportableProfile::new("SimplePatient".to_string(), "Patient".to_string())
+        .with_id("simple-patient".to_string())
+        .with_title("Simple Patient Profile".to_string())
+        .with_description("A minimal patient profile for demonstration".to_string())
 }
 
 /// Create a complex profile with various rules
@@ -200,13 +193,17 @@ fn create_complex_profile() -> ExportableProfile {
         items: vec![
             ContainsItem {
                 name: "race".to_string(),
-                type_name: Some("http://hl7.org/fhir/us/core/StructureDefinition/us-core-race".to_string()),
+                type_name: Some(
+                    "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race".to_string(),
+                ),
                 min: 0,
                 max: "1".to_string(),
             },
             ContainsItem {
                 name: "ethnicity".to_string(),
-                type_name: Some("http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity".to_string()),
+                type_name: Some(
+                    "http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity".to_string(),
+                ),
                 min: 0,
                 max: "1".to_string(),
             },
@@ -218,12 +215,10 @@ fn create_complex_profile() -> ExportableProfile {
 
 /// Create a value set example
 fn create_value_set() -> ExportableValueSet {
-    let mut value_set = ExportableValueSet::new(
-        "PatientStatusValueSet".to_string(),
-    )
-    .with_id("patient-status-vs".to_string())
-    .with_title("Patient Status Value Set".to_string())
-    .with_description("A value set of possible patient statuses".to_string());
+    let mut value_set = ExportableValueSet::new("PatientStatusValueSet".to_string())
+        .with_id("patient-status-vs".to_string())
+        .with_title("Patient Status Value Set".to_string())
+        .with_description("A value set of possible patient statuses".to_string());
 
     // Include codes from a system
     value_set.add_rule(Box::new(IncludeRule {
@@ -250,12 +245,10 @@ fn create_value_set() -> ExportableValueSet {
     value_set.add_rule(Box::new(ExcludeRule {
         system: "http://terminology.hl7.org/CodeSystem/v3-ActStatus".to_string(),
         version: None,
-        concepts: vec![
-            IncludeConcept {
-                code: "nullified".to_string(),
-                display: None,
-            },
-        ],
+        concepts: vec![IncludeConcept {
+            code: "nullified".to_string(),
+            display: None,
+        }],
         filters: vec![],
     }));
 
@@ -264,12 +257,10 @@ fn create_value_set() -> ExportableValueSet {
 
 /// Create a code system example
 fn create_code_system() -> ExportableCodeSystem {
-    let mut code_system = ExportableCodeSystem::new(
-        "ExampleCodeSystem".to_string(),
-    )
-    .with_id("example-codes".to_string())
-    .with_title("Example Code System".to_string())
-    .with_description("An example code system for demonstration purposes".to_string());
+    let mut code_system = ExportableCodeSystem::new("ExampleCodeSystem".to_string())
+        .with_id("example-codes".to_string())
+        .with_title("Example Code System".to_string())
+        .with_description("An example code system for demonstration purposes".to_string());
 
     // Add local codes
     code_system.add_rule(Box::new(LocalCodeRule {

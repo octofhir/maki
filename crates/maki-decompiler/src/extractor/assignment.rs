@@ -3,17 +3,16 @@
 //! This is the most complex extractor, handling 20+ fixed[x] types and 10+ pattern[x] types.
 //! Converts FHIR constraint values into FSH assignment rules.
 
-use crate::{
-    processor::ProcessableElementDefinition,
-    exportable::{
-        ExportableRule, AssignmentRule, FshValue, FshCode, FshCoding,
-        FshCodeableConcept, FshQuantity, FshReference
-    },
-    models::common::{CodeableConcept, Coding, Quantity, Identifier, Reference},
-    Result,
-    Error,
-};
 use super::RuleExtractor;
+use crate::{
+    Error, Result,
+    exportable::{
+        AssignmentRule, ExportableRule, FshCode, FshCodeableConcept, FshCoding, FshQuantity,
+        FshReference, FshValue,
+    },
+    models::common::{CodeableConcept, Coding, Identifier, Quantity, Reference},
+    processor::ProcessableElementDefinition,
+};
 
 /// Extractor for assignment rules (fixed[x] and pattern[x] values)
 pub struct AssignmentExtractor;
@@ -52,9 +51,10 @@ impl AssignmentExtractor {
     /// Convert FHIR Coding to FSH Coding
     fn convert_coding(coding: &Coding) -> Result<FshCoding> {
         // Must have a code
-        let code = coding.code.clone().ok_or_else(|| {
-            Error::Processing("Coding must have a code".to_string())
-        })?;
+        let code = coding
+            .code
+            .clone()
+            .ok_or_else(|| Error::Processing("Coding must have a code".to_string()))?;
 
         Ok(FshCoding {
             system: coding.system.clone(),
@@ -106,362 +106,346 @@ impl RuleExtractor for AssignmentExtractor {
         // These are constraints that fix the value exactly
 
         // Primitive fixed values
-        if let Some(value) = elem.element.fixed_boolean {
-            if !elem.is_processed("fixedBoolean") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Boolean(value),
-                    true,
-                )));
-                elem.mark_processed("fixedBoolean");
-            }
+        if let Some(value) = elem.element.fixed_boolean
+            && !elem.is_processed("fixedBoolean")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Boolean(value),
+                true,
+            )));
+            elem.mark_processed("fixedBoolean");
         }
 
-        if let Some(value) = elem.element.fixed_integer {
-            if !elem.is_processed("fixedInteger") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Integer(value),
-                    true,
-                )));
-                elem.mark_processed("fixedInteger");
-            }
+        if let Some(value) = elem.element.fixed_integer
+            && !elem.is_processed("fixedInteger")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Integer(value),
+                true,
+            )));
+            elem.mark_processed("fixedInteger");
         }
 
-        if let Some(value) = elem.element.fixed_decimal {
-            if !elem.is_processed("fixedDecimal") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Decimal(value),
-                    true,
-                )));
-                elem.mark_processed("fixedDecimal");
-            }
+        if let Some(value) = elem.element.fixed_decimal
+            && !elem.is_processed("fixedDecimal")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Decimal(value),
+                true,
+            )));
+            elem.mark_processed("fixedDecimal");
         }
 
-        if let Some(ref value) = elem.element.fixed_string {
-            if !elem.is_processed("fixedString") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::String(value.clone()),
-                    true,
-                )));
-                elem.mark_processed("fixedString");
-            }
+        if let Some(ref value) = elem.element.fixed_string
+            && !elem.is_processed("fixedString")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::String(value.clone()),
+                true,
+            )));
+            elem.mark_processed("fixedString");
         }
 
-        if let Some(ref value) = elem.element.fixed_code {
-            if !elem.is_processed("fixedCode") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Code(FshCode {
-                        system: None,
-                        code: value.clone(),
-                    }),
-                    true,
-                )));
-                elem.mark_processed("fixedCode");
-            }
+        if let Some(ref value) = elem.element.fixed_code
+            && !elem.is_processed("fixedCode")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Code(FshCode {
+                    system: None,
+                    code: value.clone(),
+                }),
+                true,
+            )));
+            elem.mark_processed("fixedCode");
         }
 
         // URI/URL types
-        if let Some(ref value) = elem.element.fixed_uri {
-            if !elem.is_processed("fixedUri") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Url(value.clone()),
-                    true,
-                )));
-                elem.mark_processed("fixedUri");
-            }
+        if let Some(ref value) = elem.element.fixed_uri
+            && !elem.is_processed("fixedUri")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Url(value.clone()),
+                true,
+            )));
+            elem.mark_processed("fixedUri");
         }
 
-        if let Some(ref value) = elem.element.fixed_url {
-            if !elem.is_processed("fixedUrl") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Url(value.clone()),
-                    true,
-                )));
-                elem.mark_processed("fixedUrl");
-            }
+        if let Some(ref value) = elem.element.fixed_url
+            && !elem.is_processed("fixedUrl")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Url(value.clone()),
+                true,
+            )));
+            elem.mark_processed("fixedUrl");
         }
 
-        if let Some(ref value) = elem.element.fixed_canonical {
-            if !elem.is_processed("fixedCanonical") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Canonical(value.clone()),
-                    true,
-                )));
-                elem.mark_processed("fixedCanonical");
-            }
+        if let Some(ref value) = elem.element.fixed_canonical
+            && !elem.is_processed("fixedCanonical")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Canonical(value.clone()),
+                true,
+            )));
+            elem.mark_processed("fixedCanonical");
         }
 
         // Date/time types
-        if let Some(ref value) = elem.element.fixed_date {
-            if !elem.is_processed("fixedDate") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::String(value.clone()),
-                    true,
-                )));
-                elem.mark_processed("fixedDate");
-            }
+        if let Some(ref value) = elem.element.fixed_date
+            && !elem.is_processed("fixedDate")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::String(value.clone()),
+                true,
+            )));
+            elem.mark_processed("fixedDate");
         }
 
-        if let Some(ref value) = elem.element.fixed_date_time {
-            if !elem.is_processed("fixedDateTime") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::String(value.clone()),
-                    true,
-                )));
-                elem.mark_processed("fixedDateTime");
-            }
+        if let Some(ref value) = elem.element.fixed_date_time
+            && !elem.is_processed("fixedDateTime")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::String(value.clone()),
+                true,
+            )));
+            elem.mark_processed("fixedDateTime");
         }
 
-        if let Some(ref value) = elem.element.fixed_instant {
-            if !elem.is_processed("fixedInstant") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::String(value.clone()),
-                    true,
-                )));
-                elem.mark_processed("fixedInstant");
-            }
+        if let Some(ref value) = elem.element.fixed_instant
+            && !elem.is_processed("fixedInstant")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::String(value.clone()),
+                true,
+            )));
+            elem.mark_processed("fixedInstant");
         }
 
-        if let Some(ref value) = elem.element.fixed_time {
-            if !elem.is_processed("fixedTime") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::String(value.clone()),
-                    true,
-                )));
-                elem.mark_processed("fixedTime");
-            }
+        if let Some(ref value) = elem.element.fixed_time
+            && !elem.is_processed("fixedTime")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::String(value.clone()),
+                true,
+            )));
+            elem.mark_processed("fixedTime");
         }
 
         // ID types
-        if let Some(ref value) = elem.element.fixed_id {
-            if !elem.is_processed("fixedId") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Id(value.clone()),
-                    true,
-                )));
-                elem.mark_processed("fixedId");
-            }
+        if let Some(ref value) = elem.element.fixed_id
+            && !elem.is_processed("fixedId")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Id(value.clone()),
+                true,
+            )));
+            elem.mark_processed("fixedId");
         }
 
-        if let Some(ref value) = elem.element.fixed_oid {
-            if !elem.is_processed("fixedOid") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Oid(value.clone()),
-                    true,
-                )));
-                elem.mark_processed("fixedOid");
-            }
+        if let Some(ref value) = elem.element.fixed_oid
+            && !elem.is_processed("fixedOid")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Oid(value.clone()),
+                true,
+            )));
+            elem.mark_processed("fixedOid");
         }
 
-        if let Some(ref value) = elem.element.fixed_uuid {
-            if !elem.is_processed("fixedUuid") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Uuid(value.clone()),
-                    true,
-                )));
-                elem.mark_processed("fixedUuid");
-            }
+        if let Some(ref value) = elem.element.fixed_uuid
+            && !elem.is_processed("fixedUuid")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Uuid(value.clone()),
+                true,
+            )));
+            elem.mark_processed("fixedUuid");
         }
 
         // Complex types - fixed values
-        if let Some(ref cc) = elem.element.fixed_codeable_concept {
-            if !elem.is_processed("fixedCodeableConcept") {
-                let fsh_value = Self::convert_codeable_concept(cc)?;
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    fsh_value,
-                    true,
-                )));
-                elem.mark_processed("fixedCodeableConcept");
-            }
+        if let Some(ref cc) = elem.element.fixed_codeable_concept
+            && !elem.is_processed("fixedCodeableConcept")
+        {
+            let fsh_value = Self::convert_codeable_concept(cc)?;
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem, fsh_value, true,
+            )));
+            elem.mark_processed("fixedCodeableConcept");
         }
 
-        if let Some(ref coding) = elem.element.fixed_coding {
-            if !elem.is_processed("fixedCoding") {
-                let fsh_coding = Self::convert_coding(coding)?;
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Coding(fsh_coding),
-                    true,
-                )));
-                elem.mark_processed("fixedCoding");
-            }
+        if let Some(ref coding) = elem.element.fixed_coding
+            && !elem.is_processed("fixedCoding")
+        {
+            let fsh_coding = Self::convert_coding(coding)?;
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Coding(fsh_coding),
+                true,
+            )));
+            elem.mark_processed("fixedCoding");
         }
 
-        if let Some(ref qty) = elem.element.fixed_quantity {
-            if !elem.is_processed("fixedQuantity") {
-                let fsh_value = Self::convert_quantity(qty)?;
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    fsh_value,
-                    true,
-                )));
-                elem.mark_processed("fixedQuantity");
-            }
+        if let Some(ref qty) = elem.element.fixed_quantity
+            && !elem.is_processed("fixedQuantity")
+        {
+            let fsh_value = Self::convert_quantity(qty)?;
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem, fsh_value, true,
+            )));
+            elem.mark_processed("fixedQuantity");
         }
 
-        if let Some(ref identifier) = elem.element.fixed_identifier {
-            if !elem.is_processed("fixedIdentifier") {
-                // Identifier is complex - skip for now
-                if let Some(fsh_value) = Self::convert_identifier(identifier)? {
-                    rules.push(Box::new(Self::create_assignment_rule(
-                        elem,
-                        fsh_value,
-                        true,
-                    )));
-                }
-                elem.mark_processed("fixedIdentifier");
+        if let Some(ref identifier) = elem.element.fixed_identifier
+            && !elem.is_processed("fixedIdentifier")
+        {
+            // Identifier is complex - skip for now
+            if let Some(fsh_value) = Self::convert_identifier(identifier)? {
+                rules.push(Box::new(Self::create_assignment_rule(
+                    elem, fsh_value, true,
+                )));
             }
+            elem.mark_processed("fixedIdentifier");
         }
 
-        if let Some(ref reference) = elem.element.fixed_reference {
-            if !elem.is_processed("fixedReference") {
-                let fsh_value = Self::convert_reference(reference)?;
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    fsh_value,
-                    true,
-                )));
-                elem.mark_processed("fixedReference");
-            }
+        if let Some(ref reference) = elem.element.fixed_reference
+            && !elem.is_processed("fixedReference")
+        {
+            let fsh_value = Self::convert_reference(reference)?;
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem, fsh_value, true,
+            )));
+            elem.mark_processed("fixedReference");
         }
 
         // Process pattern[x] values (use exactly = false)
         // These are constraints that match patterns
 
-        if let Some(value) = elem.element.pattern_boolean {
-            if !elem.is_processed("patternBoolean") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Boolean(value),
-                    false,
-                )));
-                elem.mark_processed("patternBoolean");
-            }
+        if let Some(value) = elem.element.pattern_boolean
+            && !elem.is_processed("patternBoolean")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Boolean(value),
+                false,
+            )));
+            elem.mark_processed("patternBoolean");
         }
 
-        if let Some(value) = elem.element.pattern_integer {
-            if !elem.is_processed("patternInteger") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Integer(value),
-                    false,
-                )));
-                elem.mark_processed("patternInteger");
-            }
+        if let Some(value) = elem.element.pattern_integer
+            && !elem.is_processed("patternInteger")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Integer(value),
+                false,
+            )));
+            elem.mark_processed("patternInteger");
         }
 
-        if let Some(value) = elem.element.pattern_decimal {
-            if !elem.is_processed("patternDecimal") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Decimal(value),
-                    false,
-                )));
-                elem.mark_processed("patternDecimal");
-            }
+        if let Some(value) = elem.element.pattern_decimal
+            && !elem.is_processed("patternDecimal")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Decimal(value),
+                false,
+            )));
+            elem.mark_processed("patternDecimal");
         }
 
-        if let Some(ref value) = elem.element.pattern_string {
-            if !elem.is_processed("patternString") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::String(value.clone()),
-                    false,
-                )));
-                elem.mark_processed("patternString");
-            }
+        if let Some(ref value) = elem.element.pattern_string
+            && !elem.is_processed("patternString")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::String(value.clone()),
+                false,
+            )));
+            elem.mark_processed("patternString");
         }
 
-        if let Some(ref value) = elem.element.pattern_code {
-            if !elem.is_processed("patternCode") {
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Code(FshCode {
-                        system: None,
-                        code: value.clone(),
-                    }),
-                    false,
-                )));
-                elem.mark_processed("patternCode");
-            }
+        if let Some(ref value) = elem.element.pattern_code
+            && !elem.is_processed("patternCode")
+        {
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Code(FshCode {
+                    system: None,
+                    code: value.clone(),
+                }),
+                false,
+            )));
+            elem.mark_processed("patternCode");
         }
 
         // Complex types - pattern values
-        if let Some(ref cc) = elem.element.pattern_codeable_concept {
-            if !elem.is_processed("patternCodeableConcept") {
-                let fsh_value = Self::convert_codeable_concept(cc)?;
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    fsh_value,
-                    false,
-                )));
-                elem.mark_processed("patternCodeableConcept");
-            }
+        if let Some(ref cc) = elem.element.pattern_codeable_concept
+            && !elem.is_processed("patternCodeableConcept")
+        {
+            let fsh_value = Self::convert_codeable_concept(cc)?;
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem, fsh_value, false,
+            )));
+            elem.mark_processed("patternCodeableConcept");
         }
 
-        if let Some(ref coding) = elem.element.pattern_coding {
-            if !elem.is_processed("patternCoding") {
-                let fsh_coding = Self::convert_coding(coding)?;
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    FshValue::Coding(fsh_coding),
-                    false,
-                )));
-                elem.mark_processed("patternCoding");
-            }
+        if let Some(ref coding) = elem.element.pattern_coding
+            && !elem.is_processed("patternCoding")
+        {
+            let fsh_coding = Self::convert_coding(coding)?;
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem,
+                FshValue::Coding(fsh_coding),
+                false,
+            )));
+            elem.mark_processed("patternCoding");
         }
 
-        if let Some(ref qty) = elem.element.pattern_quantity {
-            if !elem.is_processed("patternQuantity") {
-                let fsh_value = Self::convert_quantity(qty)?;
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    fsh_value,
-                    false,
-                )));
-                elem.mark_processed("patternQuantity");
-            }
+        if let Some(ref qty) = elem.element.pattern_quantity
+            && !elem.is_processed("patternQuantity")
+        {
+            let fsh_value = Self::convert_quantity(qty)?;
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem, fsh_value, false,
+            )));
+            elem.mark_processed("patternQuantity");
         }
 
-        if let Some(ref identifier) = elem.element.pattern_identifier {
-            if !elem.is_processed("patternIdentifier") {
-                // Identifier is complex - skip for now
-                if let Some(fsh_value) = Self::convert_identifier(identifier)? {
-                    rules.push(Box::new(Self::create_assignment_rule(
-                        elem,
-                        fsh_value,
-                        false,
-                    )));
-                }
-                elem.mark_processed("patternIdentifier");
+        if let Some(ref identifier) = elem.element.pattern_identifier
+            && !elem.is_processed("patternIdentifier")
+        {
+            // Identifier is complex - skip for now
+            if let Some(fsh_value) = Self::convert_identifier(identifier)? {
+                rules.push(Box::new(Self::create_assignment_rule(
+                    elem, fsh_value, false,
+                )));
             }
+            elem.mark_processed("patternIdentifier");
         }
 
-        if let Some(ref reference) = elem.element.pattern_reference {
-            if !elem.is_processed("patternReference") {
-                let fsh_value = Self::convert_reference(reference)?;
-                rules.push(Box::new(Self::create_assignment_rule(
-                    elem,
-                    fsh_value,
-                    false,
-                )));
-                elem.mark_processed("patternReference");
-            }
+        if let Some(ref reference) = elem.element.pattern_reference
+            && !elem.is_processed("patternReference")
+        {
+            let fsh_value = Self::convert_reference(reference)?;
+            rules.push(Box::new(Self::create_assignment_rule(
+                elem, fsh_value, false,
+            )));
+            elem.mark_processed("patternReference");
         }
 
         Ok(rules)
@@ -592,7 +576,10 @@ mod tests {
         let rules = extractor.extract(&mut elem).unwrap();
 
         assert_eq!(rules.len(), 1);
-        assert_eq!(rules[0].to_fsh(), "status = http://hl7.org/fhir/status#active \"Active\"");
+        assert_eq!(
+            rules[0].to_fsh(),
+            "status = http://hl7.org/fhir/status#active \"Active\""
+        );
         assert!(elem.is_processed("fixedCoding"));
     }
 
@@ -600,14 +587,12 @@ mod tests {
     fn test_extract_fixed_codeable_concept() {
         let mut elem = create_test_element();
         elem.element.fixed_codeable_concept = Some(CodeableConcept {
-            coding: Some(vec![
-                Coding {
-                    system: Some("http://snomed.info/sct".to_string()),
-                    version: None,
-                    code: Some("123456".to_string()),
-                    display: Some("Example".to_string()),
-                },
-            ]),
+            coding: Some(vec![Coding {
+                system: Some("http://snomed.info/sct".to_string()),
+                version: None,
+                code: Some("123456".to_string()),
+                display: Some("Example".to_string()),
+            }]),
             text: Some("Example text".to_string()),
         });
 
@@ -777,7 +762,8 @@ mod tests {
     #[test]
     fn test_fixed_canonical() {
         let mut elem = create_test_element();
-        elem.element.fixed_canonical = Some("http://example.org/StructureDefinition/MyProfile".to_string());
+        elem.element.fixed_canonical =
+            Some("http://example.org/StructureDefinition/MyProfile".to_string());
 
         let extractor = AssignmentExtractor;
         let rules = extractor.extract(&mut elem).unwrap();

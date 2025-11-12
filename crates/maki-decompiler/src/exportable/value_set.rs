@@ -141,12 +141,10 @@ mod tests {
         vs.add_rule(Box::new(IncludeRule {
             system: "http://example.org/cs".to_string(),
             version: None,
-            concepts: vec![
-                IncludeConcept {
-                    code: "code1".to_string(),
-                    display: Some("Code 1".to_string()),
-                },
-            ],
+            concepts: vec![IncludeConcept {
+                code: "code1".to_string(),
+                display: Some("Code 1".to_string()),
+            }],
             filters: vec![],
         }));
 

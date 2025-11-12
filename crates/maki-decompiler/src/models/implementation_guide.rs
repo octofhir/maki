@@ -1,7 +1,7 @@
 //! ImplementationGuide model for FHIR IG metadata
 
-use serde::{Deserialize, Serialize};
 use super::common::ContactDetail;
+use serde::{Deserialize, Serialize};
 
 /// FHIR ImplementationGuide resource
 #[derive(Debug, Clone, Deserialize, Serialize)]

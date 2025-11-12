@@ -5,34 +5,51 @@
 //! This crate provides functionality to convert FHIR resources (JSON/XML) into
 //! FHIR Shorthand (FSH) files, replicating the functionality of GoFSH.
 
+pub mod canonical;
+pub mod config_generator;
 pub mod error;
-pub mod models;
+pub mod exportable;
+pub mod extractor;
 pub mod lake;
 pub mod loader;
-pub mod canonical;
-pub mod exportable;
-pub mod processor;
-pub mod extractor;
+pub mod models;
 pub mod optimizer;
-pub mod writer;
 pub mod organizer;
-pub mod config_generator;
+pub mod processor;
+pub mod stats;
+pub mod writer;
 
 // Re-exports for convenience
-pub use error::{Error, Result};
-pub use lake::{ResourceLake, LakeStats};
-pub use loader::{FileLoader, LoadStats, LoadError};
 pub use canonical::{
+    create_lake_with_session, parse_cli_dependencies, parse_fhir_release, parse_package_spec,
     setup_canonical_environment,
-    create_lake_with_session,
-    parse_fhir_release,
-    parse_package_spec,
-    parse_cli_dependencies,
 };
-pub use exportable::*;
-pub use processor::*;
-pub use extractor::*;
-pub use optimizer::{Optimizer, OptimizerRegistry, OptimizationStats};
-pub use writer::FshWriter;
-pub use organizer::{FileOrganizer, OrganizationStrategy};
 pub use config_generator::{ConfigGenerator, MakiConfig};
+pub use error::{Error, Result};
+// Exportable types - explicitly import to avoid conflicts with processor modules
+pub use exportable::{
+    AssignmentRule, BindingRule, CardinalityFlagRule, CardinalityRule, ContainsItem, ContainsRule,
+    Exportable, ExportableCodeSystem, ExportableConfiguration, ExportableExtension,
+    ExportableInstance, ExportableLogical, ExportableProfile, ExportableResource, ExportableRule,
+    ExportableValueSet, FlagRule, FshCode, FshCodeableConcept, FshCoding, FshQuantity,
+    FshReference, FshValue, IncludeRule, LocalCodeRule, escape_string, format_multiline_string,
+};
+pub use extractor::*;
+pub use lake::{LakeStats, ResourceLake};
+pub use loader::{FileLoader, LoadError, LoadStats};
+pub use optimizer::{
+    AddReferenceKeywordOptimizer, CombineAssignmentsOptimizer, CombineCardAndFlagRulesOptimizer,
+    CombineContainsRulesOptimizer, OptimizationStats, Optimizer, OptimizerRegistry,
+    RemoveChoiceSlicingRulesOptimizer, RemoveDuplicateRulesOptimizer,
+    RemoveExtensionURLAssignmentOptimizer, RemoveGeneratedTextRulesOptimizer,
+    RemoveImpliedCardinalityOptimizer, RemoveZeroZeroCardRulesOptimizer,
+    SimplifyArrayIndexingOptimizer, SimplifyCardinalityOptimizer,
+};
+pub use organizer::{FileOrganizer, OrganizationStrategy};
+// Processor types - explicitly import to avoid conflicts with exportable modules
+pub use processor::{
+    CodeSystemProcessor, ConfigProcessor, DefinitionType, InstanceProcessor,
+    ProcessableElementDefinition, StructureDefinitionProcessor, ValueSetProcessor,
+};
+pub use stats::{GoFshSummary, ProcessingStats, WriteStats};
+pub use writer::FshWriter;

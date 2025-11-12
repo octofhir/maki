@@ -2,12 +2,12 @@
 //!
 //! Extracts flag rules (MS, ?!, SU, D, N, TU) from ElementDefinition
 
-use crate::{
-    processor::ProcessableElementDefinition,
-    exportable::{ExportableRule, FlagRule, Flag},
-    Result,
-};
 use super::RuleExtractor;
+use crate::{
+    Result,
+    exportable::{ExportableRule, Flag, FlagRule},
+    processor::ProcessableElementDefinition,
+};
 use log::debug;
 
 /// Extracts flag rules (MS, ?!, SU, etc.)
@@ -22,27 +22,27 @@ impl RuleExtractor for FlagExtractor {
         let mut flags = Vec::new();
 
         // MustSupport (MS)
-        if let Some(true) = elem.element.must_support {
-            if !elem.is_processed("mustSupport") {
-                flags.push(Flag::MustSupport);
-                elem.mark_processed("mustSupport");
-            }
+        if let Some(true) = elem.element.must_support
+            && !elem.is_processed("mustSupport")
+        {
+            flags.push(Flag::MustSupport);
+            elem.mark_processed("mustSupport");
         }
 
         // Is Modifier (?!)
-        if let Some(true) = elem.element.is_modifier {
-            if !elem.is_processed("isModifier") {
-                flags.push(Flag::Modifier);
-                elem.mark_processed("isModifier");
-            }
+        if let Some(true) = elem.element.is_modifier
+            && !elem.is_processed("isModifier")
+        {
+            flags.push(Flag::Modifier);
+            elem.mark_processed("isModifier");
         }
 
         // Is Summary (SU)
-        if let Some(true) = elem.element.is_summary {
-            if !elem.is_processed("isSummary") {
-                flags.push(Flag::Summary);
-                elem.mark_processed("isSummary");
-            }
+        if let Some(true) = elem.element.is_summary
+            && !elem.is_processed("isSummary")
+        {
+            flags.push(Flag::Summary);
+            elem.mark_processed("isSummary");
         }
 
         // Note: D, N, TU flags come from StandardsStatus which we'd need to add to ElementDefinition

@@ -28,16 +28,17 @@
 //! maki gofsh ./resources --progress
 //! ```
 
+use crate::output::IndicatifProgressReporter;
 use colored::Colorize;
-use maki_core::{Result, MakiError};
+use maki_core::{MakiError, Result};
 use maki_decompiler::{
-    ConfigGenerator, FileLoader, FileOrganizer, FshWriter, LakeStats, LoadStats,
-    OrganizationStrategy, ResourceLake, create_lake_with_session, parse_cli_dependencies,
-    setup_canonical_environment,
+    ConfigGenerator, FileLoader, FshWriter, GoFshSummary, LakeStats, LoadStats,
+    OrganizationStrategy, ProcessingStats, WriteStats, create_lake_with_session,
+    parse_cli_dependencies,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 /// Execute the gofsh command
 ///
@@ -81,14 +82,14 @@ pub async fn gofsh_command(
     info!("  Output: {}", output_dir.display());
     info!("  FHIR Version: {}", fhir_version);
 
-    if progress {
-        println!("\n📦 {}", "Step 1: Setting up FHIR packages...".bold());
-    }
+    // Phase 1: Setup canonical environment
+    let setup_progress = IndicatifProgressReporter::new_spinner(
+        progress,
+        "{spinner:.green} Setting up FHIR packages...",
+    );
+    setup_progress.set_message("Setting up FHIR packages...");
 
     // Step 2: Parse dependencies and create ResourceLake
-    if progress {
-        println!("\n🗂️  {}", "Step 2: Loading FHIR resources...".bold());
-    }
 
     let (release, deps) = if !dependencies.is_empty() || fhir_version != "R4" {
         parse_cli_dependencies(&fhir_version, &dependencies).map_err(|e| {
@@ -97,89 +98,249 @@ pub async fn gofsh_command(
             }
         })?
     } else {
-        parse_cli_dependencies("R4", &[]).map_err(|e| {
-            MakiError::ConfigError {
-                message: format!("Failed to parse default dependencies: {}", e),
-            }
+        parse_cli_dependencies("R4", &[]).map_err(|e| MakiError::ConfigError {
+            message: format!("Failed to parse default dependencies: {}", e),
         })?
     };
 
-    let mut lake = create_lake_with_session(release, deps).await.map_err(|e| {
+    let mut lake =
+        create_lake_with_session(release, deps)
+            .await
+            .map_err(|e| MakiError::ConfigError {
+                message: format!("Failed to create resource lake: {}", e),
+            })?;
+
+    setup_progress.finish_with_message("✓ FHIR packages ready");
+
+    // Phase 2: Load FHIR resources
+    let load_progress = IndicatifProgressReporter::new_spinner(
+        progress,
+        "{spinner:.green} Loading FHIR resources...",
+    );
+
+    info!("Loading files from: {}", input.display());
+    let mut loader = FileLoader::new();
+    let load_stats = loader.load_into_lake(&input, &mut lake).map_err(|e| {
+        error!("Failed to load files: {}", e);
         MakiError::ConfigError {
-            message: format!("Failed to create resource lake: {}", e),
+            message: format!("Failed to load files: {}", e),
         }
     })?;
 
-    // Step 4: Load files into lake
-    info!("Loading files from: {}", input.display());
-    let mut loader = FileLoader::new();
+    load_progress.finish_with_message(format!("✓ Loaded {} resources", load_stats.loaded));
 
-    let load_result = loader.load_into_lake(&input, &mut lake);
-
-    match load_result {
-        Ok(stats) => {
-            info!("Loaded {} resources", stats.loaded);
-            if progress {
-                print_load_stats(&stats);
-            }
-        }
-        Err(e) => {
-            error!("Failed to load files: {}", e);
-            return Err(MakiError::ConfigError {
-                message: format!("Failed to load files: {}", e),
-            });
-        }
+    // Display detailed load stats if errors occurred
+    if progress && load_stats.errors > 0 {
+        print_load_errors(&load_stats);
     }
 
     let lake_stats = lake.stats();
-
     let total_resources = lake_stats.structure_definitions
         + lake_stats.value_sets
         + lake_stats.code_systems
         + lake_stats.instances;
 
-    if total_resources == 0 {
-        println!("\n⚠️  {}", "No FHIR resources found in input directory".yellow());
-        println!("   Make sure the input directory contains FHIR JSON files");
-        return Ok(());
-    }
+    let has_resources = total_resources > 0;
 
     if progress {
-        println!("\n📊 {}", "Resource Summary:".bold());
-        print_lake_stats(&lake_stats);
+        print_lake_summary(&lake_stats);
     }
 
-    // Step 5: Process resources and extract FSH
-    if progress {
-        println!("\n🔄 {}", "Step 3: Converting to FSH...".bold());
+    // Phase 3: Process resources and extract FSH
+    let mut processing_stats = ProcessingStats::new();
+    let mut exportables: Vec<Box<dyn maki_decompiler::Exportable>> = Vec::new();
+
+    if !has_resources {
+        if progress {
+            println!(
+                "\n⚠️  {}",
+                "No FHIR resources found in input directory".yellow()
+            );
+            println!("   Skipping processing and writing phases");
+            println!("   Config files will still be generated");
+        }
+    } else {
+        // Create processor instances
+        use maki_decompiler::{
+            CodeSystemProcessor, InstanceProcessor, StructureDefinitionProcessor, ValueSetProcessor,
+        };
+
+        let sd_processor = StructureDefinitionProcessor::new(&lake);
+        let vs_processor = ValueSetProcessor::new(&lake);
+        let cs_processor = CodeSystemProcessor::new(&lake);
+        let inst_processor = InstanceProcessor::new(&lake);
+
+        // Process StructureDefinitions with progress
+        if lake_stats.structure_definitions > 0 {
+            let sd_progress = IndicatifProgressReporter::new(
+                progress,
+                lake_stats.structure_definitions as u64,
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} Processing StructureDefinitions...",
+            );
+
+            for (url, sd) in lake.structure_definitions() {
+                match sd_processor.process(sd).await {
+                    Ok(exportable) => {
+                        exportables.push(exportable);
+                        processing_stats.profiles_processed += 1; // TODO: distinguish profiles/extensions/resources/logicals
+                    }
+                    Err(e) => {
+                        warn!("Failed to process StructureDefinition {}: {}", url, e);
+                        processing_stats.errors += 1;
+                    }
+                }
+                sd_progress.inc();
+            }
+            sd_progress.finish_with_message(format!(
+                "✓ Processed {} StructureDefinitions",
+                lake_stats.structure_definitions
+            ));
+        }
+
+        // Process ValueSets with progress
+        if lake_stats.value_sets > 0 {
+            let vs_progress = IndicatifProgressReporter::new(
+                progress,
+                lake_stats.value_sets as u64,
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} Processing ValueSets...",
+            );
+
+            for (url, vs) in lake.value_sets() {
+                match vs_processor.process(vs) {
+                    Ok(exportable) => {
+                        exportables.push(Box::new(exportable));
+                        processing_stats.value_sets_processed += 1;
+                    }
+                    Err(e) => {
+                        warn!("Failed to process ValueSet {}: {}", url, e);
+                        processing_stats.errors += 1;
+                    }
+                }
+                vs_progress.inc();
+            }
+            vs_progress
+                .finish_with_message(format!("✓ Processed {} ValueSets", lake_stats.value_sets));
+        }
+
+        // Process CodeSystems with progress
+        if lake_stats.code_systems > 0 {
+            let cs_progress = IndicatifProgressReporter::new(
+                progress,
+                lake_stats.code_systems as u64,
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} Processing CodeSystems...",
+            );
+
+            for (url, cs) in lake.code_systems() {
+                match cs_processor.process(cs) {
+                    Ok(exportable) => {
+                        exportables.push(Box::new(exportable));
+                        processing_stats.code_systems_processed += 1;
+                    }
+                    Err(e) => {
+                        warn!("Failed to process CodeSystem {}: {}", url, e);
+                        processing_stats.errors += 1;
+                    }
+                }
+                cs_progress.inc();
+            }
+            cs_progress.finish_with_message(format!(
+                "✓ Processed {} CodeSystems",
+                lake_stats.code_systems
+            ));
+        }
+
+        // Process Instances with progress
+        if lake_stats.instances > 0 {
+            let inst_progress = IndicatifProgressReporter::new(
+                progress,
+                lake_stats.instances as u64,
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} Processing Instances...",
+            );
+
+            for (_id, resource) in lake.instances() {
+                match inst_processor.process(resource) {
+                    Ok(exportable) => {
+                        exportables.push(Box::new(exportable));
+                        processing_stats.instances_processed += 1;
+                    }
+                    Err(e) => {
+                        warn!("Failed to process Instance: {}", e);
+                        processing_stats.errors += 1;
+                    }
+                }
+                inst_progress.inc();
+            }
+            inst_progress
+                .finish_with_message(format!("✓ Processed {} Instances", lake_stats.instances));
+        }
+
+        info!(
+            "Processed {} resources with {} errors",
+            processing_stats.total_processed(),
+            processing_stats.errors
+        );
     }
 
-    info!("Processing {} resources", total_resources);
+    // Phase 4: Optimize FSH rules
+    if !exportables.is_empty() {
+        let opt_progress = IndicatifProgressReporter::new_spinner(
+            progress,
+            "{spinner:.green} Optimizing FSH rules...",
+        );
 
-    // TODO: Implement full processing pipeline
-    // For now, we'll show what needs to be done:
-    // - Process each resource type (Profiles, ValueSets, CodeSystems, Instances)
-    // - Extract FSH rules using processor
-    // - Apply optimizations to remove redundant rules
-    // - Generate exportable objects
+        use maki_decompiler::{
+            AddReferenceKeywordOptimizer, CombineAssignmentsOptimizer,
+            CombineCardAndFlagRulesOptimizer, CombineContainsRulesOptimizer, OptimizerRegistry,
+            RemoveChoiceSlicingRulesOptimizer, RemoveDuplicateRulesOptimizer,
+            RemoveExtensionURLAssignmentOptimizer, RemoveGeneratedTextRulesOptimizer,
+            RemoveImpliedCardinalityOptimizer, RemoveZeroZeroCardRulesOptimizer,
+            SimplifyArrayIndexingOptimizer, SimplifyCardinalityOptimizer,
+        };
 
-    println!("   ⚠️  {}", "Full processing pipeline not yet implemented".yellow());
-    println!("   This is a placeholder showing the pipeline structure:");
-    println!("   1. ✅ Load FHIR resources → ResourceLake");
-    println!("   2. ⏳ Process StructureDefinitions → Profiles/Extensions");
-    println!("   3. ⏳ Process ValueSets → FSH ValueSets");
-    println!("   4. ⏳ Process CodeSystems → FSH CodeSystems");
-    println!("   5. ⏳ Process Instances → FSH Instances");
-    println!("   6. ⏳ Optimize FSH rules");
-    println!("   7. ⏳ Write FSH files with organizer");
-    println!("   8. ⏳ Generate config files");
+        // Create optimizer registry and register all plugins
+        let mut registry = OptimizerRegistry::new();
+        registry.add(Box::new(RemoveDuplicateRulesOptimizer));
+        registry.add(Box::new(CombineAssignmentsOptimizer));
+        registry.add(Box::new(SimplifyCardinalityOptimizer));
+        registry.add(Box::new(AddReferenceKeywordOptimizer));
+        registry.add(Box::new(CombineCardAndFlagRulesOptimizer));
+        registry.add(Box::new(RemoveZeroZeroCardRulesOptimizer));
+        registry.add(Box::new(CombineContainsRulesOptimizer));
+        registry.add(Box::new(RemoveGeneratedTextRulesOptimizer));
+        registry.add(Box::new(RemoveExtensionURLAssignmentOptimizer));
+        registry.add(Box::new(SimplifyArrayIndexingOptimizer));
+        registry.add(Box::new(RemoveChoiceSlicingRulesOptimizer));
+        registry.add(Box::new(RemoveImpliedCardinalityOptimizer));
 
-    // Step 6: Create FSH writer with config
-    let writer_indent = indent_size.unwrap_or(2);
-    let writer_line_width = line_width.unwrap_or(100);
-    let _writer = FshWriter::new(writer_indent, writer_line_width);
+        // Apply optimizations to all exportables
+        for exportable in exportables.iter_mut() {
+            match registry.optimize_all(exportable.as_mut(), &lake) {
+                Ok(stats) => {
+                    processing_stats.optimization_stats.merge(&stats);
+                }
+                Err(e) => {
+                    warn!("Failed to optimize {}: {}", exportable.name(), e);
+                    processing_stats.errors += 1;
+                }
+            }
+        }
 
-    // Step 7: Determine organization strategy
+        if progress {
+            if processing_stats.optimization_stats.has_changes() {
+                opt_progress.finish_with_message(format!(
+                    "✓ Optimized {} exportables ({})",
+                    exportables.len(),
+                    processing_stats.optimization_stats
+                ));
+            } else {
+                opt_progress.finish_with_message("✓ No optimizations needed");
+            }
+        }
+    }
+
+    let mut write_stats = WriteStats::new();
+
+    // Phase 5: Determine organization strategy
     let org_strategy = match strategy.as_deref() {
         Some("type") => OrganizationStrategy::GroupByFshType,
         Some("profile") => OrganizationStrategy::GroupByProfile,
@@ -191,48 +352,65 @@ pub async fn gofsh_command(
         }
     };
 
-    info!("Organization strategy: {:?}", org_strategy);
+    // Phase 6: Write FSH files
+    if !exportables.is_empty() {
+        let write_progress = IndicatifProgressReporter::new_spinner(
+            progress,
+            "{spinner:.green} Writing FSH files...",
+        );
 
-    // Step 8: Generate config files
-    if progress {
-        println!("\n📝 {}", "Step 4: Generating configuration files...".bold());
+        let writer_indent = indent_size.unwrap_or(2);
+        let writer_line_width = line_width.unwrap_or(100);
+        let writer = FshWriter::new(writer_indent, writer_line_width);
+
+        use maki_decompiler::FileOrganizer;
+        let organizer = FileOrganizer::with_writer(org_strategy, writer);
+
+        match organizer.organize(&exportables, &output_dir) {
+            Ok(()) => {
+                // TODO: Track actual file count and bytes written
+                write_stats.files_written = exportables.len();
+                write_progress
+                    .finish_with_message(format!("✓ Wrote {} FSH files", exportables.len()));
+            }
+            Err(e) => {
+                write_progress.finish_with_message("⚠ FSH writing failed");
+                warn!("Failed to write FSH files: {}", e);
+                write_stats.errors += 1;
+            }
+        }
     }
 
+    // Phase 7: Generate config files
+    let config_progress = IndicatifProgressReporter::new_spinner(
+        progress,
+        "{spinner:.green} Generating configuration files...",
+    );
+
     let config_generator = ConfigGenerator::new();
-
-    // Check if there's an ImplementationGuide in the lake
     let ig = None; // TODO: Extract IG from lake if present
+    let config_generated = config_generator
+        .generate_all_configs(ig, &output_dir)
+        .is_ok();
 
-    let config_result = config_generator.generate_all_configs(ig, &output_dir);
-
-    match config_result {
-        Ok(()) => {
-            info!("Generated config files in: {}", output_dir.display());
-            if progress {
-                println!("   ✅ Created sushi-config.yaml");
-                println!("   ✅ Created .makirc.json");
-            }
-        }
-        Err(e) => {
-            warn!("Failed to generate config files: {}", e);
-            if progress {
-                println!("   ⚠️  {}", "Config generation failed".yellow());
-            }
-        }
+    if config_generated {
+        config_progress.finish_with_message("✓ Configuration files generated");
+    } else {
+        config_progress.finish_with_message("⚠ Config generation failed");
     }
 
     // Final summary
-    let elapsed = start_time.elapsed();
+    let duration = start_time.elapsed();
 
     if progress {
-        println!("\n{}", "═".repeat(60).dimmed());
-        println!("\n✨ {}", "GoFSH conversion completed!".green().bold());
-        println!("   📁 Output directory: {}", output_dir.display().to_string().cyan());
-        println!("   ⏱️  Time: {:.2}s", elapsed.as_secs_f64());
-        println!("\n💡 {}", "Next steps:".bold());
-        println!("   1. Review generated FSH files in {}", output_dir.display().to_string().cyan());
-        println!("   2. Verify sushi-config.yaml settings");
-        println!("   3. Run {} to compile back to FHIR", "maki build".bright_blue());
+        let summary = GoFshSummary::new(
+            load_stats,
+            processing_stats,
+            write_stats,
+            duration,
+            config_generated,
+        );
+        print_final_summary(&summary, &output_dir);
     }
 
     Ok(())
@@ -250,47 +428,147 @@ fn print_header() {
     println!("╰───────────────────────────────────────────────────────────╯\n");
 }
 
-/// Print file loading statistics
-fn print_load_stats(stats: &LoadStats) {
-    println!("   ✅ Loaded {} resources", stats.loaded);
-
-    if stats.errors == 0 {
-        println!("      • {} errors", "0".green());
-    } else {
-        println!("      • {} errors", stats.errors.to_string().red());
+/// Print load errors if any occurred
+fn print_load_errors(stats: &LoadStats) {
+    if stats.errors > 0 {
+        println!("\n⚠️  {} load errors:", stats.errors.to_string().yellow());
         for error in &stats.error_details {
-            println!("        - {}: {}", error.file_path.display(), error.error_message.red());
+            println!(
+                "   • {}: {}",
+                error.file_path.display().to_string().dimmed(),
+                error.error_message.red()
+            );
         }
     }
 }
 
-/// Print ResourceLake statistics
-fn print_lake_stats(stats: &LakeStats) {
-    let total = stats.structure_definitions
-        + stats.value_sets
-        + stats.code_systems
-        + stats.instances;
-    println!("   📦 Total resources: {}", total.to_string().cyan().bold());
+/// Print ResourceLake summary
+fn print_lake_summary(stats: &LakeStats) {
+    let total =
+        stats.structure_definitions + stats.value_sets + stats.code_systems + stats.instances;
+
+    println!("\n📊 {}", "Resource Summary:".bold());
+    println!(
+        "   {} {}",
+        "Total:".dimmed(),
+        total.to_string().cyan().bold()
+    );
 
     if stats.structure_definitions > 0 {
-        println!("      • {} StructureDefinitions", stats.structure_definitions);
+        println!(
+            "   {} {} StructureDefinitions",
+            "•".cyan(),
+            stats.structure_definitions.to_string().bold()
+        );
     }
     if stats.value_sets > 0 {
-        println!("      • {} ValueSets", stats.value_sets);
+        println!(
+            "   {} {} ValueSets",
+            "•".cyan(),
+            stats.value_sets.to_string().bold()
+        );
     }
     if stats.code_systems > 0 {
-        println!("      • {} CodeSystems", stats.code_systems);
+        println!(
+            "   {} {} CodeSystems",
+            "•".cyan(),
+            stats.code_systems.to_string().bold()
+        );
     }
     if stats.instances > 0 {
-        println!("      • {} Instances", stats.instances);
+        println!(
+            "   {} {} Instances",
+            "•".cyan(),
+            stats.instances.to_string().bold()
+        );
     }
+}
+
+/// Print final summary with all statistics
+fn print_final_summary(summary: &GoFshSummary, output_dir: &Path) {
+    println!("\n{}", "═".repeat(60).dimmed());
+
+    if summary.is_success() {
+        println!("\n✨ {}", "GoFSH conversion completed!".green().bold());
+    } else {
+        println!(
+            "\n⚠️  {}",
+            "GoFSH conversion completed with errors".yellow().bold()
+        );
+    }
+
+    println!("\n📦 {}", "Summary:".bold());
+    println!(
+        "   {} {} resources loaded",
+        "•".cyan(),
+        summary.load_stats.loaded
+    );
+
+    if summary.processing_stats.has_processed() {
+        println!(
+            "   {} {} resources processed",
+            "•".cyan(),
+            summary.processing_stats.total_processed()
+        );
+        if summary.processing_stats.rules_extracted > 0 {
+            println!(
+                "   {} {} FSH rules extracted",
+                "•".cyan(),
+                summary.processing_stats.rules_extracted
+            );
+        }
+    }
+
+    if summary.write_stats.has_written() {
+        println!(
+            "   {} {} FSH files written ({})",
+            "•".cyan(),
+            summary.write_stats.files_written,
+            summary.write_stats.human_size()
+        );
+    }
+
+    if summary.config_generated {
+        println!("   {} Configuration files generated", "•".cyan());
+    }
+
+    if summary.total_errors() > 0 {
+        println!(
+            "\n⚠️  {} total errors",
+            summary.total_errors().to_string().red()
+        );
+    }
+
+    println!(
+        "\n⏱️  {} {:.2}s",
+        "Time:".dimmed(),
+        summary.duration.as_secs_f64()
+    );
+    println!(
+        "📁 {} {}",
+        "Output:".dimmed(),
+        output_dir.display().to_string().cyan()
+    );
+
+    println!("\n💡 {}", "Next steps:".bold());
+    println!(
+        "   1. Review generated FSH files in {}",
+        output_dir.display().to_string().cyan()
+    );
+    println!("   2. Verify sushi-config.yaml settings");
+    println!(
+        "   3. Run {} to compile back to FHIR",
+        "maki build".bright_blue()
+    );
+
+    println!("\n{}", "═".repeat(60).dimmed());
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_gofsh_command_no_input() {
@@ -357,10 +635,20 @@ mod tests {
         )
         .await;
 
-        assert!(result.is_ok());
+        if let Err(e) = &result {
+            eprintln!("Error: {:?}", e);
+        }
+        assert!(result.is_ok(), "Expected command to succeed but got error");
 
         // Verify config files were created
-        assert!(temp_dir.path().join("output/sushi-config.yaml").exists());
-        assert!(temp_dir.path().join("output/.makirc.json").exists());
+        let sushi_config = temp_dir.path().join("output/sushi-config.yaml");
+        let makirc = temp_dir.path().join("output/.makirc.json");
+
+        assert!(
+            sushi_config.exists(),
+            "sushi-config.yaml not found at {:?}",
+            sushi_config
+        );
+        assert!(makirc.exists(), ".makirc.json not found at {:?}", makirc);
     }
 }

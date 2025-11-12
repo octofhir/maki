@@ -2,13 +2,13 @@
 //!
 //! Extracts ValueSet binding rules from ElementDefinition
 
-use crate::{
-    processor::ProcessableElementDefinition,
-    exportable::{ExportableRule, BindingRule, BindingStrength as FshBindingStrength},
-    models::BindingStrength as FhirBindingStrength,
-    Result,
-};
 use super::RuleExtractor;
+use crate::{
+    Result,
+    exportable::{BindingRule, BindingStrength as FshBindingStrength, ExportableRule},
+    models::BindingStrength as FhirBindingStrength,
+    processor::ProcessableElementDefinition,
+};
 use log::debug;
 
 /// Extracts binding rules (from ValueSet)
@@ -74,12 +74,9 @@ impl BindingExtractor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ElementDefinition, Binding};
+    use crate::models::{Binding, ElementDefinition};
 
-    fn create_test_element(
-        path: &str,
-        binding: Option<Binding>,
-    ) -> ElementDefinition {
+    fn create_test_element(path: &str, binding: Option<Binding>) -> ElementDefinition {
         ElementDefinition {
             id: path.to_string(),
             path: path.to_string(),

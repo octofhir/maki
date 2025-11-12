@@ -1,8 +1,8 @@
 //! StructureDefinition model - represents FHIR profiles, extensions, logical models, and resources
 
-use serde::{Deserialize, Serialize};
-use super::element_definition::ElementList;
 use super::common::ContactDetail;
+use super::element_definition::ElementList;
+use serde::{Deserialize, Serialize};
 
 /// FHIR StructureDefinition resource
 ///
@@ -38,8 +38,8 @@ pub struct StructureDefinition {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Derivation {
-    Constraint,      // Profile or Extension
-    Specialization,  // Logical Model or Resource
+    Constraint,     // Profile or Extension
+    Specialization, // Logical Model or Resource
 }
 
 /// StructureDefinition kind
@@ -130,9 +130,7 @@ mod tests {
             url: "http://example.org/StructureDefinition/MyExtension".to_string(),
             name: "MyExtension".to_string(),
             status: "active".to_string(),
-            base_definition: Some(
-                "http://hl7.org/fhir/StructureDefinition/Extension".to_string(),
-            ),
+            base_definition: Some("http://hl7.org/fhir/StructureDefinition/Extension".to_string()),
             derivation: Some(Derivation::Constraint),
             kind: None,
             abstract_: None,

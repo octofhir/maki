@@ -55,8 +55,8 @@
 //! writer.write_batch(&exportables, Path::new("output")).unwrap();
 //! ```
 
-use crate::exportable::Exportable;
 use crate::error::Result;
+use crate::exportable::Exportable;
 use std::fs;
 use std::path::Path;
 
@@ -274,9 +274,9 @@ impl FshWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exportable::{ExportableProfile, ExportableValueSet, ExportableCodeSystem};
-    use crate::exportable::rules::*;
     use crate::exportable::FshValue;
+    use crate::exportable::rules::*;
+    use crate::exportable::{ExportableCodeSystem, ExportableProfile, ExportableValueSet};
     use std::fs;
     use tempfile::TempDir;
 
@@ -297,10 +297,7 @@ mod tests {
     #[test]
     fn test_write_profile() {
         let writer = FshWriter::default();
-        let profile = ExportableProfile::new(
-            "MyPatient".to_string(),
-            "Patient".to_string(),
-        );
+        let profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string());
 
         let fsh = writer.write(&profile);
         assert!(fsh.contains("Profile: MyPatient"));
@@ -311,13 +308,10 @@ mod tests {
     #[test]
     fn test_write_profile_with_metadata() {
         let writer = FshWriter::default();
-        let profile = ExportableProfile::new(
-            "MyPatient".to_string(),
-            "Patient".to_string(),
-        )
-        .with_id("my-patient".to_string())
-        .with_title("My Patient Profile".to_string())
-        .with_description("A custom patient profile".to_string());
+        let profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string())
+            .with_id("my-patient".to_string())
+            .with_title("My Patient Profile".to_string())
+            .with_description("A custom patient profile".to_string());
 
         let fsh = writer.write(&profile);
         assert!(fsh.contains("Profile: MyPatient"));
@@ -329,10 +323,7 @@ mod tests {
     #[test]
     fn test_write_profile_with_rules() {
         let writer = FshWriter::default();
-        let mut profile = ExportableProfile::new(
-            "MyPatient".to_string(),
-            "Patient".to_string(),
-        );
+        let mut profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string());
 
         profile.add_rule(Box::new(CardinalityRule {
             path: "identifier".to_string(),
@@ -356,10 +347,7 @@ mod tests {
         let file_path = temp_dir.path().join("MyPatient.fsh");
 
         let writer = FshWriter::default();
-        let profile = ExportableProfile::new(
-            "MyPatient".to_string(),
-            "Patient".to_string(),
-        );
+        let profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string());
 
         writer.write_to_file(&profile, &file_path).unwrap();
 
@@ -375,10 +363,7 @@ mod tests {
         let file_path = temp_dir.path().join("nested/dir/MyPatient.fsh");
 
         let writer = FshWriter::default();
-        let profile = ExportableProfile::new(
-            "MyPatient".to_string(),
-            "Patient".to_string(),
-        );
+        let profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string());
 
         writer.write_to_file(&profile, &file_path).unwrap();
 
@@ -395,15 +380,9 @@ mod tests {
 
         let writer = FshWriter::default();
 
-        let profile1 = ExportableProfile::new(
-            "Profile1".to_string(),
-            "Patient".to_string(),
-        );
+        let profile1 = ExportableProfile::new("Profile1".to_string(), "Patient".to_string());
 
-        let profile2 = ExportableProfile::new(
-            "Profile2".to_string(),
-            "Observation".to_string(),
-        );
+        let profile2 = ExportableProfile::new("Profile2".to_string(), "Observation".to_string());
 
         let exportables: Vec<&dyn Exportable> = vec![&profile1, &profile2];
 
@@ -426,11 +405,9 @@ mod tests {
     #[test]
     fn test_write_value_set() {
         let writer = FshWriter::default();
-        let mut value_set = ExportableValueSet::new(
-            "MyValueSet".to_string(),
-        )
-        .with_id("my-value-set".to_string())
-        .with_title("My Value Set".to_string());
+        let mut value_set = ExportableValueSet::new("MyValueSet".to_string())
+            .with_id("my-value-set".to_string())
+            .with_title("My Value Set".to_string());
 
         value_set.add_rule(Box::new(IncludeRule {
             system: "http://example.org/codes".to_string(),
@@ -449,10 +426,8 @@ mod tests {
     #[test]
     fn test_write_code_system() {
         let writer = FshWriter::default();
-        let mut code_system = ExportableCodeSystem::new(
-            "MyCodeSystem".to_string(),
-        )
-        .with_id("my-code-system".to_string());
+        let mut code_system = ExportableCodeSystem::new("MyCodeSystem".to_string())
+            .with_id("my-code-system".to_string());
 
         code_system.add_rule(Box::new(LocalCodeRule {
             code: "active".to_string(),
@@ -471,13 +446,10 @@ mod tests {
         let writer_with = FshWriter::default().with_trailing_newline(true);
         let writer_without = FshWriter::default().with_trailing_newline(false);
 
-        let profile = ExportableProfile::new(
-            "MyPatient".to_string(),
-            "Patient".to_string(),
-        );
+        let profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string());
 
         let fsh_with = writer_with.write(&profile);
-        let fsh_without = writer_without.write(&profile);
+        let _fsh_without = writer_without.write(&profile);
 
         assert!(fsh_with.ends_with('\n'));
         // The profile.to_fsh() itself adds newlines, so this test demonstrates the option exists

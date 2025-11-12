@@ -4,10 +4,10 @@
 //! EXACT implementation matching GoFSH's RemoveImpliedZeroZeroCardRulesOptimizer.ts
 
 use crate::{
-    exportable::{Exportable, CardinalityRule},
-    lake::ResourceLake,
-    optimizer::{Optimizer, OptimizationStats},
     Result,
+    exportable::{CardinalityRule, Exportable},
+    lake::ResourceLake,
+    optimizer::{OptimizationStats, Optimizer},
 };
 use log::debug;
 
@@ -41,9 +41,9 @@ impl Optimizer for RemoveZeroZeroCardRulesOptimizer {
             .iter()
             .enumerate()
             .filter_map(|(idx, rule)| {
-                rule.as_any().downcast_ref::<CardinalityRule>().map(|cr| {
-                    (idx, cr.path.clone(), cr.max.clone())
-                })
+                rule.as_any()
+                    .downcast_ref::<CardinalityRule>()
+                    .map(|cr| (idx, cr.path.clone(), cr.max.clone()))
             })
             .collect();
 
@@ -78,9 +78,10 @@ impl RemoveZeroZeroCardRulesOptimizer {
         // Case 1: rule is extension path with sibling value paths that aren't 0..0
         if path.ends_with("extension") {
             let value_prefix = path.replace("extension", "value");
-            if all_card_rules.iter().any(|(_, r_path, r_max)| {
-                r_path.starts_with(&value_prefix) && r_max != "0"
-            }) {
+            if all_card_rules
+                .iter()
+                .any(|(_, r_path, r_max)| r_path.starts_with(&value_prefix) && r_max != "0")
+            {
                 return true;
             }
         }
@@ -88,9 +89,10 @@ impl RemoveZeroZeroCardRulesOptimizer {
         // Case 2: rule is value[x] path with sibling extension paths that aren't 0..0
         if path.ends_with("value[x]") {
             let extension_prefix = path.replace("value[x]", "extension");
-            if all_card_rules.iter().any(|(_, r_path, r_max)| {
-                r_path.starts_with(&extension_prefix) && r_max != "0"
-            }) {
+            if all_card_rules
+                .iter()
+                .any(|(_, r_path, r_max)| r_path.starts_with(&extension_prefix) && r_max != "0")
+            {
                 return true;
             }
         }
@@ -103,8 +105,8 @@ impl RemoveZeroZeroCardRulesOptimizer {
 mod tests {
     use super::*;
     use crate::exportable::ExportableProfile;
-    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use crate::lake::ResourceLake;
+    use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
     use std::sync::Arc;
 
     async fn create_test_lake() -> ResourceLake {
@@ -120,7 +122,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_remove_extension_zero_zero_with_value_sibling() {
-        let mut extension = ExportableProfile::new("TestExtension".to_string(), "Extension".to_string());
+        let mut extension =
+            ExportableProfile::new("TestExtension".to_string(), "Extension".to_string());
 
         // extension 0..0 (should be removed because value[x] is NOT 0..0)
         extension.add_rule(Box::new(CardinalityRule {
@@ -146,13 +149,17 @@ mod tests {
         assert_eq!(extension.rules.len(), 1);
 
         // Remaining rule should be value[x]
-        let remaining = extension.rules[0].as_any().downcast_ref::<CardinalityRule>().unwrap();
+        let remaining = extension.rules[0]
+            .as_any()
+            .downcast_ref::<CardinalityRule>()
+            .unwrap();
         assert_eq!(remaining.path, "value[x]");
     }
 
     #[tokio::test]
     async fn test_remove_value_zero_zero_with_extension_sibling() {
-        let mut extension = ExportableProfile::new("TestExtension".to_string(), "Extension".to_string());
+        let mut extension =
+            ExportableProfile::new("TestExtension".to_string(), "Extension".to_string());
 
         // value[x] 0..0 (should be removed because extension is NOT 0..0)
         extension.add_rule(Box::new(CardinalityRule {
@@ -178,13 +185,17 @@ mod tests {
         assert_eq!(extension.rules.len(), 1);
 
         // Remaining rule should be extension[custom]
-        let remaining = extension.rules[0].as_any().downcast_ref::<CardinalityRule>().unwrap();
+        let remaining = extension.rules[0]
+            .as_any()
+            .downcast_ref::<CardinalityRule>()
+            .unwrap();
         assert_eq!(remaining.path, "extension[custom]");
     }
 
     #[tokio::test]
     async fn test_keep_zero_zero_without_non_zero_sibling() {
-        let mut extension = ExportableProfile::new("TestExtension".to_string(), "Extension".to_string());
+        let mut extension =
+            ExportableProfile::new("TestExtension".to_string(), "Extension".to_string());
 
         // Both extension and value[x] are 0..0 - keep both (no non-zero sibling)
         extension.add_rule(Box::new(CardinalityRule {

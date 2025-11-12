@@ -3,9 +3,12 @@
 //! This example shows how the advanced extractors handle slicing and constraints.
 
 use maki_decompiler::{
-    extractor::{ContainsExtractor, ObeysExtractor, RuleExtractor},
     exportable::ExportableRule,
-    models::{ElementDefinition, common::{Slicing, Constraint, TypeRef}},
+    extractor::{ContainsExtractor, ObeysExtractor, RuleExtractor},
+    models::{
+        ElementDefinition,
+        common::{Constraint, Slicing, TypeRef},
+    },
     processor::ProcessableElementDefinition,
 };
 
@@ -108,15 +111,13 @@ fn demo_element_constraints() {
     println!("   FHIR: Patient.identifier with constraint requiring system and value");
 
     let mut elem = create_element("Patient.identifier", None);
-    elem.element.constraint = Some(vec![
-        Constraint {
-            key: "us-core-1".to_string(),
-            severity: Some("error".to_string()),
-            human: "Identifier must have both system and value".to_string(),
-            expression: Some("system.exists() and value.exists()".to_string()),
-            xpath: None,
-        },
-    ]);
+    elem.element.constraint = Some(vec![Constraint {
+        key: "us-core-1".to_string(),
+        severity: Some("error".to_string()),
+        human: "Identifier must have both system and value".to_string(),
+        expression: Some("system.exists() and value.exists()".to_string()),
+        xpath: None,
+    }]);
 
     let extractor = ObeysExtractor;
     let rules = extractor.extract(&mut elem).unwrap();
@@ -130,15 +131,13 @@ fn demo_resource_constraints() {
     println!("   FHIR: Patient resource with root-level constraint");
 
     let mut elem = create_element("Patient", None);
-    elem.element.constraint = Some(vec![
-        Constraint {
-            key: "pat-1".to_string(),
-            severity: Some("error".to_string()),
-            human: "SHALL at least have a name or identifier".to_string(),
-            expression: Some("name.exists() or identifier.exists()".to_string()),
-            xpath: None,
-        },
-    ]);
+    elem.element.constraint = Some(vec![Constraint {
+        key: "pat-1".to_string(),
+        severity: Some("error".to_string()),
+        human: "SHALL at least have a name or identifier".to_string(),
+        expression: Some("name.exists() or identifier.exists()".to_string()),
+        xpath: None,
+    }]);
 
     let rules = ObeysExtractor::extract_root_constraints(&mut elem).unwrap();
 

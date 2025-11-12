@@ -7,17 +7,17 @@
 //! - Instances → ExportableInstance
 //! - ImplementationGuide → ExportableConfiguration
 
-pub mod structure_definition;
-pub mod processable;
-pub mod value_set;
 pub mod code_system;
-pub mod instance;
 pub mod config;
+pub mod instance;
+pub mod processable;
+pub mod structure_definition;
+pub mod value_set;
 
 // Re-exports
-pub use structure_definition::*;
-pub use processable::*;
-pub use value_set::*;
 pub use code_system::*;
-pub use instance::*;
 pub use config::*;
+pub use instance::*;
+pub use processable::*;
+pub use structure_definition::*;
+pub use value_set::*;

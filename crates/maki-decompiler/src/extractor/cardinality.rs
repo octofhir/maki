@@ -2,12 +2,12 @@
 //!
 //! Extracts min..max cardinality constraints from ElementDefinition
 
-use crate::{
-    processor::ProcessableElementDefinition,
-    exportable::{ExportableRule, CardinalityRule},
-    Result,
-};
 use super::RuleExtractor;
+use crate::{
+    Result,
+    exportable::{CardinalityRule, ExportableRule},
+    processor::ProcessableElementDefinition,
+};
 use log::debug;
 
 /// Extracts cardinality rules (min..max)

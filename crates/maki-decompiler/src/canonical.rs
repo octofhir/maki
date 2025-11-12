@@ -4,16 +4,12 @@
 //! integration, creating ResourceLake with DefinitionSession, and parsing
 //! package dependencies from CLI arguments.
 
-use std::sync::Arc;
-use maki_core::canonical::{
-    CanonicalFacade,
-    CanonicalOptions,
-    DefinitionSession,
-    PackageCoordinate,
-    FhirRelease,
-};
-use crate::lake::ResourceLake;
 use crate::error::{Error, Result};
+use crate::lake::ResourceLake;
+use maki_core::canonical::{
+    CanonicalFacade, CanonicalOptions, DefinitionSession, FhirRelease, PackageCoordinate,
+};
+use std::sync::Arc;
 
 /// Initialize canonical manager and create DefinitionSession
 ///
@@ -46,11 +42,16 @@ pub async fn setup_canonical_environment(
         options.quick_init = true;
     }
 
-    let facade = Arc::new(CanonicalFacade::new(options).await
-        .map_err(|e| Error::CanonicalError(e.to_string()))?);
+    let facade = Arc::new(
+        CanonicalFacade::new(options)
+            .await
+            .map_err(|e| Error::CanonicalError(e.to_string()))?,
+    );
 
     // 2. Create DefinitionSession for FHIR release
-    let session = facade.session(vec![fhir_release]).await
+    let session = facade
+        .session(vec![fhir_release])
+        .await
         .map_err(|e| Error::CanonicalError(e.to_string()))?;
 
     Ok(Arc::new(session))
@@ -198,7 +199,8 @@ mod tests {
                 "hl7.fhir.us.core@5.0.1".to_string(),
                 "my.package@1.0.0".to_string(),
             ],
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(release, FhirRelease::R4);
         assert_eq!(deps.len(), 2);
@@ -224,10 +226,7 @@ mod tests {
 
     #[test]
     fn test_parse_cli_dependencies_invalid_spec() {
-        let result = parse_cli_dependencies(
-            "R4",
-            &["invalid-spec".to_string()],
-        );
+        let result = parse_cli_dependencies("R4", &["invalid-spec".to_string()]);
         assert!(result.is_err());
     }
 }

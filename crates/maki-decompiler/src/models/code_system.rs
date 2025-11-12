@@ -1,7 +1,7 @@
 //! CodeSystem model for FHIR terminology
 
-use serde::{Deserialize, Serialize};
 use super::common::ContactDetail;
+use serde::{Deserialize, Serialize};
 
 /// FHIR CodeSystem resource
 #[derive(Debug, Clone, Deserialize, Serialize)]

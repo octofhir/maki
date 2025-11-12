@@ -3,12 +3,12 @@
 //! This extractor converts FHIR ElementDefinition constraints into FSH obeys rules.
 //! Constraints represent invariants that must be satisfied for the element to be valid.
 
-use crate::{
-    processor::ProcessableElementDefinition,
-    exportable::{ExportableRule, ObeysRule},
-    Result,
-};
 use super::RuleExtractor;
+use crate::{
+    Result,
+    exportable::{ExportableRule, ObeysRule},
+    processor::ProcessableElementDefinition,
+};
 
 /// Extractor for obeys rules (invariants/constraints)
 ///
@@ -24,9 +24,7 @@ pub struct ObeysExtractor;
 
 impl ObeysExtractor {
     /// Extract obeys rules from an element's constraints
-    fn extract_constraints(
-        elem: &mut ProcessableElementDefinition,
-    ) -> Result<Vec<ObeysRule>> {
+    fn extract_constraints(elem: &mut ProcessableElementDefinition) -> Result<Vec<ObeysRule>> {
         let mut rules = Vec::new();
 
         if let Some(ref constraints) = elem.element.constraint {
@@ -57,18 +55,18 @@ impl ObeysExtractor {
         let mut rules = Vec::new();
 
         // Only extract for root element (path has no dots, like "Patient")
-        if !elem.element.path.contains('.') {
-            if let Some(ref constraints) = elem.element.constraint {
-                for constraint in constraints {
-                    // Create obeys rule without path (resource-level)
-                    rules.push(ObeysRule {
-                        path: None,
-                        invariant: constraint.key.clone(),
-                    });
-                }
-
-                elem.mark_processed("constraint");
+        if !elem.element.path.contains('.')
+            && let Some(ref constraints) = elem.element.constraint
+        {
+            for constraint in constraints {
+                // Create obeys rule without path (resource-level)
+                rules.push(ObeysRule {
+                    path: None,
+                    invariant: constraint.key.clone(),
+                });
             }
+
+            elem.mark_processed("constraint");
         }
 
         Ok(rules)

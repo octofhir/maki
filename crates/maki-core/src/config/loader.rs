@@ -260,7 +260,11 @@ enabled = true
             r#"{"linter": {"enabled": true}}"#,
         );
         create_temp_config(temp_dir.path(), "maki.yaml", "linter:\n  enabled: true");
-        create_temp_config(temp_dir.path(), "maki.json", r#"{"linter": {"enabled": true}}"#);
+        create_temp_config(
+            temp_dir.path(),
+            "maki.json",
+            r#"{"linter": {"enabled": true}}"#,
+        );
 
         // Should find .makirc.json first (highest priority)
         let found = ConfigLoader::auto_discover(temp_dir.path()).unwrap();
