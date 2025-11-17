@@ -12,7 +12,13 @@ publish = false
 criterion = { workspace = true }
 maki-core = { path = "../maki-core" }
 maki-rules = { path = "../maki-rules" }
+maki-decompiler = { path = "../maki-decompiler" }
+tokio = { workspace = true }
 
 [[bench]]
 name = "lint_benchmark"
+harness = false
+
+[[bench]]
+name = "decompiler_benchmark"
 harness = false

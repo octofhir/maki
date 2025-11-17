@@ -132,6 +132,7 @@ async fn test_multiple_resources() {
 
 /// Test error handling for invalid files
 #[tokio::test]
+#[serial]
 async fn test_error_handling() {
     let temp_dir = TempDir::new().unwrap();
 

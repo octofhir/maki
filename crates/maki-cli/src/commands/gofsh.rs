@@ -567,6 +567,7 @@ fn print_final_summary(summary: &GoFshSummary, output_dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::fs;
     use tempfile::TempDir;
 
@@ -588,6 +589,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_gofsh_command_empty_directory() {
         let temp_dir = TempDir::new().unwrap();
 
@@ -608,6 +610,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_gofsh_command_with_fhir_resource() {
         let temp_dir = TempDir::new().unwrap();
 

@@ -109,17 +109,18 @@ mod gritql_compilation_tests {
 
         // Test compilation of basic patterns
         let patterns = vec![
-            ("profile_definition", "test-rule-1"),
-            ("extension_definition", "test-rule-2"),
-            ("valueset_definition", "test-rule-3"),
-            ("identifier", "test-rule-4"),
+            ("Profile", "test-rule-1"),
+            ("Extension", "test-rule-2"),
+            ("ValueSet", "test-rule-3"),
+            ("CodeSystem", "test-rule-4"),
         ];
 
         for (pattern, rule_id) in patterns {
             let result = compiler.compile_pattern(pattern, rule_id);
             assert!(
                 result.is_ok(),
-                "Pattern '{pattern}' should compile successfully"
+                "Pattern '{pattern}' should compile successfully. Error: {:?}",
+                result.err()
             );
 
             let compiled = result.unwrap();

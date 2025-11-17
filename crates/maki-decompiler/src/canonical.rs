@@ -113,7 +113,7 @@ pub fn parse_fhir_release(version: &str) -> Result<FhirRelease> {
 pub fn parse_package_spec(spec: &str) -> Result<PackageCoordinate> {
     let parts: Vec<&str> = spec.split('@').collect();
 
-    if parts.len() != 2 {
+    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
         return Err(Error::InvalidPackageSpec(spec.to_string()));
     }
 

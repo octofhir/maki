@@ -19,6 +19,9 @@ pub mod processor;
 pub mod stats;
 pub mod writer;
 
+// Test helpers - available for both unit and integration tests
+pub mod test_helpers;
+
 // Re-exports for convenience
 pub use canonical::{
     create_lake_with_session, parse_cli_dependencies, parse_fhir_release, parse_package_spec,

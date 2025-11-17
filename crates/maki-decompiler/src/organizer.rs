@@ -49,6 +49,7 @@
 use crate::error::Result;
 use crate::exportable::Exportable;
 use crate::writer::FshWriter;
+use futures::future::try_join_all;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -324,6 +325,162 @@ impl FileOrganizer {
         } else {
             self.get_fsh_type_directory(exportable).to_string()
         }
+    }
+
+    // ===== Concurrent file writing methods =====
+
+    /// Organize exportables using concurrent file writes
+    ///
+    /// This async version uses tokio::fs for concurrent I/O operations,
+    /// improving performance when writing many files.
+    pub async fn organize_concurrent(
+        &self,
+        exportables: &[Box<dyn Exportable>],
+        output_dir: &Path,
+    ) -> Result<()> {
+        match self.strategy {
+            OrganizationStrategy::FilePerDefinition => {
+                self.organize_per_definition_concurrent(exportables, output_dir)
+                    .await
+            }
+            OrganizationStrategy::GroupByFshType => {
+                self.organize_by_type_concurrent(exportables, output_dir)
+                    .await
+            }
+            OrganizationStrategy::GroupByProfile => {
+                self.organize_by_profile_concurrent(exportables, output_dir)
+                    .await
+            }
+            OrganizationStrategy::SingleFile => {
+                self.organize_single_file_concurrent(exportables, output_dir)
+                    .await
+            }
+        }
+    }
+
+    /// Organize with one file per definition (concurrent)
+    async fn organize_per_definition_concurrent(
+        &self,
+        exportables: &[Box<dyn Exportable>],
+        output_dir: &Path,
+    ) -> Result<()> {
+        // Create output directory
+        tokio::fs::create_dir_all(output_dir).await?;
+
+        // Prepare all write operations
+        let writes: Vec<_> = exportables
+            .iter()
+            .map(|exportable| {
+                let filename = format!("{}.fsh", exportable.id());
+                let file_path = output_dir.join(filename);
+                let fsh_content = self.writer.write(exportable.as_ref());
+
+                async move { tokio::fs::write(&file_path, fsh_content).await }
+            })
+            .collect();
+
+        // Execute all writes concurrently
+        try_join_all(writes).await?;
+
+        Ok(())
+    }
+
+    /// Organize by grouping files by FSH type (concurrent)
+    async fn organize_by_type_concurrent(
+        &self,
+        exportables: &[Box<dyn Exportable>],
+        output_dir: &Path,
+    ) -> Result<()> {
+        // Group exportables by type (synchronous)
+        let mut groups: HashMap<&str, Vec<&Box<dyn Exportable>>> = HashMap::new();
+
+        for exportable in exportables {
+            let type_dir = self.get_fsh_type_directory(exportable.as_ref());
+            groups.entry(type_dir).or_default().push(exportable);
+        }
+
+        // Create directories and prepare writes
+        let mut all_writes = Vec::new();
+
+        for (type_dir, group_exportables) in groups {
+            let type_path = output_dir.join(type_dir);
+            tokio::fs::create_dir_all(&type_path).await?;
+
+            for exportable in group_exportables {
+                let filename = format!("{}.fsh", exportable.id());
+                let file_path = type_path.join(filename);
+                let fsh_content = self.writer.write(exportable.as_ref());
+
+                all_writes.push(async move { tokio::fs::write(&file_path, fsh_content).await });
+            }
+        }
+
+        // Execute all writes concurrently
+        try_join_all(all_writes).await?;
+
+        Ok(())
+    }
+
+    /// Organize by grouping profiles by their parent type (concurrent)
+    async fn organize_by_profile_concurrent(
+        &self,
+        exportables: &[Box<dyn Exportable>],
+        output_dir: &Path,
+    ) -> Result<()> {
+        // Group exportables by profile parent or type
+        let mut groups: HashMap<String, Vec<&Box<dyn Exportable>>> = HashMap::new();
+
+        for exportable in exportables {
+            let group_name = self.get_profile_group(exportable.as_ref());
+            groups.entry(group_name).or_default().push(exportable);
+        }
+
+        // Create directories and prepare writes
+        let mut all_writes = Vec::new();
+
+        for (group_name, group_exportables) in groups {
+            let group_path = output_dir.join(group_name);
+            tokio::fs::create_dir_all(&group_path).await?;
+
+            for exportable in group_exportables {
+                let filename = format!("{}.fsh", exportable.id());
+                let file_path = group_path.join(filename);
+                let fsh_content = self.writer.write(exportable.as_ref());
+
+                all_writes.push(async move { tokio::fs::write(&file_path, fsh_content).await });
+            }
+        }
+
+        // Execute all writes concurrently
+        try_join_all(all_writes).await?;
+
+        Ok(())
+    }
+
+    /// Organize into a single file (concurrent)
+    async fn organize_single_file_concurrent(
+        &self,
+        exportables: &[Box<dyn Exportable>],
+        output_dir: &Path,
+    ) -> Result<()> {
+        // Create output directory
+        tokio::fs::create_dir_all(output_dir).await?;
+
+        // Combine all FSH into a single string
+        let mut combined_fsh = String::new();
+
+        for (i, exportable) in exportables.iter().enumerate() {
+            if i > 0 {
+                combined_fsh.push_str("\n\n");
+            }
+            combined_fsh.push_str(&self.writer.write(exportable.as_ref()));
+        }
+
+        // Write to single file
+        let file_path = output_dir.join("definitions.fsh");
+        tokio::fs::write(file_path, combined_fsh).await?;
+
+        Ok(())
     }
 }
 

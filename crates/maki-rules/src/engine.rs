@@ -926,7 +926,7 @@ impl DefaultRuleEngine {
                     diagnostics.append(&mut rule_diagnostics);
                 }
                 Err(e) => {
-                    tracing::error!("Failed to execute rule '{}': {}", rule.id(), e);
+                    tracing::warn!("Failed to execute rule '{}': {}", rule.id(), e);
                     // Continue with other rules even if one fails
                 }
             }

@@ -7,6 +7,7 @@
 //! - Instances → ExportableInstance
 //! - ImplementationGuide → ExportableConfiguration
 
+pub mod batch;
 pub mod code_system;
 pub mod config;
 pub mod instance;
@@ -15,6 +16,7 @@ pub mod structure_definition;
 pub mod value_set;
 
 // Re-exports
+pub use batch::*;
 pub use code_system::*;
 pub use config::*;
 pub use instance::*;

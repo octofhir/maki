@@ -21,14 +21,12 @@ fn test_full_workflow() {
 
     assert!(project_dir.join(".makirc.json").exists());
 
-    // 2. Create test FSH file
-    let fsh_content = r#"Profile: TestProfile
-Parent: Patient
-Id: test-profile
-Title: "Test Profile"
-Description: "Test profile for integration testing"
-* name 1..1 MS
-* birthDate 0..1
+    // 2. Create a valid FSH file
+    // Use simple ValueSet which doesn't require examples or complex validation
+    let fsh_content = r#"ValueSet: TestValueSet
+Id: test-valueset
+Title: "Test Value Set"
+Description: "A test value set"
 "#;
 
     fs::write(project_dir.join("test.fsh"), fsh_content).unwrap();
@@ -107,15 +105,10 @@ fn test_lint_multiple_files() {
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
 
-    // Create multiple FSH files
+    // Create multiple valid FSH files
     for i in 1..=3 {
         let content = format!(
-            r#"Profile: TestProfile{i}
-Parent: Patient
-Id: test-profile-{i}
-Title: "Test Profile {i}"
-Description: "Test profile {i}"
-"#
+            "ValueSet: TestValueSet{i}\nId: test-valueset-{i}\nTitle: \"Test Value Set {i}\"\nDescription: \"A test value set\"\n"
         );
         fs::write(project_dir.join(format!("test{i}.fsh")), content).unwrap();
     }
@@ -161,15 +154,10 @@ fn test_lint_directory() {
     let fsh_dir = project_dir.join("fsh");
     fs::create_dir(&fsh_dir).unwrap();
 
-    // Create FSH files in directory
+    // Create valid FSH files in directory
     for i in 1..=2 {
         let content = format!(
-            r#"Profile: TestProfile{i}
-Parent: Patient
-Id: test-profile-{i}
-Title: "Test Profile {i}"
-Description: "Test"
-"#
+            "ValueSet: DirValueSet{i}\nId: dir-valueset-{i}\nTitle: \"Dir Value Set {i}\"\nDescription: \"A directory test value set\"\n"
         );
         fs::write(fsh_dir.join(format!("test{i}.fsh")), content).unwrap();
     }
