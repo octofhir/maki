@@ -1,9 +1,184 @@
 ---
 title: CLI Commands
-description: FSH Lint command-line interface reference
+description: MAKI command-line interface reference
 ---
 
-Complete reference for all FSH Lint commands.
+Complete reference for all MAKI commands.
+
+## `maki build`
+
+Build FSH files to FHIR resources (SUSHI-compatible).
+
+```bash
+maki build [OPTIONS] [PROJECT_PATH]
+```
+
+The build command compiles FSH files from `input/fsh/` into FHIR JSON resources in `fsh-generated/`.
+
+### Options
+
+#### Build Options
+
+- `--output, -o <PATH>` - Output directory (default: `fsh-generated`)
+- `--snapshot` - Generate snapshots in StructureDefinitions
+- `--preprocessed` - Output preprocessed FSH for debugging
+- `--clean` - Clean output directory before building
+- `--progress` - Show progress bar during build
+- `--no-cache` - Disable incremental compilation cache
+- `--skip-deps` - Skip installing FHIR package dependencies
+
+#### Quality Options
+
+- `--lint` - Run linter before build
+- `--strict` - Treat warnings as errors (requires `--lint`)
+- `--format` - Auto-format FSH files before build
+
+#### Configuration
+
+- `--config, -c <KEY:VALUE>` - Override config values (version, status, releaselabel)
+
+### Examples
+
+```bash
+# Build current directory
+maki build
+
+# Build with progress bar
+maki build --progress
+
+# Run linter before building
+maki build --lint
+
+# Format FSH files before building
+maki build --format
+
+# Clean output and rebuild
+maki build --clean
+
+# Strict mode (treat warnings as errors)
+maki build --lint --strict
+
+# Specify project path and output
+maki build ./my-ig --output ./output
+
+# Override version for release
+maki build -c version:1.0.0 -c status:active
+```
+
+### Build Process
+
+1. **Load Configuration** - Reads `sushi-config.yaml` or `maki.yaml`
+2. **Format** (optional) - Auto-formats FSH files if `--format` is specified
+3. **Lint** (optional) - Runs linter if `--lint` is specified
+4. **Parse FSH** - Parses all FSH files from `input/fsh/`
+5. **Build Semantic Model** - Constructs the semantic representation
+6. **Export Resources** - Generates FHIR JSON for all resource types
+7. **Generate Artifacts** - Creates `package.json`, FSH index, etc.
+
+### Output Structure
+
+```
+fsh-generated/
+├── resources/
+│   ├── StructureDefinition-*.json
+│   ├── ValueSet-*.json
+│   ├── CodeSystem-*.json
+│   └── *.json (instances)
+├── package.json
+└── fsh-index.json
+```
+
+---
+
+## `maki gofsh`
+
+Convert FHIR resources (JSON/XML) back to FSH (GoFSH functionality).
+
+```bash
+maki gofsh [OPTIONS] <INPUT>
+```
+
+### Options
+
+- `--output, -o <PATH>` - Output directory for FSH files (default: `output`)
+- `--fhir-version <VERSION>` - FHIR version: `R4` or `R5` (default: `R4`)
+- `--dependency, -d <PKG>` - FHIR package dependencies (e.g., `hl7.fhir.us.core@5.0.1`)
+- `--strategy <STRATEGY>` - File organization strategy:
+  - `file` - One file per definition (default)
+  - `type` - Group by FSH type (profiles.fsh, valuesets.fsh, etc.)
+  - `profile` - Group by profile
+  - `single` - All definitions in one file
+- `--indent-size <N>` - Number of spaces for indentation (default: 2)
+- `--line-width <N>` - Maximum line width (default: 100)
+- `--progress` - Show progress bar and detailed output
+
+### Examples
+
+```bash
+# Convert FHIR resources in a directory
+maki gofsh ./fsh-generated
+
+# Specify output directory
+maki gofsh ./fsh-generated -o ./input/fsh
+
+# With FHIR dependencies
+maki gofsh ./resources -d hl7.fhir.us.core@5.0.1
+
+# Use R5 FHIR version
+maki gofsh ./resources --fhir-version R5
+
+# With progress reporting
+maki gofsh ./resources --progress
+
+# Group output by FSH type
+maki gofsh ./resources --strategy type
+
+# All in one file
+maki gofsh ./resources --strategy single
+```
+
+### Conversion Process
+
+1. **Setup Packages** - Installs base FHIR packages and dependencies
+2. **Load Resources** - Reads FHIR JSON/XML files from input
+3. **Process Resources** - Extracts FSH definitions:
+   - StructureDefinitions → Profiles, Extensions, Logical Models
+   - ValueSets → ValueSet definitions
+   - CodeSystems → CodeSystem definitions
+   - Other resources → Instance definitions
+4. **Optimize** - Applies rule optimizations:
+   - Remove duplicate rules
+   - Combine related rules
+   - Simplify cardinality expressions
+   - Remove implied/redundant rules
+5. **Write FSH** - Generates formatted FSH files
+6. **Generate Config** - Creates `sushi-config.yaml` and `.makirc.json`
+
+### Output Structure
+
+With `--strategy file` (default):
+```
+output/
+├── MyProfile.fsh
+├── MyExtension.fsh
+├── MyValueSet.fsh
+├── sushi-config.yaml
+└── .makirc.json
+```
+
+With `--strategy type`:
+```
+output/
+├── profiles.fsh
+├── extensions.fsh
+├── valuesets.fsh
+├── codesystems.fsh
+├── instances.fsh
+├── sushi-config.yaml
+└── .makirc.json
+```
+
+---
 
 ## `maki lint`
 
@@ -175,25 +350,44 @@ See the [Formatter Guide](/maki/guides/formatter/) for configuration options and
 
 ## `maki init`
 
-Initialize configuration file.
+Initialize a new FHIR Implementation Guide project.
 
 ```bash
-maki init [OPTIONS]
+maki init [OPTIONS] [NAME]
 ```
+
+### Arguments
+
+- `NAME` - Project name (default: `MyIG`)
 
 ### Options
 
-- `--full` - Generate full example configuration
-- `--output <PATH>` - Output path (default: `maki.json`)
+- `--default` - Use default values without prompting (non-interactive mode)
 
 ### Examples
 
 ```bash
-# Create default config
+# Initialize interactively
 maki init
 
-# Create full example
-maki init --full
+# Initialize with project name
+maki init MyCustomIG
+
+# Non-interactive with defaults
+maki init --default
+```
+
+### Generated Files
+
+The init command creates the basic IG structure:
+
+```
+my-ig/
+├── input/
+│   └── fsh/
+│       └── patient.fsh (example)
+├── sushi-config.yaml
+└── .makirc.json
 ```
 
 ## `maki rules`

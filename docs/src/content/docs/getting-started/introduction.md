@@ -1,9 +1,9 @@
 ---
 title: Introduction
-description: Learn about FSH Lint and what it can do for you
+description: Learn about MAKI and what it can do for you
 ---
 
-FSH Lint is a fast, powerful linter and formatter for FHIR Shorthand (FSH) files.
+MAKI is a high-performance FSH toolchain that serves as a drop-in replacement for SUSHI and GoFSH, with additional linting and formatting capabilities.
 
 ## What is FSH?
 
@@ -11,11 +11,13 @@ FHIR Shorthand (FSH) is a domain-specific language created to simplify the creat
 of FHIR Implementation Guides (IGs). It allows you to define FHIR resources, profiles,
 extensions, and value sets in a concise, human-readable format.
 
-## Why FSH Lint?
+## Why MAKI?
 
-Writing FSH by hand can be error-prone and inconsistent. FSH Lint helps you:
+MAKI provides a complete toolkit for FSH development:
 
-- **Catch errors early** - Find issues before SUSHI compilation
+- **Build FSH to FHIR** - SUSHI-compatible compilation with better performance
+- **Convert FHIR to FSH** - GoFSH functionality with smart optimization
+- **Catch errors early** - Find issues before compilation
 - **Maintain consistency** - Automatic code formatting and style enforcement
 - **Follow best practices** - Learn FHIR/FSH patterns from built-in rules
 - **Save time** - Auto-fix many issues and format code automatically
@@ -23,9 +25,26 @@ Writing FSH by hand can be error-prone and inconsistent. FSH Lint helps you:
 
 ## Key Features
 
-### Built in Rust 🦀
+### SUSHI-Compatible Build
 
-FSH Lint is written in Rust for maximum performance and reliability. It can lint
+Compile FSH files to FHIR resources with full compatibility:
+- Profiles, Extensions, Logical Models, Resources
+- ValueSets, CodeSystems
+- Instances (Examples, Capabilities, etc.)
+- ImplementationGuide generation
+- Pre-build linting and formatting options
+
+### GoFSH Converter
+
+Convert existing FHIR resources back to FSH:
+- Load JSON/XML FHIR resources
+- Smart rule extraction and optimization
+- Multiple file organization strategies
+- Automatic config file generation
+
+### Built in Rust
+
+MAKI is written in Rust for maximum performance and reliability. It can process
 thousands of FSH files in seconds.
 
 ### Automatic Formatting
@@ -63,6 +82,6 @@ First-class support for:
 
 Ready to get started?
 
-1. [Install FSH Lint](/getting-started/installation/)
-2. [Run your first lint](/getting-started/quick-start/)
-3. [Configure rules](/configuration/config-file/)
+1. [Install MAKI](/maki/getting-started/installation/)
+2. [Quick Start Guide](/maki/getting-started/quick-start/)
+3. [CLI Commands Reference](/maki/cli/commands/)

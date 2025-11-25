@@ -1,9 +1,9 @@
 ---
-title: FSH Lint
-description: Fast and powerful linter for FHIR Shorthand
+title: MAKI - FSH Toolchain
+description: High-performance FSH toolchain for linting, formatting, and building FHIR Implementation Guides
 template: splash
 hero:
-  tagline: Catch errors early with blazing-fast FSH linting
+  tagline: A fast, modern toolchain for FHIR Shorthand - lint, format, build, and convert
   image:
     file: ../../assets/logo.svg
   actions:
@@ -21,11 +21,15 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 ## Features
 
 <CardGrid>
-  <Card title="⚡ Blazing Fast" icon="rocket">
-    Built in Rust for maximum performance. Lint thousands of FSH files in seconds.
+  <Card title="⚡ SUSHI-Compatible Build" icon="rocket">
+    Compile FSH to FHIR resources. Drop-in replacement for SUSHI with improved performance.
   </Card>
 
-  <Card title="🔍 Comprehensive Rules" icon="puzzle">
+  <Card title="🔄 GoFSH Converter" icon="random">
+    Convert FHIR JSON/XML resources back to FSH. Includes smart optimization and rule extraction.
+  </Card>
+
+  <Card title="🔍 Comprehensive Linting" icon="puzzle">
     Extensive rule set covering FHIR and FSH best practices, from correctness to style.
   </Card>
 
@@ -48,10 +52,6 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
   <Card title="🚀 CI/CD Ready" icon="github">
     First-class support for GitHub Actions, GitLab CI, and other platforms.
   </Card>
-
-  <Card title="🔄 Auto-fix" icon="add-document">
-    Automatically fix common issues with safe and unsafe fix modes.
-  </Card>
 </CardGrid>
 
 ## Quick Example
@@ -60,17 +60,20 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 # Install
 cargo install maki
 
-# Initialize configuration
+# Initialize a new IG project
 maki init
 
-# Format your FSH files
-maki format input/fsh/**/*.fsh
+# Build FSH to FHIR resources (SUSHI-compatible)
+maki build --progress
 
 # Lint your FSH files
-maki lint **/*.fsh
+maki lint input/fsh/
 
-# Auto-fix issues
-maki lint --fix **/*.fsh
+# Format your FSH files
+maki fmt input/fsh/
+
+# Convert FHIR back to FSH (GoFSH)
+maki gofsh ./fsh-generated -o ./input/fsh
 ```
 
 ## Rich Diagnostics

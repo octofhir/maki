@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: How to install FSH Lint
+description: How to install MAKI
 ---
 
 ## Prerequisites
@@ -25,40 +25,61 @@ maki --version
 ```bash
 git clone https://github.com/octofhir/maki.git
 cd maki
+cargo build --release --bin maki
+# Binary will be at: target/release/maki
+```
+
+Or install directly:
+
+```bash
 cargo install --path crates/maki-cli
 ```
 
 ## Download Pre-built Binaries
 
 Download the latest release for your platform from:
-https://github.com/octofhir/maki/releases
+[GitHub Releases](https://github.com/octofhir/maki/releases)
 
 ### macOS
 
 ```bash
-curl -L https://github.com/octofhir/maki/releases/latest/download/maki-macos.tar.gz | tar xz
+# Apple Silicon (M1/M2/M3)
+curl -L https://github.com/octofhir/maki/releases/latest/download/maki-macos-arm64 -o maki
+chmod +x maki
+sudo mv maki /usr/local/bin/
+
+# Intel
+curl -L https://github.com/octofhir/maki/releases/latest/download/maki-macos-x64 -o maki
+chmod +x maki
 sudo mv maki /usr/local/bin/
 ```
 
 ### Linux
 
 ```bash
-curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux.tar.gz | tar xz
+curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o maki
+chmod +x maki
 sudo mv maki /usr/local/bin/
 ```
 
 ### Windows
 
-Download `maki-windows.zip` from releases and add to PATH.
+Download `maki-windows-x64.exe` or `maki-windows-arm64.exe` from the releases page and add to PATH.
 
 ## Verify Installation
 
 ```bash
 maki --version
-# Should output: maki 0.1.0
+```
+
+Test with a simple command:
+
+```bash
+maki --help
 ```
 
 ## Next Steps
 
-- [Quick Start Guide](/getting-started/quick-start/)
-- [Configuration](/configuration/config-file/)
+- [Quick Start Guide](/maki/getting-started/quick-start/)
+- [CLI Commands Reference](/maki/cli/commands/)
+- [Configuration](/maki/configuration/config-file/)

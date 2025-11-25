@@ -1,13 +1,48 @@
 ---
 title: CI/CD Integration
-description: Integrate FSH Lint with your CI/CD pipeline
+description: Integrate MAKI with your CI/CD pipeline
 ---
 
-Integrate FSH Lint into your continuous integration and deployment workflows.
+Integrate MAKI into your continuous integration and deployment workflows.
 
 ## GitHub Actions
 
-### Basic Workflow
+### Complete Build Workflow
+
+```yaml
+name: Build FHIR IG
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download MAKI
+        run: |
+          curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o maki
+          chmod +x maki
+          sudo mv maki /usr/local/bin/
+
+      - name: Check formatting
+        run: maki fmt --check input/fsh/
+
+      - name: Lint FSH files
+        run: maki lint input/fsh/
+
+      - name: Build IG
+        run: maki build --progress
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fsh-generated
+          path: fsh-generated/
+```
+
+### Basic Lint Workflow
 
 ```yaml
 name: Lint FSH Files
@@ -20,42 +55,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install FSH Lint
-        run: cargo install maki
+      - name: Download MAKI
+        run: |
+          curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o maki
+          chmod +x maki
+          sudo mv maki /usr/local/bin/
 
       - name: Check formatting
-        run: maki format --check **/*.fsh
+        run: maki fmt --check input/fsh/
 
       - name: Lint FSH files
-        run: maki lint **/*.fsh
+        run: maki lint input/fsh/
 ```
 
-### Format Check Only
+### Strict Build (CI Mode)
 
-Check formatting without linting (useful for separate jobs):
+Build with strict mode - treat warnings as errors:
 
 ```yaml
-name: Format Check
+name: Strict Build
 
 on: [push, pull_request]
 
 jobs:
-  format:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Download MAKI
+        run: |
+          curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o maki
+          chmod +x maki
+          sudo mv maki /usr/local/bin/
 
-      - name: Install FSH Lint
-        run: cargo install maki
-
-      - name: Check formatting
-        run: maki format --check **/*.fsh
+      - name: Build with strict mode
+        run: maki build --lint --strict --progress
 ```
 
 ### Auto-format and Auto-fix
@@ -73,26 +108,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/maki
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-maki
-
-      - name: Install FSH Lint
-        run: cargo install maki || true
+      - name: Download MAKI
+        run: |
+          curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o maki
+          chmod +x maki
+          sudo mv maki /usr/local/bin/
 
       - name: Format FSH files
-        run: maki format **/*.fsh
+        run: maki fmt --write input/fsh/
 
       - name: Lint with fixes
-        run: maki lint --fix **/*.fsh
+        run: maki lint --write input/fsh/
 
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v5
@@ -100,67 +126,41 @@ jobs:
           commit_message: "style: auto-format and fix FSH issues"
 ```
 
-### Matrix Testing
-
-```yaml
-name: Lint FSH Files
-
-on: [push, pull_request]
-
-jobs:
-  lint:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install maki
-      - run: maki lint **/*.fsh
-```
-
 ## GitLab CI
 
 ### Basic Pipeline
 
 ```yaml
-lint:
-  image: rust:latest
+build:
+  image: ubuntu:latest
   before_script:
-    - cargo install maki
+    - apt-get update && apt-get install -y curl
+    - curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o /usr/local/bin/maki
+    - chmod +x /usr/local/bin/maki
   script:
-    - maki lint **/*.fsh
+    - maki lint input/fsh/
+    - maki build --progress
   only:
     - merge_requests
     - main
 ```
 
-### With Caching
+### With Artifacts
 
 ```yaml
-lint:
-  image: rust:latest
-  cache:
-    paths:
-      - .cargo/
+build:
+  image: ubuntu:latest
   before_script:
-    - export CARGO_HOME="$(pwd)/.cargo"
-    - cargo install maki
+    - apt-get update && apt-get install -y curl
+    - curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o /usr/local/bin/maki
+    - chmod +x /usr/local/bin/maki
   script:
-    - maki lint **/*.fsh
-```
-
-### Artifacts
-
-```yaml
-lint:
-  image: rust:latest
-  script:
-    - maki lint --format json **/*.fsh > lint-report.json
+    - maki lint --format json input/fsh/ > lint-report.json || true
+    - maki build --progress
   artifacts:
-    reports:
-      codequality: lint-report.json
+    paths:
+      - fsh-generated/
+      - lint-report.json
     when: always
 ```
 
@@ -171,59 +171,37 @@ lint:
 ```groovy
 pipeline {
     agent any
-    
+
     stages {
         stage('Setup') {
             steps {
-                sh 'cargo install maki'
+                sh '''
+                    curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o maki
+                    chmod +x maki
+                    mv maki /usr/local/bin/
+                '''
             }
         }
-        
+
         stage('Lint') {
             steps {
-                sh 'maki lint **/*.fsh'
+                sh 'maki lint input/fsh/'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'maki build --progress'
             }
         }
     }
-    
+
     post {
         always {
-            junit 'lint-report.xml'
+            archiveArtifacts artifacts: 'fsh-generated/**/*', allowEmptyArchive: true
         }
     }
 }
-```
-
-## CircleCI
-
-```yaml
-version: 2.1
-
-jobs:
-  lint:
-    docker:
-      - image: cimg/rust:1.80
-    steps:
-      - checkout
-      - restore_cache:
-          keys:
-            - cargo-cache-{{ checksum "Cargo.lock" }}
-      - run:
-          name: Install FSH Lint
-          command: cargo install maki
-      - save_cache:
-          paths:
-            - ~/.cargo
-          key: cargo-cache-{{ checksum "Cargo.lock" }}
-      - run:
-          name: Lint FSH files
-          command: maki lint **/*.fsh
-
-workflows:
-  version: 2
-  lint:
-    jobs:
-      - lint
 ```
 
 ## Azure Pipelines
@@ -236,22 +214,29 @@ pool:
   vmImage: 'ubuntu-latest'
 
 steps:
-- task: RustInstaller@1
-  inputs:
-    rustVersion: 'stable'
+- script: |
+    curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o maki
+    chmod +x maki
+    sudo mv maki /usr/local/bin/
+  displayName: 'Install MAKI'
 
-- script: cargo install maki
-  displayName: 'Install FSH Lint'
-
-- script: maki lint **/*.fsh
+- script: maki lint input/fsh/
   displayName: 'Lint FSH files'
+
+- script: maki build --progress
+  displayName: 'Build IG'
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathtoPublish: 'fsh-generated'
+    artifactName: 'fsh-generated'
 ```
 
 ## Pre-commit Hook
 
 ### Format and Lint
 
-Install FSH Lint as a pre-commit hook to format and lint before commits:
+Install MAKI as a pre-commit hook to format and lint before commits:
 
 ```.pre-commit-config.yaml
 repos:
@@ -259,30 +244,14 @@ repos:
     hooks:
       - id: maki-format
         name: FSH Format
-        entry: maki format
+        entry: maki fmt
         language: system
         files: \.fsh$
       - id: maki-lint
         name: FSH Lint
-        entry: maki lint --fix
+        entry: maki lint --write
         language: system
         files: \.fsh$
-```
-
-### Format Check Only
-
-Or just check formatting without modifying files:
-
-```.pre-commit-config.yaml
-repos:
-  - repo: local
-    hooks:
-      - id: maki-format-check
-        name: FSH Format Check
-        entry: maki format --check
-        language: system
-        files: \.fsh$
-        pass_filenames: true
 ```
 
 ### Git Hook Script
@@ -294,17 +263,17 @@ Alternatively, use a custom git hook (`.git/hooks/pre-commit`):
 
 # Format FSH files
 echo "Formatting FSH files..."
-maki format **/*.fsh
+maki fmt input/fsh/
 
 # Check if formatting changed files
 if ! git diff --quiet; then
   echo "Files were formatted. Please review changes and commit again."
-  git add **/*.fsh
+  git add input/fsh/*.fsh
 fi
 
 # Lint FSH files
 echo "Linting FSH files..."
-maki lint --fix **/*.fsh
+maki lint input/fsh/
 
 if [ $? -ne 0 ]; then
   echo "Linting failed. Please fix errors before committing."
@@ -320,56 +289,69 @@ chmod +x .git/hooks/pre-commit
 
 ## Best Practices
 
-1. **Check Formatting First** - Run `maki format --check` before linting to catch style issues
-2. **Cache Dependencies** - Cache Cargo registry for faster builds
-3. **Auto-format and Auto-fix** - Apply formatting and safe fixes automatically in CI
-4. **Fail on Errors** - Treat errors as build failures
-5. **Report Artifacts** - Save lint reports as artifacts
-6. **Separate Jobs** - Use separate jobs for formatting and linting for parallel execution
-7. **Matrix Testing** - Test on multiple OS if needed
+1. **Use Pre-built Binaries** - Download binary releases for faster CI setup
+2. **Check Formatting First** - Run `maki fmt --check` before linting
+3. **Build with Quality Checks** - Use `maki build --lint --format` for integrated workflow
+4. **Strict Mode for CI** - Use `--strict` to treat warnings as errors
+5. **Save Artifacts** - Archive `fsh-generated/` for downstream use
+6. **Fail Fast** - Separate format check → lint → build for quick feedback
 
 ### Recommended Workflow
 
 For best results, structure your workflow like this:
 
-1. Format check (fast, catches style issues)
-2. Linting (catches logical errors)
-3. Auto-fix and commit (optional, for automation)
-
 ```yaml
 jobs:
-  format:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check formatting
-        run: maki format --check **/*.fsh
 
-  lint:
-    runs-on: ubuntu-latest
-    needs: format
-    steps:
-      - uses: actions/checkout@v4
-      - name: Lint FSH files
-        run: maki lint **/*.fsh
+      - name: Install MAKI
+        run: |
+          curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o maki
+          chmod +x maki
+          sudo mv maki /usr/local/bin/
+
+      - name: Format Check
+        run: maki fmt --check input/fsh/
+
+      - name: Lint
+        run: maki lint input/fsh/
+
+      - name: Build
+        run: maki build --progress
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fsh-generated
+          path: fsh-generated/
 ```
 
 ## Troubleshooting
 
-### Slow Installation
+### Binary Download Issues
 
-Use binary releases instead of building from source:
+If the binary download fails, try with specific version:
 
 ```bash
-curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux.tar.gz | tar xz
-sudo mv maki /usr/local/bin/
+VERSION=0.0.3
+curl -L https://github.com/octofhir/maki/releases/download/v${VERSION}/maki-linux-x64 -o maki
 ```
 
-### Memory Issues
+### Permission Denied
 
-Limit parallel execution:
+Ensure the binary is executable:
 
 ```bash
-export CARGO_BUILD_JOBS=2
-cargo install maki
+chmod +x maki
+```
+
+### Build Timeouts
+
+For large IGs, increase the timeout or use `--skip-deps` if packages are pre-installed:
+
+```bash
+maki build --progress --skip-deps
 ```

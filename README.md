@@ -16,6 +16,8 @@ Part of the [OctoFHIR](https://github.com/octofhir) ecosystem.
 ## Features
 
 ### Current Features
+- **SUSHI-Compatible Build**: Compile FSH to FHIR resources (drop-in replacement for SUSHI)
+- **GoFSH**: Convert FHIR resources (JSON/XML) back to FSH
 - **Fast Linting**: Built in Rust for maximum performance
 - **Comprehensive Validation**: Built-in rules for FSH syntax and semantics
 - **Smart Diagnostics**: Rich error messages with code frames
@@ -24,12 +26,11 @@ Part of the [OctoFHIR](https://github.com/octofhir) ecosystem.
 - **Flexible Configuration**: JSON/TOML configuration files
 - **Multiple Output Formats**: Human-readable, JSON, SARIF, GitHub Actions
 - **Formatter**: Consistent code formatting for FSH files
+- **Project Scaffolding**: Initialize new FSH projects with `maki init`
 
 ### Future Features (Planned)
-- **SUSHI-Compatible Build**: Compile FSH to FHIR resources
 - **LSP Server**: IDE support for FSH development
 - **Test Framework**: Testing capabilities for FSH resources
-- **Project Scaffolding**: Initialize new FSH projects
 
 ## Quick Start
 
@@ -104,6 +105,55 @@ maki lint --format json input/
 
 # Output as SARIF (for CI integration)
 maki lint --format sarif input/
+```
+
+### Build FSH to FHIR (SUSHI-compatible)
+
+```bash
+# Build current directory
+maki build
+
+# Build with progress bar
+maki build --progress
+
+# Run linter before building
+maki build --lint
+
+# Format FSH files before building
+maki build --format
+
+# Clean output directory and rebuild
+maki build --clean
+
+# Strict mode (treat warnings as errors)
+maki build --lint --strict
+
+# Specify output directory
+maki build --output ./my-output
+```
+
+### Convert FHIR to FSH (GoFSH)
+
+```bash
+# Convert FHIR resources in current directory
+maki gofsh ./fsh-generated
+
+# Specify output directory
+maki gofsh ./fsh-generated -o ./input/fsh
+
+# With FHIR dependencies
+maki gofsh ./resources -d hl7.fhir.us.core@5.0.1
+
+# Specify FHIR version
+maki gofsh ./resources --fhir-version R5
+
+# With progress reporting
+maki gofsh ./resources --progress
+
+# Organization strategies
+maki gofsh ./resources --strategy type    # Group by FSH type
+maki gofsh ./resources --strategy profile # Group by profile
+maki gofsh ./resources --strategy single  # All in one file
 ```
 
 ### List Available Rules
@@ -279,8 +329,13 @@ This is a Rust workspace with the following crates:
   - Diagnostic system
   - Autofix engine
   - Formatter
-  - FHIR exporters (stub for future implementation)
+  - FHIR exporters (Profiles, Extensions, ValueSets, CodeSystems, Instances)
   - Canonical package management
+
+- **`maki-decompiler`** - FHIR to FSH decompiler (GoFSH functionality):
+  - Resource processors (StructureDefinitions, ValueSets, CodeSystems, Instances)
+  - FSH rule extraction and optimization
+  - Multiple file organization strategies
 
 - **`maki-rules`** - Rule engine and built-in rules:
   - GritQL-based pattern matching
@@ -289,11 +344,13 @@ This is a Rust workspace with the following crates:
   - Rule registry and management
 
 - **`maki-cli`** - Command-line interface (binary: `maki`):
+  - Build command (SUSHI-compatible FSH to FHIR compilation)
+  - GoFSH command (FHIR to FSH conversion)
   - Lint command
   - Format command
+  - Init command (project scaffolding)
   - Rules management
   - Configuration management
-  - Stubs for future commands (build, init, test, lsp)
 
 ### Future Crates (Stubs)
 
