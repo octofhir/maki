@@ -436,6 +436,56 @@ impl CompiledGritQLPattern {
                 Ok((false, bindings.clone()))
             }
 
+            // Variable pattern: $name - matches any node and binds it
+            Pattern::Variable(var) => {
+                use grit_util::AstNode;
+                let mut new_bindings = bindings.clone();
+
+                // Get the node text to bind to the variable
+                let text = node.text().map_err(|e| {
+                    MakiError::rule_error(&self.rule_id, format!("Failed to get node text: {e:?}"))
+                })?;
+
+                // Extract variable index from Debug output since Variable's fields aren't public
+                // Format: Variable { index: N, scope: M }
+                let debug_str = format!("{:?}", var);
+                let var_name = if let Some(index_start) = debug_str.find("index: ") {
+                    let after_index = &debug_str[index_start + 7..];
+                    if let Some(index_end) = after_index.find(|c: char| !c.is_numeric()) {
+                        let index_str = &after_index[..index_end];
+                        if let Ok(index) = index_str.parse::<usize>() {
+                            // Look up variable name from our index map
+                            self.variable_indices
+                                .iter()
+                                .find(|(_, idx)| **idx == index)
+                                .map(|(name, _)| name.clone())
+                                .unwrap_or_else(|| format!("var_{}", index))
+                        } else {
+                            "var_unknown".to_string()
+                        }
+                    } else {
+                        "var_unknown".to_string()
+                    }
+                } else {
+                    "var_unknown".to_string()
+                };
+
+                tracing::debug!(
+                    "Variable pattern '{}' matched, binding to text '{}'",
+                    var_name,
+                    text.chars().take(50).collect::<String>()
+                );
+                new_bindings.insert(var_name, text.to_string());
+
+                // Variables always match any node
+                Ok((true, new_bindings))
+            }
+
+            // Underscore pattern: _ - matches any node without binding
+            Pattern::Underscore => {
+                Ok((true, bindings.clone()))
+            }
+
             // Assignment pattern: Profile: $name
             // Extract the field value and bind it to the variable
             Pattern::Assignment(assignment) => {
@@ -502,28 +552,57 @@ impl CompiledGritQLPattern {
                 // Check if we're matching a variable's value from bindings
                 // or the current node's text (implicit context)
                 let text = {
-                    // Try to extract variable name from Debug output
-                    // Format: Match { container: Variable(Variable { ... }), pattern: ... }
+                    // Try to extract variable info from Debug output
+                    // Format: Match { container: Variable(Variable { index: N, scope: M }), pattern: ... }
                     let debug_str = format!("{:?}", match_pred);
 
                     // Check if this is matching against a variable
                     if debug_str.contains("container: Variable") {
                         // Extract variable index from Debug output
-                        // TODO: This is a workaround - ideally we'd have direct access to container
-                        // For now, we'll check if we have a variable binding
-                        // The variable name should match what we extract in Assignment pattern
-
-                        // Try to find a binding - for now just use the first one if it exists
-                        // This is a simplification that works for simple cases
-                        if let Some((var_name, value)) = bindings.iter().next() {
-                            tracing::debug!(
-                                "Using variable '{}' value '{}' for match",
-                                var_name,
-                                value
-                            );
-                            std::borrow::Cow::Borrowed(value.as_str())
+                        // Look for "index: N" pattern
+                        let var_name = if let Some(index_start) = debug_str.find("index: ") {
+                            let after_index = &debug_str[index_start + 7..];
+                            if let Some(index_end) = after_index.find(|c: char| !c.is_numeric()) {
+                                let index_str = &after_index[..index_end];
+                                if let Ok(index) = index_str.parse::<usize>() {
+                                    // Look up variable name from our index map
+                                    self.variable_indices
+                                        .iter()
+                                        .find(|(_, idx)| **idx == index)
+                                        .map(|(name, _)| name.clone())
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
                         } else {
-                            // No binding yet, use node text
+                            None
+                        };
+
+                        // Try to get the variable value from bindings
+                        if let Some(name) = &var_name {
+                            if let Some(value) = bindings.get(name) {
+                                tracing::debug!(
+                                    "Using variable '{}' value '{}' for match",
+                                    name,
+                                    value
+                                );
+                                std::borrow::Cow::Owned(value.clone())
+                            } else {
+                                tracing::debug!(
+                                    "Variable '{}' not bound, using node text",
+                                    name
+                                );
+                                node.text().map_err(|e| {
+                                    MakiError::rule_error(
+                                        &self.rule_id,
+                                        format!("Failed to get node text: {e:?}"),
+                                    )
+                                })?
+                            }
+                        } else {
+                            // Couldn't determine variable name, use node text
                             node.text().map_err(|e| {
                                 MakiError::rule_error(
                                     &self.rule_id,

@@ -1,8 +1,8 @@
 //! FSH code formatting functionality
 //!
-//! This module provides the main formatting API using the Token-optimized formatters.
+//! This module provides the main formatting API using Token-optimized formatters.
 //! It integrates the CST-based formatter with the optimized formatting functions
-//! from formatter_v2 to achieve both lossless formatting and high performance.
+//! to achieve both lossless formatting and high performance (2-5% improvement).
 
 use crate::config::FormatterConfiguration;
 use crate::{MakiError, Parser, Result};

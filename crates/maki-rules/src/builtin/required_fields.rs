@@ -8,6 +8,7 @@
 //! - Context: Required for Extensions (defines where they can be used)
 
 use maki_core::cst::ast::{AstNode, Document};
+use maki_core::diagnostics::Location;
 use maki_core::{CodeSuggestion, Diagnostic, SemanticModel, Severity};
 
 /// Rule IDs for required field validation
@@ -69,6 +70,30 @@ fn name_to_title_case(name: &str) -> String {
     result
 }
 
+/// Create an insertion location at the end of the first line of a resource
+/// This is used for safe fixes that add new fields after the resource declaration line
+fn get_insertion_location_after_first_line(location: &Location, model: &SemanticModel) -> Location {
+    let first_line_text = model
+        .source
+        .lines()
+        .nth(location.line.saturating_sub(1))
+        .unwrap_or("");
+
+    Location {
+        file: location.file.clone(),
+        line: location.line,
+        column: first_line_text.chars().count() + 1,
+        end_line: Some(location.line),
+        end_column: Some(first_line_text.chars().count() + 1),
+        offset: location.offset + first_line_text.len(),
+        length: 0,
+        span: Some((
+            location.offset + first_line_text.len(),
+            location.offset + first_line_text.len(),
+        )),
+    }
+}
+
 /// Check required fields
 pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -113,7 +138,7 @@ pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
                     .with_suggestion(CodeSuggestion::safe(
                         format!("Add Id: {}", generated_id),
                         format!("\nId: {}", generated_id),
-                        location.clone(),
+                        get_insertion_location_after_first_line(&location, model),
                     )),
                 );
             }
@@ -132,7 +157,7 @@ pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
                     .with_suggestion(CodeSuggestion::safe(
                         format!("Add Title: \"{}\"", generated_title),
                         format!("\nTitle: \"{}\"", generated_title),
-                        location.clone(),
+                        get_insertion_location_after_first_line(&location, model),
                     )),
                 );
             }
@@ -144,17 +169,13 @@ pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
                         MISSING_DESCRIPTION,
                         Severity::Warning,
                         format!("Profile '{name}' should have a Description"),
-                        location,
+                        location.clone(),
                     )
                     .with_code("profile-missing-description".to_string())
                     .with_suggestion(CodeSuggestion::safe(
                         "Add placeholder Description".to_string(),
                         format!("\nDescription: \"TODO: Add description for {}\"", name),
-                        model.source_map.node_to_diagnostic_location(
-                            profile.syntax(),
-                            &model.source,
-                            &model.source_file,
-                        ),
+                        get_insertion_location_after_first_line(&location, model),
                     )),
                 );
             }
@@ -184,7 +205,7 @@ pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
                     .with_suggestion(CodeSuggestion::safe(
                         format!("Add Id: {}", generated_id),
                         format!("\nId: {}", generated_id),
-                        location.clone(),
+                        get_insertion_location_after_first_line(&location, model),
                     )),
                 );
             }
@@ -203,7 +224,7 @@ pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
                     .with_suggestion(CodeSuggestion::safe(
                         format!("Add Title: \"{}\"", generated_title),
                         format!("\nTitle: \"{}\"", generated_title),
-                        location.clone(),
+                        get_insertion_location_after_first_line(&location, model),
                     )),
                 );
             }
@@ -215,17 +236,13 @@ pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
                         MISSING_DESCRIPTION,
                         Severity::Warning,
                         format!("Extension '{name}' should have a Description"),
-                        location,
+                        location.clone(),
                     )
                     .with_code("extension-missing-description".to_string())
                     .with_suggestion(CodeSuggestion::safe(
                         "Add placeholder Description".to_string(),
                         format!("\nDescription: \"TODO: Add description for {}\"", name),
-                        model.source_map.node_to_diagnostic_location(
-                            extension.syntax(),
-                            &model.source,
-                            &model.source_file,
-                        ),
+                        get_insertion_location_after_first_line(&location, model),
                     )),
                 );
             }
@@ -255,7 +272,7 @@ pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
                     .with_suggestion(CodeSuggestion::safe(
                         format!("Add Id: {}", generated_id),
                         format!("\nId: {}", generated_id),
-                        location.clone(),
+                        get_insertion_location_after_first_line(&location, model),
                     )),
                 );
             }
@@ -274,7 +291,7 @@ pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
                     .with_suggestion(CodeSuggestion::safe(
                         format!("Add Title: \"{}\"", generated_title),
                         format!("\nTitle: \"{}\"", generated_title),
-                        location.clone(),
+                        get_insertion_location_after_first_line(&location, model),
                     )),
                 );
             }
@@ -286,17 +303,13 @@ pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
                         MISSING_DESCRIPTION,
                         Severity::Warning,
                         format!("ValueSet '{name}' should have a Description"),
-                        location,
+                        location.clone(),
                     )
                     .with_code("valueset-missing-description".to_string())
                     .with_suggestion(CodeSuggestion::safe(
                         "Add placeholder Description".to_string(),
                         format!("\nDescription: \"TODO: Add description for {}\"", name),
-                        model.source_map.node_to_diagnostic_location(
-                            value_set.syntax(),
-                            &model.source,
-                            &model.source_file,
-                        ),
+                        get_insertion_location_after_first_line(&location, model),
                     )),
                 );
             }
@@ -326,7 +339,7 @@ pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
                     .with_suggestion(CodeSuggestion::safe(
                         format!("Add Id: {}", generated_id),
                         format!("\nId: {}", generated_id),
-                        location.clone(),
+                        get_insertion_location_after_first_line(&location, model),
                     )),
                 );
             }
@@ -345,7 +358,7 @@ pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
                     .with_suggestion(CodeSuggestion::safe(
                         format!("Add Title: \"{}\"", generated_title),
                         format!("\nTitle: \"{}\"", generated_title),
-                        location.clone(),
+                        get_insertion_location_after_first_line(&location, model),
                     )),
                 );
             }
@@ -357,17 +370,13 @@ pub fn check_required_fields(model: &SemanticModel) -> Vec<Diagnostic> {
                         MISSING_DESCRIPTION,
                         Severity::Warning,
                         format!("CodeSystem '{name}' should have a Description"),
-                        location,
+                        location.clone(),
                     )
                     .with_code("codesystem-missing-description".to_string())
                     .with_suggestion(CodeSuggestion::safe(
                         "Add placeholder Description".to_string(),
                         format!("\nDescription: \"TODO: Add description for {}\"", name),
-                        model.source_map.node_to_diagnostic_location(
-                            code_system.syntax(),
-                            &model.source,
-                            &model.source_file,
-                        ),
+                        get_insertion_location_after_first_line(&location, model),
                     )),
                 );
             }

@@ -53,6 +53,7 @@ impl FshTargetLanguage {
             "ONLY_RULE" => Some(FshSyntaxKind::OnlyRule),
             "CONTAINS_RULE" => Some(FshSyntaxKind::ContainsRule),
             "OBEYS_RULE" => Some(FshSyntaxKind::ObeysRule),
+            "CARET_VALUE_RULE" | "CARET_RULE" => Some(FshSyntaxKind::CaretValueRule),
 
             // Literals
             "IDENT" => Some(FshSyntaxKind::Ident),
@@ -103,6 +104,7 @@ impl FshTargetLanguage {
             FshSyntaxKind::OnlyRule => "OnlyRule",
             FshSyntaxKind::ContainsRule => "ContainsRule",
             FshSyntaxKind::ObeysRule => "ObeysRule",
+            FshSyntaxKind::CaretValueRule => "CaretValueRule",
 
             // Literals
             FshSyntaxKind::Ident => "Ident",

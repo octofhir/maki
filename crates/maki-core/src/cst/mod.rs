@@ -60,7 +60,6 @@ mod syntax_kind;
 pub mod ast;
 pub mod format_element;
 pub mod formatter;
-pub mod formatter_v2;
 pub mod incremental;
 pub mod printer;
 pub mod round_trip;

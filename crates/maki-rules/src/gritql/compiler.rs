@@ -412,7 +412,8 @@ impl PatternCompiler {
             // Generic node types - map to closest equivalent
             "IDENTIFIER" | "STATUS_FIELD" | "FIELD" => Ok(FshSyntaxKind::Ident),
             "SLICING_RULE" | "SLICING" => Ok(FshSyntaxKind::PathRule), // closest match
-            "CARET_RULE" | "CARET_PATH" => Ok(FshSyntaxKind::CardRule),
+            "CARET_RULE" | "CARET_VALUE_RULE" | "CARET_PATH" => Ok(FshSyntaxKind::CaretValueRule),
+            "CARD_RULE" => Ok(FshSyntaxKind::CardRule),
             "ASSIGNMENT_RULE" => Ok(FshSyntaxKind::PathRule), // closest match
             "BINDING_RULE" => Ok(FshSyntaxKind::PathRule),    // closest match
             "CARDINALITY_RULE" | "CARDINALITY" => Ok(FshSyntaxKind::CardRule),

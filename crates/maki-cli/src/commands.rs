@@ -380,6 +380,12 @@ pub async fn lint_command(
     }
 
     // Apply fixes if requested
+    let mut fixed_diagnostic_ids: std::collections::HashSet<(std::path::PathBuf, usize, String)> =
+        std::collections::HashSet::new();
+
+    use std::io::IsTerminal;
+    let use_colors = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
+
     if write || dry_run {
         let autofix_engine = DefaultAutofixEngine::new();
 
@@ -387,6 +393,23 @@ pub async fn lint_command(
         let fixes = autofix_engine.generate_fixes(&all_diagnostics)?;
 
         if !fixes.is_empty() {
+            // Track which diagnostics will be fixed by finding diagnostics with safe suggestions
+            // We can't use fix.location because it's the insertion point, not the diagnostic location
+            for diagnostic in &all_diagnostics {
+                // Check if this diagnostic has a safe suggestion that would be applied
+                let has_safe_fix = diagnostic
+                    .suggestions
+                    .iter()
+                    .any(|s| s.applicability == maki_core::Applicability::Always);
+                if has_safe_fix {
+                    fixed_diagnostic_ids.insert((
+                        diagnostic.location.file.clone(),
+                        diagnostic.location.offset,
+                        diagnostic.rule_id.clone(),
+                    ));
+                }
+            }
+
             // Create fix configuration based on CLI flags
             let fix_config = FixConfig {
                 apply_unsafe: r#unsafe || interactive, // Interactive mode implies unsafe fixes are available
@@ -411,21 +434,75 @@ pub async fn lint_command(
                 }
             }
 
-            if progress {
+            // Show applied fixes
+            if summary.fixes_applied > 0 {
                 if dry_run {
-                    println!("Would apply {} fixes (dry run)", summary.fixes_applied);
+                    println!(
+                        "{}Would apply {} fix{}:{}\n",
+                        if use_colors { "\x1b[36m" } else { "" },
+                        summary.fixes_applied,
+                        if summary.fixes_applied == 1 { "" } else { "es" },
+                        if use_colors { "\x1b[0m" } else { "" }
+                    );
                 } else {
-                    println!("Applied {} fixes", summary.fixes_applied);
+                    println!(
+                        "{}Applied {} fix{}:{}\n",
+                        if use_colors { "\x1b[32m" } else { "" },
+                        summary.fixes_applied,
+                        if summary.fixes_applied == 1 { "" } else { "es" },
+                        if use_colors { "\x1b[0m" } else { "" }
+                    );
                 }
+
+                // Show details of applied fixes
+                for fix in &fixes {
+                    println!(
+                        "  {} {} in {}",
+                        if use_colors { "\x1b[32m✓\x1b[0m" } else { "✓" },
+                        fix.description,
+                        fix.location.file.display()
+                    );
+                }
+                println!();
             }
         }
     }
 
-    // Format and print results
-    use std::io::IsTerminal;
-    let use_colors = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
+    // Filter out diagnostics that were fixed (only when --write was used, not dry-run)
+    let remaining_diagnostics: Vec<_> = if write && !dry_run && !fixed_diagnostic_ids.is_empty() {
+        all_diagnostics
+            .into_iter()
+            .filter(|d| {
+                !fixed_diagnostic_ids.contains(&(
+                    d.location.file.clone(),
+                    d.location.offset,
+                    d.rule_id.clone(),
+                ))
+            })
+            .collect()
+    } else {
+        all_diagnostics
+    };
+
+    // Recalculate summary based on remaining diagnostics
+    if write && !dry_run && !fixed_diagnostic_ids.is_empty() {
+        summary.errors = 0;
+        summary.warnings = 0;
+        summary.info = 0;
+        summary.hints = 0;
+        for d in &remaining_diagnostics {
+            match d.severity {
+                maki_core::Severity::Error => summary.errors += 1,
+                maki_core::Severity::Warning => summary.warnings += 1,
+                maki_core::Severity::Info => summary.info += 1,
+                maki_core::Severity::Hint => summary.hints += 1,
+            }
+        }
+    }
+
+    // Format and print remaining results
     let formatter = OutputFormatter::new(format, use_colors);
-    formatter.print_results(&all_diagnostics, &summary, progress)?;
+    formatter.print_results(&remaining_diagnostics, &summary, progress)?;
 
     let duration = start_time.elapsed();
     if progress {

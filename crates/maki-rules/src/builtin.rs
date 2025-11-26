@@ -69,7 +69,8 @@ impl BuiltinRules {
     /// Get all built-in style rules
     pub fn style_rules() -> Vec<Rule> {
         vec![
-            Self::profile_naming_convention_rule(),
+            // Note: profile_naming_convention_rule() was removed as it's a buggy GritQL duplicate
+            // of the AST-based naming convention check in naming.rs
             Self::naming_convention_rule(),
         ]
     }
@@ -533,54 +534,6 @@ impl BuiltinRules {
                 version: Some("1.0.0".to_string()),
                 docs_url: Some(
                     "https://octofhir.github.io/maki/rules/correctness/missing-parent-profile"
-                        .to_string(),
-                ),
-            },
-            is_ast_rule: false,
-        }
-    }
-
-    /// Rule for enforcing profile naming conventions
-    fn profile_naming_convention_rule() -> Rule {
-        Rule {
-            id: "style/profile-naming-convention".to_string(),
-            severity: Severity::Warning,
-            description: "Enforces consistent naming conventions for profiles".to_string(),
-            gritql_pattern: r#"
-                profile_declaration where {
-                    $profile_name where {
-                        and {
-                            $profile_name <: r"Profile:\s*([a-zA-Z][a-zA-Z0-9_-]*)",
-                            or {
-                                not $profile_name <: r"^[A-Z]",
-                                $profile_name <: r"[a-z][A-Z]|_[a-z]",
-                                $profile_name <: r"[A-Z]{3,}",
-                                $profile_name <: r"\d+$"
-                            }
-                        }
-                    }
-                }
-            "#
-            .to_string(),
-            autofix: Some(AutofixTemplate {
-                description: "Convert to PascalCase naming convention".to_string(),
-                replacement_template: "$pascal_case_name".to_string(),
-                safety: FixSafety::Unsafe,
-            }),
-            metadata: RuleMetadata {
-                id: "style/profile-naming-convention".to_string(),
-                name: "Profile Naming Convention".to_string(),
-                description: "Enforces PascalCase naming convention for FHIR profiles".to_string(),
-                severity: Severity::Warning,
-                category: RuleCategory::Style,
-                tags: vec![
-                    "style".to_string(),
-                    "naming".to_string(),
-                    "profile".to_string(),
-                ],
-                version: Some("1.0.0".to_string()),
-                docs_url: Some(
-                    "https://octofhir.github.io/maki/rules/style/profile-naming-convention"
                         .to_string(),
                 ),
             },
