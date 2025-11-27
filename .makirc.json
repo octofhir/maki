@@ -1,13 +1,7 @@
 {
   "files": {
-    "exclude": [
-      "node_modules/**",
-      "target/**",
-      "build/**"
-    ],
-    "include": [
-      "**/*.fsh"
-    ]
+    "exclude": ["node_modules/**", "target/**", "build/**"],
+    "include": ["**/*.fsh"]
   },
   "formatter": {
     "alignCarets": true,
@@ -17,9 +11,19 @@
   },
   "linter": {
     "enabled": true,
-    "ruleDirectories": ["examples/gritql"],
-    "rules": {
-      "recommended": true
+    "ruleDirectories": [],
+    "rules": { "recommended": true }
+  },
+  "build": {
+    "canonical": "http://hl7.org/fhir/us/mcode",
+    "fhirVersion": "4.0.1",
+    "packageId": "hl7.fhir.us.mcode",
+    "version": "4.0.0",
+    "name": "MinimalCommonOncologyDataElements",
+    "status": "active",
+    "dependencies": {
+      "hl7.fhir.uv.genomics-reporting": "2.0.0",
+      "hl7.fhir.us.core": "6.1.0"
     }
   }
 }

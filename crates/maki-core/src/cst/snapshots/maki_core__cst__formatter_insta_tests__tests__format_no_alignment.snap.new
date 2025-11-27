@@ -1,0 +1,11 @@
+---
+source: crates/maki-core/src/cst/formatter_insta_tests.rs
+assertion_line: 102
+expression: formatted
+---
+Profile:Test
+Parent:Patient
+
+*identifier 1..* MS
+*name 1..1 MS
+*gender 1..1

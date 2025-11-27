@@ -50,6 +50,7 @@
 //! ```
 
 use super::ExportError;
+use super::fhir_types::{ElementDefinition, StructureDefinition};
 use crate::canonical::DefinitionSession;
 use crate::cst::ast::{FixedValueRule, Instance, Rule};
 use crate::semantic::FishingContext;
@@ -122,6 +123,12 @@ pub struct InstanceExporter {
     current_indices: HashMap<String, usize>,
     /// Registry of exported instances for reference resolution
     instance_registry: HashMap<String, JsonValue>,
+    /// Current profile name (InstanceOf) being exported
+    current_profile_name: Option<String>,
+    /// Current profile canonical URL (if resolved)
+    current_profile_url: Option<String>,
+    /// Cached map of extension slice names -> canonical URLs for current profile
+    current_extension_urls: HashMap<String, String>,
 }
 
 impl InstanceExporter {
@@ -158,6 +165,9 @@ impl InstanceExporter {
             base_url,
             current_indices: HashMap::new(),
             instance_registry: HashMap::new(),
+            current_profile_name: None,
+            current_profile_url: None,
+            current_extension_urls: HashMap::new(),
         })
     }
 
@@ -505,6 +515,29 @@ impl InstanceExporter {
 
         trace!("Instance {} is of type {}", name, instance_of);
 
+        // If InstanceOf references a base FHIR resource type, short-circuit resolution
+        // to avoid accidentally selecting similarly named profiles or extensions.
+        if self.is_base_resource_type(&instance_of) {
+            let mut resource = serde_json::json!({
+                "resourceType": instance_of,
+                "id": name,
+            });
+
+            for rule in instance.rules() {
+                self.apply_rule(&mut resource, &rule).await?;
+            }
+
+            self.current_profile_name = None;
+            self.current_profile_url = None;
+            self.current_extension_urls.clear();
+
+            debug!(
+                "Exported base resource instance {} with resourceType {}",
+                name, instance_of
+            );
+            return Ok(resource);
+        }
+
         // Resolve profile to get base resource type and canonical URL
         let (resource_type, canonical_url) = if let Some(fishing_ctx) = &self.fishing_context {
             // Try to get metadata from the tank first (profiles not yet exported)
@@ -524,12 +557,20 @@ impl InstanceExporter {
                 let base_type = self
                     .resolve_base_resource_type(fishing_ctx, &instance_of, &metadata)
                     .await;
-                let profile_url = metadata.url.clone();
+                let profile_url = match metadata.resource_type.as_str() {
+                    "StructureDefinition" => Some(format!(
+                        "{}/StructureDefinition/{}",
+                        self.base_url, metadata.id
+                    )),
+                    _ => Some(metadata.url.clone()),
+                };
                 debug!(
                     "Resolved profile '{}' from tank -> base type: '{}', canonical URL: '{}'",
-                    instance_of, base_type, profile_url
+                    instance_of,
+                    base_type,
+                    profile_url.as_deref().unwrap_or("<none>")
                 );
-                (base_type, Some(profile_url))
+                (base_type, profile_url)
             } else {
                 // Not in tank, try canonical packages (external FHIR definitions)
                 match fishing_ctx.fish_structure_definition(&instance_of).await {
@@ -570,6 +611,33 @@ impl InstanceExporter {
             (instance_of.to_string(), None)
         };
 
+        // Optionally load full StructureDefinition to refine resourceType/canonical and extract slices
+        let sd_opt = if let Some(fishing_ctx) = &self.fishing_context {
+            self.load_structure_definition(fishing_ctx, &instance_of, canonical_url.as_deref())
+                .await
+        } else {
+            None
+        };
+
+        let mut resource_type = resource_type;
+        let mut canonical_url = canonical_url;
+
+        if let Some(sd) = sd_opt.as_ref() {
+            if canonical_url.is_none() {
+                canonical_url = Some(sd.url.clone());
+            }
+            // Ensure resourceType matches the base type, not the profile name
+            resource_type = sd.type_field.clone();
+        }
+
+        // Cache profile context for this export (used by extension resolution)
+        self.current_profile_name = Some(instance_of.to_string());
+        self.current_profile_url = canonical_url.clone();
+        self.current_extension_urls = sd_opt
+            .as_ref()
+            .map(Self::build_extension_url_map)
+            .unwrap_or_default();
+
         // Create base resource with correct resourceType
         let mut resource = if let Some(profile_url) = canonical_url {
             // Include meta.profile with canonical URL
@@ -588,10 +656,33 @@ impl InstanceExporter {
             })
         };
 
+        // Debug: print base resource
+        if name.contains("genomic-variant-fusion") {
+            eprintln!(
+                "[DEBUG INSTANCE EXPORT] Base resource for {}: {}",
+                name,
+                serde_json::to_string_pretty(&resource).unwrap_or_default()
+            );
+        }
+
         // Apply rules
         for rule in instance.rules() {
             self.apply_rule(&mut resource, &rule).await?;
         }
+
+        // Debug: print final resource
+        if name.contains("genomic-variant-fusion") {
+            eprintln!(
+                "[DEBUG INSTANCE EXPORT] Final resource for {}: {}",
+                name,
+                serde_json::to_string_pretty(&resource).unwrap_or_default()
+            );
+        }
+
+        // Clear per-instance caches
+        self.current_profile_name = None;
+        self.current_profile_url = None;
+        self.current_extension_urls.clear();
 
         debug!("Successfully exported instance {}", name);
         Ok(resource)
@@ -728,6 +819,28 @@ impl InstanceExporter {
                         // It's a slice name - use index 0 and store the name
                         (ArrayIndex::Numeric(0), Some(index_str_trimmed.to_string()))
                     };
+
+                    // Handle consecutive brackets like [sliceName][0]
+                    // If the field is empty and the previous segment is an ArrayAccess,
+                    // this is a secondary index on the same slice
+                    if field.is_empty() {
+                        if let Some(PathSegment::ArrayAccess {
+                            field: prev_field,
+                            slice_name: prev_slice,
+                            ..
+                        }) = segments.last()
+                        {
+                            // Update the previous segment with the new index while keeping the slice name
+                            let updated_segment = PathSegment::ArrayAccess {
+                                field: prev_field.clone(),
+                                index: index.clone(),
+                                slice_name: prev_slice.clone(),
+                            };
+                            segments.pop();
+                            segments.push(updated_segment);
+                            continue;
+                        }
+                    }
 
                     segments.push(PathSegment::ArrayAccess {
                         field,
@@ -988,8 +1101,9 @@ impl InstanceExporter {
     /// This method attempts to resolve extension slice names in the following order:
     /// 1. If it's already a URL (contains "://"), use it as-is
     /// 2. If it's an alias, resolve to canonical URL via alias table
-    /// 3. Try to find extension definition in tank/canonical
-    /// 4. Fall back to using slice name as-is (for backwards compatibility)
+    /// 3. Check the current profile's slice map extracted from its StructureDefinition
+    /// 4. Try to find extension definition in tank/canonical
+    /// 5. Fall back to using slice name as-is (for backwards compatibility)
     async fn resolve_extension_url(&self, slice_name: &str) -> String {
         // If it's already a full URL, use as-is
         if slice_name.contains("://") {
@@ -1006,11 +1120,22 @@ impl InstanceExporter {
                 return canonical_url;
             }
 
-            // Try multiple naming patterns for the extension
+            // Try current profile slice map extracted from StructureDefinition
+            if let Some(url) = self.current_extension_urls.get(slice_name) {
+                debug!(
+                    "Resolved extension slice '{}' using profile slice map -> '{}'",
+                    slice_name, url
+                );
+                return url.clone();
+            }
+
+            // Try multiple naming patterns for the extension (id/name variations)
             let candidates = vec![
                 slice_name.to_string(),
                 format!("us-core-{}", slice_name),
                 format!("uscoreext-{}", slice_name),
+                Self::pascal_case(slice_name),
+                Self::kebab_case(slice_name),
             ];
 
             for candidate in &candidates {
@@ -1047,6 +1172,132 @@ impl InstanceExporter {
         // Fallback: use slice name as-is
         debug!("Could not resolve extension '{}', using as-is", slice_name);
         slice_name.to_string()
+    }
+
+    /// Build a map of extension slice names to canonical URLs from a StructureDefinition
+    ///
+    /// This inspects the differential first (preferred) and falls back to snapshot.
+    /// It looks for `extension:<slice>.url` elements with fixedUri/fixedCanonical values,
+    /// or extension slices with type.profile pointing at an extension definition.
+    fn build_extension_url_map(sd: &StructureDefinition) -> HashMap<String, String> {
+        let mut map = HashMap::new();
+        let elements = sd
+            .differential
+            .as_ref()
+            .map(|d| d.element.as_slice())
+            .or_else(|| sd.snapshot.as_ref().map(|s| s.element.as_slice()))
+            .unwrap_or(&[]);
+
+        for element in elements {
+            if let Some(slice_name) = Self::extract_slice_name(element) {
+                if element.path.ends_with(".url") {
+                    if let Some(url) = Self::extract_fixed_uri(element) {
+                        map.entry(slice_name.clone()).or_insert(url);
+                        continue;
+                    }
+                }
+
+                if let Some(url) = Self::extract_type_profile(element) {
+                    map.entry(slice_name.clone()).or_insert(url);
+                }
+            }
+        }
+
+        map
+    }
+
+    /// Extract slice name from an ElementDefinition using slice_name or path (extension:<slice>)
+    fn extract_slice_name(element: &ElementDefinition) -> Option<String> {
+        if let Some(name) = element.slice_name.clone() {
+            return Some(name);
+        }
+
+        element
+            .path
+            .split('.')
+            .find_map(|segment| segment.strip_prefix("extension:"))
+            .map(|s| s.to_string())
+    }
+
+    /// Extract fixed URI/Canonical from an ElementDefinition
+    fn extract_fixed_uri(element: &ElementDefinition) -> Option<String> {
+        element.fixed.as_ref().and_then(|fixed_map| {
+            fixed_map
+                .get("fixedUri")
+                .or_else(|| fixed_map.get("fixedCanonical"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+    }
+
+    /// Extract extension profile URL from ElementDefinition.type.profile
+    fn extract_type_profile(element: &ElementDefinition) -> Option<String> {
+        element.type_.as_ref().and_then(|types| {
+            types
+                .first()
+                .and_then(|t| t.profile.as_ref())
+                .and_then(|profiles| profiles.first())
+                .cloned()
+        })
+    }
+
+    /// Convert a string to PascalCase (simple heuristic)
+    fn pascal_case(input: &str) -> String {
+        input
+            .split(|c: char| c == '-' || c == '_' || c == ' ')
+            .filter(|part| !part.is_empty())
+            .map(|part| {
+                let mut chars = part.chars();
+                match chars.next() {
+                    Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                    None => String::new(),
+                }
+            })
+            .collect::<String>()
+    }
+
+    /// Convert a string to kebab-case (simple heuristic)
+    fn kebab_case(input: &str) -> String {
+        let mut result = String::new();
+        for (i, ch) in input.chars().enumerate() {
+            if ch.is_uppercase() {
+                if i > 0 {
+                    result.push('-');
+                }
+                result.push(ch.to_ascii_lowercase());
+            } else if ch == '_' || ch == ' ' {
+                result.push('-');
+            } else {
+                result.push(ch);
+            }
+        }
+        result
+    }
+
+    /// Load a StructureDefinition by URL or name using the fishing context
+    async fn load_structure_definition(
+        &self,
+        fishing_ctx: &Arc<FishingContext>,
+        instance_of: &str,
+        canonical_url: Option<&str>,
+    ) -> Option<StructureDefinition> {
+        if let Some(url) = canonical_url {
+            if let Ok(Some(sd)) = fishing_ctx.fish_structure_definition(url).await {
+                return Some(sd);
+            }
+        }
+
+        if let Ok(Some(sd)) = fishing_ctx.fish_structure_definition(instance_of).await {
+            return Some(sd);
+        }
+
+        let kebab = Self::kebab_case(instance_of);
+        let url_candidate = format!("{}/StructureDefinition/{}", self.base_url, kebab);
+        if let Ok(Some(sd)) = fishing_ctx.fish_structure_definition(&url_candidate).await {
+            return Some(sd);
+        }
+
+        None
     }
 
     /// Merge two JSON objects, combining their properties
@@ -1485,6 +1736,9 @@ mod tests {
             base_url: "http://example.org/fhir".to_string(),
             current_indices: HashMap::new(),
             instance_registry: HashMap::new(),
+            current_profile_name: None,
+            current_profile_url: None,
+            current_extension_urls: HashMap::new(),
         }
     }
 

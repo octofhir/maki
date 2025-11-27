@@ -23,6 +23,15 @@ pub struct ImplementationGuideGenerator {
 }
 
 impl ImplementationGuideGenerator {
+    /// Effective IG id: prefer explicit id, then packageId, else fallback "ig"
+    fn effective_id(&self) -> String {
+        self.config
+            .id
+            .clone()
+            .or_else(|| self.config.package_id().map(|p| p.to_string()))
+            .unwrap_or_else(|| "ig".to_string())
+    }
+
     /// Create a new IG generator from configuration
     pub fn new(config: SushiConfiguration) -> Self {
         Self { config }
@@ -33,9 +42,11 @@ impl ImplementationGuideGenerator {
     /// Creates a complete IG resource with all metadata, resources,
     /// dependencies, and structure from the configuration.
     pub fn generate(&self) -> ImplementationGuide {
+        let id = self.effective_id();
+
         let mut ig = ImplementationGuide {
             resource_type: "ImplementationGuide".to_string(),
-            id: self.config.id.clone(),
+            id: Some(id.clone()),
             meta: self.config.meta.clone(),
             implicit_rules: self.config.implicit_rules.clone(),
             language: self.config.language.clone(),
@@ -43,7 +54,7 @@ impl ImplementationGuideGenerator {
             contained: self.config.contained.clone(),
             extension: self.config.extension.clone(),
             modifier_extension: self.config.modifier_extension.clone(),
-            url: self.get_ig_url(),
+            url: self.get_ig_url(&id),
             version: self.config.version.clone(),
             name: self.sanitize_name(),
             title: self.config.title.clone(),
@@ -89,11 +100,11 @@ impl ImplementationGuideGenerator {
     }
 
     /// Get the IG URL (either from config.url or constructed from canonical)
-    fn get_ig_url(&self) -> String {
-        self.config.url.clone().unwrap_or_else(|| {
-            let id = self.config.id.as_deref().unwrap_or("unknown");
-            format!("{}/ImplementationGuide/{}", self.config.canonical, id)
-        })
+    fn get_ig_url(&self, id: &str) -> String {
+        self.config
+            .url
+            .clone()
+            .unwrap_or_else(|| format!("{}/ImplementationGuide/{}", self.config.canonical, id))
     }
 
     /// Sanitize the name to be alphanumeric with underscores

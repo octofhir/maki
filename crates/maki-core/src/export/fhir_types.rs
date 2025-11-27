@@ -202,6 +202,10 @@ pub struct ElementDefinition {
     /// Path of the element in the hierarchy of elements
     pub path: String,
 
+    /// Name for this particular element (in a set of slices)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slice_name: Option<String>,
+
     /// Minimum Cardinality
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min: Option<u32>,
@@ -266,6 +270,7 @@ impl ElementDefinition {
         Self {
             id: None,
             path,
+            slice_name: None,
             min: None,
             max: None,
             type_: None,
@@ -285,7 +290,8 @@ impl ElementDefinition {
 
     /// Check if this element has been modified from defaults
     pub fn has_modifications(&self) -> bool {
-        self.min.is_some()
+        self.slice_name.is_some()
+            || self.min.is_some()
             || self.max.is_some()
             || self.type_.is_some()
             || self.short.is_some()
@@ -528,6 +534,10 @@ pub struct ValueSetResource {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 
+    /// Additional content defined by implementations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension: Option<Vec<serde_json::Value>>,
+
     /// Canonical identifier for this value set
     pub url: String,
 
@@ -544,6 +554,10 @@ pub struct ValueSetResource {
 
     /// draft | active | retired | unknown
     pub status: String,
+
+    /// For testing or publication: note that this is not intended for use in production
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub experimental: Option<bool>,
 
     /// Date last changed
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -592,11 +606,13 @@ impl ValueSetResource {
         Self {
             resource_type: "ValueSet".to_string(),
             id: None,
+            extension: None,
             url: url.into(),
             version: None,
             name: name.into(),
             title: None,
             status: status.into(),
+            experimental: None,
             date: None,
             publisher: None,
             description: None,

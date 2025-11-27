@@ -61,6 +61,7 @@ use crate::cst::ast::{
     AstNode, Document, FixedValueRule, PathRule, Rule, ValueSet, VsComponent, VsConceptComponent,
     VsFilterComponent,
 };
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
@@ -228,11 +229,19 @@ impl ValueSetExporter {
 
         debug!("Exporting ValueSet: {}", name);
 
-        // Generate canonical URL
-        let url = format!("{}/ValueSet/{}", self.base_url, name);
+        // Determine canonical id from Id clause when present, otherwise fall back to the FSH name
+        let canonical_id = valueset
+            .id()
+            .and_then(|id_clause| id_clause.value())
+            .unwrap_or_else(|| name.clone());
+
+        // Generate canonical URL using the canonical id
+        let url = format!("{}/ValueSet/{}", self.base_url, canonical_id);
 
         // Create base resource with default status
         let mut resource = ValueSetResource::new(url, name.clone(), "draft");
+        // Ensure id is always present for parity with SUSHI defaults
+        resource.id = Some(canonical_id.clone());
 
         // Set id from Id clause if present
         if let Some(id_clause) = valueset.id()
@@ -261,6 +270,9 @@ impl ValueSetExporter {
         // Build alias map from parent document
         let alias_map = self.build_alias_map(valueset);
         trace!("Built alias map with {} entries", alias_map.len());
+
+        // Build map of ValueSet name -> id from the current document for URL resolution
+        let valueset_id_map = self.build_valueset_id_map(valueset);
 
         // Initialize compose for component rules
         let mut compose = ValueSetCompose::new();
@@ -295,24 +307,47 @@ impl ValueSetExporter {
                         &path_rule,
                         &alias_map,
                         &name,
+                        &valueset_id_map,
                         &mut system_includes,
                         &mut system_excludes,
                         &mut valueset_includes,
                         &mut valueset_excludes,
                     )?;
                 }
+                Rule::CaretValue(caret_rule) => {
+                    // Only handle top-level caret rules (no element path)
+                    if caret_rule.element_path().is_none() {
+                        if let (Some(field), Some(value)) = (caret_rule.field(), caret_rule.value())
+                        {
+                            self.apply_metadata_property(&mut resource, &field, &value)?;
+                        }
+                    }
+                }
                 Rule::AddElement(_)
                 | Rule::Contains(_)
                 | Rule::Only(_)
                 | Rule::Obeys(_)
                 | Rule::Mapping(_)
-                | Rule::CaretValue(_)
                 | Rule::CodeCaretValue(_)
                 | Rule::CodeInsert(_) => {
                     // These rules don't apply to valuesets
                     trace!("Skipping contains/only/obeys rule in valueset");
                 }
             }
+        }
+
+        // Process top-level components (common syntax for ValueSet definitions)
+        for vs_component in valueset.syntax().children().filter_map(VsComponent::cast) {
+            self.process_top_level_component(
+                &vs_component,
+                &alias_map,
+                &name,
+                &valueset_id_map,
+                &mut system_includes,
+                &mut system_excludes,
+                &mut valueset_includes,
+                &mut valueset_excludes,
+            )?;
         }
 
         // Build compose.include from grouped rules
@@ -409,38 +444,51 @@ impl ValueSetExporter {
         // Strip ^ prefix if present
         let property = path.strip_prefix('^').unwrap_or(&path);
 
+        self.apply_metadata_property(resource, property, &value_str)
+    }
+
+    /// Apply metadata based on property/value strings
+    fn apply_metadata_property(
+        &self,
+        resource: &mut ValueSetResource,
+        property: &str,
+        value_str: &str,
+    ) -> Result<(), ExportError> {
         // Apply based on property name
         match property {
             "url" => {
                 // Remove quotes from string value
-                resource.url = self.extract_string_value(&value_str);
+                resource.url = self.extract_string_value(value_str);
             }
             "version" => {
-                resource.version = Some(self.extract_string_value(&value_str));
+                resource.version = Some(self.extract_string_value(value_str));
             }
             "status" => {
                 // Extract code value (remove # prefix)
                 let status = if let Some(code) = value_str.strip_prefix('#') {
                     code.to_string()
                 } else {
-                    value_str.clone()
+                    value_str.to_string()
                 };
                 resource.status = status;
             }
             "date" => {
-                resource.date = Some(self.extract_string_value(&value_str));
+                resource.date = Some(self.extract_string_value(value_str));
             }
             "publisher" => {
-                resource.publisher = Some(self.extract_string_value(&value_str));
+                resource.publisher = Some(self.extract_string_value(value_str));
             }
             "description" => {
-                resource.description = Some(self.extract_string_value(&value_str));
+                resource.description = Some(self.extract_string_value(value_str));
+            }
+            "experimental" => {
+                resource.experimental = Some(self.extract_bool_value(value_str)?);
             }
             "purpose" => {
-                resource.purpose = Some(self.extract_string_value(&value_str));
+                resource.purpose = Some(self.extract_string_value(value_str));
             }
             "copyright" => {
-                resource.copyright = Some(self.extract_string_value(&value_str));
+                resource.copyright = Some(self.extract_string_value(value_str));
             }
             "immutable" => {
                 // Parse boolean
@@ -448,8 +496,12 @@ impl ValueSetExporter {
                 resource.immutable = Some(immutable);
             }
             _ => {
-                // Unknown property - log warning but don't fail
-                warn!("Unknown ValueSet metadata property: {}", property);
+                if property.starts_with("extension[") {
+                    self.apply_extension_rule(resource, property, value_str)?;
+                } else {
+                    // Unknown property - log warning but don't fail
+                    warn!("Unknown ValueSet metadata property: {}", property);
+                }
             }
         }
 
@@ -466,6 +518,93 @@ impl ValueSetExporter {
         } else {
             trimmed.to_string()
         }
+    }
+
+    /// Extract a boolean value from a FSH boolean literal
+    fn extract_bool_value(&self, value_str: &str) -> Result<bool, ExportError> {
+        let normalized = value_str.trim().to_ascii_lowercase();
+        match normalized.as_str() {
+            "true" => Ok(true),
+            "false" => Ok(false),
+            _ => Err(ExportError::InvalidValue(format!(
+                "Invalid boolean value '{}'",
+                value_str
+            ))),
+        }
+    }
+
+    /// Convert a string to kebab-case
+    fn kebab_case(input: &str) -> String {
+        let mut result = String::new();
+        for (i, ch) in input.chars().enumerate() {
+            if ch.is_uppercase() {
+                if i > 0 {
+                    result.push('-');
+                }
+                result.push(ch.to_ascii_lowercase());
+            } else if ch == '_' || ch == ' ' {
+                result.push('-');
+            } else {
+                result.push(ch);
+            }
+        }
+        result
+    }
+
+    /// Apply an extension caret rule (e.g., ^extension[FMM].valueInteger = 4)
+    fn apply_extension_rule(
+        &self,
+        resource: &mut ValueSetResource,
+        property: &str,
+        value_str: &str,
+    ) -> Result<(), ExportError> {
+        // Expect format extension[Name].valueX
+        let Some(rest) = property.strip_prefix("extension[") else {
+            return Ok(());
+        };
+
+        let (ext_name, value_path) = if let Some((name, path)) = rest.split_once("].") {
+            (name, path)
+        } else {
+            (rest.trim_end_matches(']'), "")
+        };
+
+        // Only handle FMM for now; other extensions can be added as needed
+        let url = match ext_name {
+            "FMM" => "http://hl7.org/fhir/StructureDefinition/structuredefinition-fmm",
+            _ => return Ok(()),
+        };
+
+        let mut ext_obj = serde_json::Map::new();
+        ext_obj.insert("url".to_string(), JsonValue::String(url.to_string()));
+
+        match value_path {
+            "valueInteger" => {
+                let value = self
+                    .extract_string_value(value_str)
+                    .parse::<i64>()
+                    .map_err(|_| ExportError::InvalidValue(value_str.to_string()))?;
+                ext_obj.insert("valueInteger".to_string(), JsonValue::from(value));
+            }
+            "valueString" | "" => {
+                let value = self.extract_string_value(value_str);
+                ext_obj.insert("valueString".to_string(), JsonValue::String(value));
+            }
+            "valueBoolean" => {
+                let value = self.extract_bool_value(value_str)?;
+                ext_obj.insert("valueBoolean".to_string(), JsonValue::Bool(value));
+            }
+            _ => {
+                // Unsupported extension value path; ignore
+                return Ok(());
+            }
+        }
+
+        resource
+            .extension
+            .get_or_insert_with(Vec::new)
+            .push(JsonValue::Object(ext_obj));
+        Ok(())
     }
 
     /// Build alias map from parent document
@@ -492,6 +631,27 @@ impl ValueSetExporter {
         alias_map
     }
 
+    /// Build a map of ValueSet name -> id from the current document
+    fn build_valueset_id_map(&self, valueset: &ValueSet) -> HashMap<String, String> {
+        let mut map = HashMap::new();
+
+        if let Some(parent) = valueset.syntax().parent()
+            && let Some(document) = Document::cast(parent)
+        {
+            for vs in document.value_sets() {
+                if let Some(vs_name) = vs.name() {
+                    if let Some(id_clause) = vs.id()
+                        && let Some(id_value) = id_clause.value()
+                    {
+                        map.insert(vs_name, id_value);
+                    }
+                }
+            }
+        }
+
+        map
+    }
+
     /// Process a PathRule using structured CST-based processing
     ///
     /// Uses VsComponent and VsFilterDefinition nodes instead of manual string parsing
@@ -501,95 +661,180 @@ impl ValueSetExporter {
         path_rule: &PathRule,
         alias_map: &HashMap<String, String>,
         valueset_name: &str,
+        valueset_id_map: &HashMap<String, String>,
         system_includes: &mut SystemComponentMap,
         system_excludes: &mut SystemComponentMap,
         valueset_includes: &mut Vec<String>,
         valueset_excludes: &mut Vec<String>,
     ) -> Result<(), ExportError> {
+        let mut structured_applied = false;
+
         // Try to find VsComponent nodes in the path rule
         for vs_component in path_rule.syntax().children().filter_map(VsComponent::cast) {
             if let Some(concept_component) = vs_component.concept() {
                 // Handle concept components using structured access
-                self.process_concept_component_structured(
+                if self.process_concept_component_structured(
                     &concept_component,
                     vs_component.is_exclude(),
                     alias_map,
                     system_includes,
                     system_excludes,
-                )?;
+                )? {
+                    structured_applied = true;
+                }
             } else if let Some(filter_component) = vs_component.filter() {
                 // Handle filter components using structured access
-                self.process_filter_component_structured(
+                if self.process_filter_component_structured(
                     &filter_component,
                     vs_component.is_exclude(),
                     alias_map,
                     system_includes,
                     system_excludes,
-                )?;
+                )? {
+                    structured_applied = true;
+                }
             }
         }
 
-        // Fallback to manual parsing if no structured components found
-        if path_rule
-            .syntax()
-            .children()
-            .filter_map(VsComponent::cast)
-            .count()
-            == 0
-            && let Some(component_rule) =
-                self.parse_component_rule(path_rule, alias_map, valueset_name)?
-        {
-            match component_rule {
-                ComponentRule::IncludeConcept {
-                    system,
-                    concept,
-                    version,
-                } => {
-                    let entry = system_includes
-                        .entry(system)
-                        .or_insert_with(|| (Vec::new(), Vec::new(), version));
-                    entry.0.push(concept);
-                }
-                ComponentRule::ExcludeConcept {
-                    system,
-                    concept,
-                    version,
-                } => {
-                    let entry = system_excludes
-                        .entry(system)
-                        .or_insert_with(|| (Vec::new(), Vec::new(), version));
-                    entry.0.push(concept);
-                }
-                ComponentRule::IncludeFilter {
-                    system,
-                    filter,
-                    version,
-                } => {
-                    let entry = system_includes
-                        .entry(system)
-                        .or_insert_with(|| (Vec::new(), Vec::new(), version));
-                    entry.1.push(filter);
-                }
-                ComponentRule::ExcludeFilter {
-                    system,
-                    filter,
-                    version,
-                } => {
-                    let entry = system_excludes
-                        .entry(system)
-                        .or_insert_with(|| (Vec::new(), Vec::new(), version));
-                    entry.1.push(filter);
-                }
-                ComponentRule::IncludeValueSet { value_set_url } => {
-                    valueset_includes.push(value_set_url);
-                }
-                ComponentRule::ExcludeValueSet { value_set_url } => {
-                    valueset_excludes.push(value_set_url);
-                }
+        // Fallback to manual parsing if we didn't handle anything structurally
+        if !structured_applied {
+            let rule_text = path_rule.syntax().text().to_string();
+            if let Some(component_rule) = self.parse_component_rule(
+                &rule_text,
+                Some(path_rule),
+                alias_map,
+                valueset_name,
+                valueset_id_map,
+            )? {
+                self.apply_component_rule_to_maps(
+                    component_rule,
+                    system_includes,
+                    system_excludes,
+                    valueset_includes,
+                    valueset_excludes,
+                );
             }
         }
 
         Ok(())
+    }
+
+    /// Process a top-level VsComponent (common in ValueSet definitions)
+    #[allow(clippy::too_many_arguments)]
+    fn process_top_level_component(
+        &self,
+        vs_component: &VsComponent,
+        alias_map: &HashMap<String, String>,
+        valueset_name: &str,
+        valueset_id_map: &HashMap<String, String>,
+        system_includes: &mut SystemComponentMap,
+        system_excludes: &mut SystemComponentMap,
+        valueset_includes: &mut Vec<String>,
+        valueset_excludes: &mut Vec<String>,
+    ) -> Result<(), ExportError> {
+        let mut structured_applied = false;
+
+        if let Some(concept_component) = vs_component.concept() {
+            if self.process_concept_component_structured(
+                &concept_component,
+                vs_component.is_exclude(),
+                alias_map,
+                system_includes,
+                system_excludes,
+            )? {
+                structured_applied = true;
+            }
+        } else if let Some(filter_component) = vs_component.filter() {
+            if self.process_filter_component_structured(
+                &filter_component,
+                vs_component.is_exclude(),
+                alias_map,
+                system_includes,
+                system_excludes,
+            )? {
+                structured_applied = true;
+            }
+        }
+
+        if !structured_applied {
+            let rule_text = vs_component.syntax().text().to_string();
+            if let Some(component_rule) = self.parse_component_rule(
+                &rule_text,
+                None,
+                alias_map,
+                valueset_name,
+                valueset_id_map,
+            )? {
+                self.apply_component_rule_to_maps(
+                    component_rule,
+                    system_includes,
+                    system_excludes,
+                    valueset_includes,
+                    valueset_excludes,
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Apply a parsed component rule to the appropriate include/exclude collections
+    fn apply_component_rule_to_maps(
+        &self,
+        component_rule: ComponentRule,
+        system_includes: &mut SystemComponentMap,
+        system_excludes: &mut SystemComponentMap,
+        valueset_includes: &mut Vec<String>,
+        valueset_excludes: &mut Vec<String>,
+    ) {
+        match component_rule {
+            ComponentRule::IncludeConcept {
+                system,
+                concept,
+                version,
+            } => {
+                let entry = system_includes
+                    .entry(system)
+                    .or_insert_with(|| (Vec::new(), Vec::new(), version));
+                entry.0.push(concept);
+            }
+            ComponentRule::ExcludeConcept {
+                system,
+                concept,
+                version,
+            } => {
+                let entry = system_excludes
+                    .entry(system)
+                    .or_insert_with(|| (Vec::new(), Vec::new(), version));
+                entry.0.push(concept);
+            }
+            ComponentRule::IncludeFilter {
+                system,
+                filter,
+                version,
+            } => {
+                let entry = system_includes
+                    .entry(system)
+                    .or_insert_with(|| (Vec::new(), Vec::new(), version));
+                entry.1.push(filter);
+            }
+            ComponentRule::ExcludeFilter {
+                system,
+                filter,
+                version,
+            } => {
+                let entry = system_excludes
+                    .entry(system)
+                    .or_insert_with(|| (Vec::new(), Vec::new(), version));
+                entry.1.push(filter);
+            }
+            ComponentRule::IncludeValueSet { value_set_url } => {
+                valueset_includes.push(value_set_url);
+            }
+            ComponentRule::ExcludeValueSet { value_set_url } => {
+                valueset_excludes.push(value_set_url);
+            }
+        }
     }
 
     /// Process concept component using structured access
@@ -600,13 +845,14 @@ impl ValueSetExporter {
         alias_map: &HashMap<String, String>,
         system_includes: &mut SystemComponentMap,
         system_excludes: &mut SystemComponentMap,
-    ) -> Result<(), ExportError> {
+    ) -> Result<bool, ExportError> {
+        let mut applied = false;
         if let Some(code_ref) = concept_component.code() {
             let system_url = if let Some(system) = code_ref.system() {
                 // Resolve alias to full URL
                 alias_map.get(&system).cloned().unwrap_or(system)
             } else {
-                return Ok(()); // Skip if no system
+                return Ok(false); // Skip if no system
             };
 
             if let Some(code) = code_ref.code() {
@@ -631,10 +877,11 @@ impl ValueSetExporter {
                         .or_insert_with(|| (Vec::new(), Vec::new(), version));
                     entry.0.push(concept);
                 }
+                applied = true;
             }
         }
 
-        Ok(())
+        Ok(applied)
     }
 
     /// Process filter component using structured access
@@ -645,7 +892,8 @@ impl ValueSetExporter {
         alias_map: &HashMap<String, String>,
         system_includes: &mut SystemComponentMap,
         system_excludes: &mut SystemComponentMap,
-    ) -> Result<(), ExportError> {
+    ) -> Result<bool, ExportError> {
+        let mut applied = false;
         if let Some(from_clause) = filter_component.from_clause() {
             for system in from_clause.systems() {
                 let system_url = alias_map.get(&system).cloned().unwrap_or(system);
@@ -672,12 +920,13 @@ impl ValueSetExporter {
                                 .or_insert_with(|| (Vec::new(), Vec::new(), version.clone()));
                             entry.1.push(filter);
                         }
+                        applied = true;
                     }
                 }
             }
         }
 
-        Ok(())
+        Ok(applied)
     }
 
     /// Parse a component rule (PathRule) into system includes/excludes
@@ -692,12 +941,13 @@ impl ValueSetExporter {
     /// Returns: ComponentRule enum indicating the type of rule parsed
     fn parse_component_rule(
         &self,
-        path_rule: &PathRule,
+        rule_text: &str,
+        path_rule: Option<&PathRule>,
         alias_map: &HashMap<String, String>,
         valueset_name: &str,
+        valueset_id_map: &HashMap<String, String>,
     ) -> Result<Option<ComponentRule>, ExportError> {
-        // Get the full text of the path rule to parse complex syntax
-        let rule_text = path_rule.syntax().text().to_string();
+        // Get the full text of the component rule
         let rule_text = rule_text.trim();
 
         trace!("Parsing component rule: '{}'", rule_text);
@@ -711,7 +961,12 @@ impl ValueSetExporter {
 
         // Check for "codes from valueset" syntax
         if remaining_text.contains("codes from valueset") {
-            return self.parse_valueset_reference(remaining_text, is_exclude);
+            return self.parse_valueset_reference(
+                remaining_text,
+                is_exclude,
+                alias_map,
+                valueset_id_map,
+            );
         }
 
         // Check for "where" clause (filter syntax)
@@ -756,7 +1011,7 @@ impl ValueSetExporter {
         };
 
         // Try to get display text from following String token
-        let display = self.get_display_text(path_rule);
+        let display = path_rule.and_then(|pr| self.get_display_text(pr));
 
         // Create concept with enhanced parsing for properties and designations
         let mut concept = if let Some(display_text) = display {
@@ -766,7 +1021,9 @@ impl ValueSetExporter {
         };
 
         // Parse additional concept metadata from the rule text
-        self.parse_concept_metadata(&mut concept, path_rule)?;
+        if let Some(path_rule) = path_rule {
+            self.parse_concept_metadata(&mut concept, path_rule)?;
+        }
 
         trace!(
             "Parsed component rule: system={}, code={}, display={:?}, exclude={}, version={:?}",
@@ -1043,11 +1300,14 @@ impl ValueSetExporter {
         &self,
         rule_text: &str,
         is_exclude: bool,
+        alias_map: &HashMap<String, String>,
+        valueset_id_map: &HashMap<String, String>,
     ) -> Result<Option<ComponentRule>, ExportError> {
         // Extract the ValueSet URL after "codes from valueset"
         if let Some(url_start) = rule_text.find("codes from valueset") {
             let url_part = rule_text[url_start + "codes from valueset".len()..].trim();
-            let value_set_url = self.extract_string_value(url_part);
+            let value_set_url =
+                self.normalize_valueset_reference(url_part, alias_map, valueset_id_map);
 
             let component_rule = if is_exclude {
                 ComponentRule::ExcludeValueSet { value_set_url }
@@ -1059,6 +1319,37 @@ impl ValueSetExporter {
         }
 
         Ok(None)
+    }
+
+    /// Normalize a ValueSet reference to a canonical URL
+    fn normalize_valueset_reference(
+        &self,
+        value: &str,
+        alias_map: &HashMap<String, String>,
+        valueset_id_map: &HashMap<String, String>,
+    ) -> String {
+        let extracted = self.extract_string_value(value);
+        let trimmed = extracted.trim();
+
+        // Handle alias references like $MyAlias
+        let alias_key = trimmed.strip_prefix('$').unwrap_or(trimmed);
+        if let Some(alias_value) = alias_map.get(alias_key) {
+            return alias_value.clone();
+        }
+
+        // Already canonical URL
+        if trimmed.contains("://") {
+            return trimmed.to_string();
+        }
+
+        // If we know the id for this ValueSet name, build canonical URL from it
+        if let Some(id) = valueset_id_map.get(trimmed) {
+            return format!("{}/ValueSet/{}", self.base_url, id);
+        }
+
+        // Fallback to kebab-casing the name
+        let kebab = Self::kebab_case(trimmed);
+        format!("{}/ValueSet/{}", self.base_url, kebab)
     }
 
     /// Validate that exclude rules don't conflict with include rules

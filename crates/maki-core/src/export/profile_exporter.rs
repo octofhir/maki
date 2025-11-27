@@ -99,6 +99,191 @@ fn camel_to_kebab(s: &str) -> String {
     result
 }
 
+/// Check if a type name is a FHIR primitive or complex type (not a profile)
+///
+/// FHIR primitive types: string, boolean, integer, decimal, uri, url, canonical, etc.
+/// FHIR complex types: CodeableConcept, Identifier, HumanName, Address, Quantity, etc.
+/// Common FSH code system aliases mapped to canonical URLs
+const CODE_SYSTEM_ALIASES: &[(&str, &str)] = &[
+    ("LNC", "http://loinc.org"),
+    ("LOINC", "http://loinc.org"),
+    ("SCT", "http://snomed.info/sct"),
+    ("SNOMED", "http://snomed.info/sct"),
+    ("ICD10CM", "http://hl7.org/fhir/sid/icd-10-cm"),
+    ("ICD10", "http://hl7.org/fhir/sid/icd-10"),
+    ("UCUM", "http://unitsofmeasure.org"),
+    ("RXNORM", "http://www.nlm.nih.gov/research/umls/rxnorm"),
+    ("CPT", "http://www.ama-assn.org/go/cpt"),
+    ("CVX", "http://hl7.org/fhir/sid/cvx"),
+    ("HGNC", "http://www.genenames.org"),
+    ("HGVS", "http://varnomen.hgvs.org"),
+    ("ISO3166", "urn:iso:std:iso:3166"),
+    ("NUCC", "http://nucc.org/provider-taxonomy"),
+    ("NDC", "http://hl7.org/fhir/sid/ndc"),
+];
+
+/// Resolve a code system alias to its canonical URL
+fn resolve_code_system_alias(alias: &str) -> Option<&'static str> {
+    for (name, url) in CODE_SYSTEM_ALIASES {
+        if *name == alias {
+            return Some(url);
+        }
+    }
+    None
+}
+
+/// Parsed FSH code value
+#[derive(Debug)]
+struct FshCodeValue {
+    system: Option<String>,
+    code: String,
+    display: Option<String>,
+}
+
+/// Parse FSH code syntax into components
+///
+/// Handles formats:
+/// - `#code` - code only (no system)
+/// - `SYSTEM#code` - alias and code (e.g., `LNC#31206-6`)
+/// - `http://system.url#code` - full URL and code
+/// - `SYSTEM#code "display"` - with display text
+fn parse_fsh_code_value(value: &str) -> Option<FshCodeValue> {
+    let trimmed = value.trim();
+
+    // Check if it has the code marker '#'
+    if !trimmed.contains('#') {
+        return None;
+    }
+
+    // Split display text if present (ends with "quoted string")
+    let (code_part, display) = if let Some(quote_start) = trimmed.rfind('"') {
+        // Find the matching opening quote
+        let before_end_quote = &trimmed[..quote_start];
+        if let Some(open_quote) = before_end_quote.rfind('"') {
+            let display_text = trimmed[open_quote + 1..quote_start].to_string();
+            let code_part = trimmed[..open_quote].trim();
+            (code_part, Some(display_text))
+        } else {
+            (trimmed, None)
+        }
+    } else {
+        (trimmed, None)
+    };
+
+    // Split on '#' to get system and code
+    if let Some(hash_pos) = code_part.find('#') {
+        let system_part = code_part[..hash_pos].trim();
+        let code = code_part[hash_pos + 1..].trim().to_string();
+
+        let system = if system_part.is_empty() {
+            // Just `#code` - no system
+            None
+        } else if system_part.starts_with("http://") || system_part.starts_with("https://") {
+            // Full URL system
+            Some(system_part.to_string())
+        } else {
+            // Alias - resolve to URL
+            if let Some(url) = resolve_code_system_alias(system_part) {
+                Some(url.to_string())
+            } else {
+                // Unknown alias - treat as-is (might be defined elsewhere)
+                Some(system_part.to_string())
+            }
+        };
+
+        Some(FshCodeValue {
+            system,
+            code,
+            display,
+        })
+    } else {
+        None
+    }
+}
+
+/// Determine the element type from an ElementDefinition
+fn get_element_type(element: &ElementDefinition) -> Option<String> {
+    element
+        .type_
+        .as_ref()
+        .and_then(|types| types.first().map(|t| t.code.clone()))
+}
+
+fn is_fhir_primitive_or_complex_type(type_name: &str) -> bool {
+    // Primitive types
+    const PRIMITIVE_TYPES: &[&str] = &[
+        "boolean",
+        "integer",
+        "integer64",
+        "string",
+        "decimal",
+        "uri",
+        "url",
+        "canonical",
+        "base64Binary",
+        "instant",
+        "date",
+        "dateTime",
+        "time",
+        "code",
+        "oid",
+        "id",
+        "markdown",
+        "unsignedInt",
+        "positiveInt",
+        "uuid",
+        "xhtml",
+    ];
+
+    // Common complex types (not exhaustive, but covers most common ones)
+    const COMPLEX_TYPES: &[&str] = &[
+        "Address",
+        "Age",
+        "Annotation",
+        "Attachment",
+        "CodeableConcept",
+        "CodeableReference",
+        "Coding",
+        "ContactDetail",
+        "ContactPoint",
+        "Contributor",
+        "Count",
+        "DataRequirement",
+        "Distance",
+        "Dosage",
+        "Duration",
+        "Expression",
+        "Extension",
+        "HumanName",
+        "Identifier",
+        "Meta",
+        "Money",
+        "MoneyQuantity",
+        "Narrative",
+        "ParameterDefinition",
+        "Period",
+        "Quantity",
+        "Range",
+        "Ratio",
+        "RatioRange",
+        "Reference",
+        "RelatedArtifact",
+        "SampledData",
+        "Signature",
+        "SimpleQuantity",
+        "Timing",
+        "TriggerDefinition",
+        "UsageContext",
+        // Resource types commonly used in element types
+        "Resource",
+        "DomainResource",
+        "BackboneElement",
+        "Element",
+    ];
+
+    PRIMITIVE_TYPES.contains(&type_name) || COMPLEX_TYPES.contains(&type_name)
+}
+
 /// Profile export errors
 #[derive(Debug, Error)]
 pub enum ExportError {
@@ -289,8 +474,13 @@ impl ProfileExporter {
         let mut structure_def = self.get_base_structure_definition(&parent).await?;
         eprintln!("[PROFILE EXPORT] Step 4: Successfully got base structure definition");
 
-        // FIX Bug 2: Set baseDefinition to point to the parent, not parent's parent
-        let base_definition_url = format!("http://hl7.org/fhir/StructureDefinition/{}", parent);
+        // FIX: Set baseDefinition to the parent's actual canonical URL (not a hardcoded format)
+        // The resolved StructureDefinition has the correct URL - use it directly
+        let base_definition_url = structure_def.url.clone();
+        eprintln!(
+            "[PROFILE EXPORT] Step 4a: Using parent's canonical URL as baseDefinition: {}",
+            base_definition_url
+        );
         structure_def.base_definition = Some(base_definition_url);
 
         // 3. Apply metadata
@@ -419,6 +609,11 @@ impl ProfileExporter {
         &self,
         parent: &str,
     ) -> Result<StructureDefinition, ExportError> {
+        // Helper to decide if a resolved StructureDefinition is an unexpected Extension parent
+        let is_unexpected_extension = |sd: &StructureDefinition| -> bool {
+            sd.type_field == "Extension" && parent != "Extension"
+        };
+
         eprintln!(
             "[GET_BASE_SD] Step 1: Starting resolution for parent: {}",
             parent
@@ -446,7 +641,29 @@ impl ProfileExporter {
             }
         }
 
-        // 0b. Check if parent is an alias and resolve it to canonical URL
+        // 0b. Fast path: Use find_profile_parent for case-insensitive search with Extension exclusion
+        // This is optimized to search by id/name/url with proper package priority ordering
+        // Skip this for Extension parents (they should match Extensions)
+        if parent != "Extension" {
+            eprintln!(
+                "[GET_BASE_SD] Step 0b: Trying find_profile_parent for '{}'",
+                parent
+            );
+            if let Ok(Some(resource)) = self.session.find_profile_parent(parent).await {
+                eprintln!(
+                    "[GET_BASE_SD] Step 0b: Found parent '{}' via find_profile_parent → {}",
+                    parent, resource.canonical_url
+                );
+                if let Ok(sd) =
+                    serde_json::from_value::<StructureDefinition>((*resource.content).clone())
+                {
+                    debug!("Resolved parent '{}' via find_profile_parent", parent);
+                    return Ok(sd);
+                }
+            }
+        }
+
+        // 0c. Check if parent is an alias and resolve it to canonical URL
         let parent_to_resolve = if let Some(resolved_url) = self.alias_table.resolve(parent) {
             eprintln!(
                 "[GET_BASE_SD] Step 1a: Parent '{}' is an alias, resolved to canonical URL: {}",
@@ -465,21 +682,112 @@ impl ProfileExporter {
                 .resolve_structure_definition_from_canonical(parent_to_resolve)
                 .await?
             {
+                // If we resolved to an Extension but the FSH parent wasn't Extension, keep searching
+                if is_unexpected_extension(&sd) {
+                    eprintln!(
+                        "[GET_BASE_SD] Step 2a: Resolved to Extension for parent '{}', continuing search",
+                        parent_to_resolve
+                    );
+                } else {
+                    eprintln!(
+                        "[GET_BASE_SD] Step 3: Resolved parent via canonical URL {} → {}",
+                        parent_to_resolve, sd.url
+                    );
+                    debug!(
+                        "Resolved parent via canonical URL {} → {}",
+                        parent_to_resolve, sd.url
+                    );
+                    return Ok(sd);
+                }
+            }
+
+            // If the canonical URL gave us an unexpected extension, keep searching
+            if parent_to_resolve.starts_with("http://") || parent_to_resolve.starts_with("https://")
+            {
                 eprintln!(
-                    "[GET_BASE_SD] Step 3: Resolved parent via canonical URL {} → {}",
-                    parent_to_resolve, sd.url
+                    "[GET_BASE_SD] Step 2b: Continuing search for parent '{}' after extension match",
+                    parent_to_resolve
                 );
-                debug!(
-                    "Resolved parent via canonical URL {} → {}",
-                    parent_to_resolve, sd.url
-                );
-                return Ok(sd);
             }
 
             return Err(ExportError::ParentNotFound(format!(
                 "{}: canonical URL {} not found",
                 parent, parent_to_resolve
             )));
+        }
+
+        // 1b. Try resolving by name via installed canonical packages (preferred over core fallback)
+        eprintln!(
+            "[GET_BASE_SD] Step 3: Trying to resolve parent '{}' by name via canonical packages",
+            parent_to_resolve
+        );
+        if let Ok(Some(resource)) = self
+            .session
+            .resource_by_type_and_name("StructureDefinition", parent_to_resolve)
+            .await
+        {
+            eprintln!(
+                "[GET_BASE_SD] Step 3a: Found parent '{}' in canonical packages by name",
+                parent_to_resolve
+            );
+            if let Ok(sd) =
+                serde_json::from_value::<StructureDefinition>((*resource.content).clone())
+            {
+                if is_unexpected_extension(&sd) {
+                    eprintln!(
+                        "[GET_BASE_SD] Step 3a-ext: '{}' resolved to Extension ({}), continuing search",
+                        parent_to_resolve, sd.url
+                    );
+                } else {
+                    debug!(
+                        "Resolved parent '{}' from canonical packages by name",
+                        parent_to_resolve
+                    );
+                    return Ok(sd);
+                }
+            }
+        }
+
+        // 1c. Try well-known dependency canonical bases (e.g., genomics-reporting Variant)
+        // Some IGs reference profiles by simple name (Variant) that live in dependency packages.
+        // Try a few canonical patterns before falling back to generic core URL.
+        let dependency_candidates = [
+            format!(
+                "http://hl7.org/fhir/uv/genomics-reporting/StructureDefinition/{}",
+                parent_to_resolve
+            ),
+            format!(
+                "http://hl7.org/fhir/uv/genomics-reporting/StructureDefinition/{}",
+                parent_to_resolve.to_ascii_lowercase()
+            ),
+            format!(
+                "http://hl7.org/fhir/uv/genomics-reporting/StructureDefinition/{}",
+                camel_to_kebab(parent_to_resolve)
+            ),
+        ];
+
+        for candidate in dependency_candidates {
+            eprintln!(
+                "[GET_BASE_SD] Step 3b: Trying dependency canonical candidate: {}",
+                candidate
+            );
+            if let Some(sd) = self
+                .resolve_structure_definition_from_canonical(&candidate)
+                .await?
+            {
+                if is_unexpected_extension(&sd) {
+                    eprintln!(
+                        "[GET_BASE_SD] Step 3c-ext: Candidate {} resolved to Extension, continuing search",
+                        candidate
+                    );
+                } else {
+                    eprintln!(
+                        "[GET_BASE_SD] Step 3c: Resolved parent '{}' via dependency canonical {}",
+                        parent_to_resolve, candidate
+                    );
+                    return Ok(sd);
+                }
+            }
         }
 
         // 2. Try resolving as FHIR resource by name via canonical manager
@@ -628,6 +936,55 @@ impl ProfileExporter {
                         with_profile_suffix
                     );
                     resource.canonical_url.clone()
+                } else if parent_to_resolve.ends_with("Profile") {
+                    // Try WITHOUT "Profile" suffix (USCoreVitalSignsProfile -> USCoreVitalSigns)
+                    let without_profile_suffix = &parent_to_resolve[..parent_to_resolve.len() - 7];
+                    debug!(
+                        "Trying without Profile suffix by name: {}",
+                        without_profile_suffix
+                    );
+
+                    if let Ok(Some(resource)) = self
+                        .session
+                        .resource_by_type_and_name("StructureDefinition", without_profile_suffix)
+                        .await
+                    {
+                        debug!(
+                            "Found parent without Profile suffix by name: {}",
+                            without_profile_suffix
+                        );
+                        resource.canonical_url.clone()
+                    } else {
+                        // Try kebab-case variant
+                        let kebab_case = camel_to_kebab(parent_to_resolve);
+                        debug!("Trying kebab-case variant: {}", kebab_case);
+
+                        if let Ok(Some(resource)) = self
+                            .session
+                            .resource_by_type_and_id("StructureDefinition", &kebab_case)
+                            .await
+                        {
+                            debug!("Found parent by kebab-case ID: {}", kebab_case);
+                            resource
+                                .content
+                                .as_object()
+                                .and_then(|obj| obj.get("url"))
+                                .and_then(|url| url.as_str())
+                                .ok_or_else(|| {
+                                    ExportError::CanonicalError(format!(
+                                        "Found resource but missing url field: {}",
+                                        kebab_case
+                                    ))
+                                })?
+                                .to_string()
+                        } else {
+                            debug!(
+                                "No match found via search for {}, assuming FHIR core canonical",
+                                parent_to_resolve
+                            );
+                            core_candidate.clone()
+                        }
+                    }
                 } else {
                     let kebab_case = camel_to_kebab(parent_to_resolve);
                     debug!("Trying kebab-case variant: {}", kebab_case);
@@ -701,6 +1058,260 @@ impl ProfileExporter {
         }
     }
 
+    /// Resolve a type name to its canonical URL
+    ///
+    /// Resolution order:
+    /// 1. Check local Package for exported StructureDefinitions
+    /// 2. Check alias table
+    /// 3. Query canonical manager
+    /// 4. Try FHIR core canonical URL as fallback
+    async fn resolve_type_to_canonical(&self, type_name: &str) -> Option<String> {
+        // If already a URL, return as-is
+        if type_name.starts_with("http://") || type_name.starts_with("https://") {
+            return Some(type_name.to_string());
+        }
+
+        // 1. Check local Package for exported StructureDefinitions
+        {
+            let package = self.package.read().await;
+            for (_canonical_url, resource_json) in package.all_resources().iter() {
+                if let Ok(sd) =
+                    serde_json::from_value::<StructureDefinition>((**resource_json).clone())
+                {
+                    // Check if name matches
+                    if sd.name == type_name {
+                        return Some(sd.url.clone());
+                    }
+                }
+            }
+        }
+
+        // 2. Check alias table
+        if let Some(resolved_url) = self.alias_table.resolve(type_name) {
+            return Some(resolved_url.to_string());
+        }
+
+        // 3. Try canonical manager by name
+        if let Ok(resource) = self.session.resolve(type_name).await {
+            if let Ok(sd) =
+                serde_json::from_value::<StructureDefinition>((*resource.content).clone())
+            {
+                return Some(sd.url.clone());
+            }
+        }
+
+        // 4. Try FHIR core canonical URL format
+        let core_candidate = format!("http://hl7.org/fhir/StructureDefinition/{}", type_name);
+        if let Ok(Some(_)) = self
+            .resolve_structure_definition_from_canonical(&core_candidate)
+            .await
+        {
+            return Some(core_candidate);
+        }
+
+        // 5. Fallback: try kebab-case variant
+        let kebab_name = camel_to_kebab(type_name);
+        if let Ok(Some(resource)) = self
+            .session
+            .resource_by_type_and_id("StructureDefinition", &kebab_name)
+            .await
+        {
+            if let Ok(sd) =
+                serde_json::from_value::<StructureDefinition>((*resource.content).clone())
+            {
+                return Some(sd.url.clone());
+            }
+        }
+
+        None
+    }
+
+    /// Parse a type constraint string and resolve it to an ElementDefinitionType
+    ///
+    /// Handles:
+    /// - `Reference(TypeName)` → code: "Reference", targetProfile: [resolved URL]
+    /// - `Reference(Type1 or Type2)` → code: "Reference", targetProfile: [urls]
+    /// - `canonical(TypeName)` → code: "canonical", targetProfile: [resolved URL]
+    /// - `CodeableReference(TypeName)` → code: "CodeableReference", targetProfile: [resolved URL]
+    /// - Simple types like `string`, `Quantity` → code: type_name
+    async fn parse_type_constraint(&self, type_str: &str) -> ElementDefinitionType {
+        // Check for Reference(Type) pattern
+        if type_str.starts_with("Reference(") && type_str.ends_with(')') {
+            let inner = &type_str[10..type_str.len() - 1]; // Extract content between ()
+            let targets: Vec<&str> = inner.split(" or ").map(|s| s.trim()).collect();
+
+            let mut target_profiles = Vec::new();
+            for target in targets {
+                if let Some(canonical_url) = self.resolve_type_to_canonical(target).await {
+                    target_profiles.push(canonical_url);
+                } else {
+                    // Fallback: construct URL with base_url if not resolvable
+                    let fallback_url = format!("{}/StructureDefinition/{}", self.base_url, target);
+                    warn!(
+                        "Could not resolve Reference target '{}', using fallback URL: {}",
+                        target, fallback_url
+                    );
+                    target_profiles.push(fallback_url);
+                }
+            }
+
+            return ElementDefinitionType {
+                code: "Reference".to_string(),
+                profile: None,
+                target_profile: if target_profiles.is_empty() {
+                    None
+                } else {
+                    Some(target_profiles)
+                },
+            };
+        }
+
+        // Check for canonical(Type) pattern
+        if type_str.starts_with("canonical(") && type_str.ends_with(')') {
+            let inner = &type_str[10..type_str.len() - 1];
+            let targets: Vec<&str> = inner.split(" or ").map(|s| s.trim()).collect();
+
+            let mut target_profiles = Vec::new();
+            for target in targets {
+                if let Some(canonical_url) = self.resolve_type_to_canonical(target).await {
+                    target_profiles.push(canonical_url);
+                } else {
+                    let fallback_url = format!("{}/StructureDefinition/{}", self.base_url, target);
+                    target_profiles.push(fallback_url);
+                }
+            }
+
+            return ElementDefinitionType {
+                code: "canonical".to_string(),
+                profile: None,
+                target_profile: if target_profiles.is_empty() {
+                    None
+                } else {
+                    Some(target_profiles)
+                },
+            };
+        }
+
+        // Check for CodeableReference(Type) pattern
+        if type_str.starts_with("CodeableReference(") && type_str.ends_with(')') {
+            let inner = &type_str[18..type_str.len() - 1];
+            let targets: Vec<&str> = inner.split(" or ").map(|s| s.trim()).collect();
+
+            let mut target_profiles = Vec::new();
+            for target in targets {
+                if let Some(canonical_url) = self.resolve_type_to_canonical(target).await {
+                    target_profiles.push(canonical_url);
+                } else {
+                    let fallback_url = format!("{}/StructureDefinition/{}", self.base_url, target);
+                    target_profiles.push(fallback_url);
+                }
+            }
+
+            return ElementDefinitionType {
+                code: "CodeableReference".to_string(),
+                profile: None,
+                target_profile: if target_profiles.is_empty() {
+                    None
+                } else {
+                    Some(target_profiles)
+                },
+            };
+        }
+
+        // For simple types or profile constraints (e.g., "string", "Quantity", "USCorePatient")
+        // Check if it's a profile name that should go in the profile field
+        if !is_fhir_primitive_or_complex_type(type_str) {
+            // This might be a profile name - try to resolve it
+            if let Some(canonical_url) = self.resolve_type_to_canonical(type_str).await {
+                // It's a profile - the code should be the base type and profile should be the URL
+                // For now, just put the resolved URL as the code since we don't know the base type
+                // TODO: Look up the profile's type from its StructureDefinition
+                return ElementDefinitionType {
+                    code: type_str.to_string(),
+                    profile: Some(vec![canonical_url]),
+                    target_profile: None,
+                };
+            }
+        }
+
+        // Simple type - just use as code
+        ElementDefinitionType {
+            code: type_str.to_string(),
+            profile: None,
+            target_profile: None,
+        }
+    }
+
+    /// Resolve a ValueSet name to its canonical URL
+    ///
+    /// Resolution order:
+    /// 1. Check if already a URL
+    /// 2. Check local Package for exported ValueSets
+    /// 3. Check alias table
+    /// 4. Query canonical manager
+    /// 5. Fallback: construct URL with base_url and kebab-case id
+    async fn resolve_valueset_url(&self, value_set_name: &str) -> String {
+        // 1. If already a URL, return as-is
+        if value_set_name.starts_with("http://") || value_set_name.starts_with("https://") {
+            return value_set_name.to_string();
+        }
+
+        // 2. Check local Package for exported ValueSets
+        {
+            let package = self.package.read().await;
+            for (_canonical_url, resource_json) in package.all_resources().iter() {
+                // Try to parse as ValueSet
+                if let Some(resource_type) =
+                    resource_json.get("resourceType").and_then(|v| v.as_str())
+                {
+                    if resource_type == "ValueSet" {
+                        // Check if name matches
+                        if let Some(name) = resource_json.get("name").and_then(|v| v.as_str()) {
+                            if name == value_set_name {
+                                if let Some(url) = resource_json.get("url").and_then(|v| v.as_str())
+                                {
+                                    return url.to_string();
+                                }
+                            }
+                        }
+                        // Also check if id matches (for cases where id is used instead of name)
+                        if let Some(id) = resource_json.get("id").and_then(|v| v.as_str()) {
+                            if id == value_set_name || id == camel_to_kebab(value_set_name) {
+                                if let Some(url) = resource_json.get("url").and_then(|v| v.as_str())
+                                {
+                                    return url.to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Check alias table
+        if let Some(resolved_url) = self.alias_table.resolve(value_set_name) {
+            return resolved_url.to_string();
+        }
+
+        // 4. Try canonical manager by name
+        if let Ok(resource) = self.session.resolve(value_set_name).await {
+            if let Some(url) = resource.content.get("url").and_then(|v| v.as_str()) {
+                return url.to_string();
+            }
+        }
+
+        // 5. Try FHIR core ValueSet URL format
+        let core_candidate = format!("http://hl7.org/fhir/ValueSet/{}", value_set_name);
+        if let Ok(_) = self.session.resolve(&core_candidate).await {
+            return core_candidate;
+        }
+
+        // 6. Fallback: construct URL with base_url and kebab-case id
+        // This matches SUSHI behavior of using the ValueSet's id (typically kebab-case)
+        let id = camel_to_kebab(value_set_name);
+        format!("{}/ValueSet/{}", self.base_url, id)
+    }
+
     /// Apply profile metadata (SUSHI compatible)
     ///
     /// This function implements SUSHI's metadata clearing strategy:
@@ -758,12 +1369,12 @@ impl ProfileExporter {
         // STEP 4: Set new metadata from profile
         structure_def.name = profile_name.clone();
 
-        // Use id for URL if present, otherwise name
-        let url_id = profile
+        // Use id for URL if present, otherwise convert name to kebab-case (SUSHI behavior)
+        let profile_id = profile
             .id()
             .and_then(|id_clause| id_clause.value())
-            .unwrap_or_else(|| profile_name.clone());
-        structure_def.url = format!("{}/StructureDefinition/{}", self.base_url, url_id);
+            .unwrap_or_else(|| camel_to_kebab(&profile_name));
+        structure_def.url = format!("{}/StructureDefinition/{}", self.base_url, profile_id);
 
         // Set derivation
         structure_def.derivation = Some("constraint".to_string());
@@ -771,12 +1382,9 @@ impl ProfileExporter {
         // base_definition should point to parent, not self
         // (this will be set correctly when getting base definition)
 
-        // Set id
-        if let Some(id_clause) = profile.id()
-            && let Some(id) = id_clause.value()
-        {
-            structure_def.id = Some(id);
-        }
+        // ALWAYS set the id - either from explicit Id: clause or derived from name
+        // BUG FIX: Previously only set if Id: clause was present, leaving parent's id
+        structure_def.id = Some(profile_id.clone());
 
         // Set title
         if let Some(title_clause) = profile.title() {
@@ -990,13 +1598,8 @@ impl ProfileExporter {
             }
         })?;
 
-        // Create canonical URL for ValueSet
-        let value_set_url = if value_set.starts_with("http://") || value_set.starts_with("https://")
-        {
-            value_set
-        } else {
-            format!("{}/ValueSet/{}", self.base_url, value_set)
-        };
+        // Resolve ValueSet to its canonical URL
+        let value_set_url = self.resolve_valueset_url(&value_set).await;
 
         element.binding = Some(ElementDefinitionBinding {
             strength,
@@ -1008,6 +1611,17 @@ impl ProfileExporter {
     }
 
     /// Apply fixed value rule
+    ///
+    /// Handles FSH value syntax including:
+    /// - String values: `"some text"`
+    /// - Code values: `#active`, `LNC#31206-6`, `http://loinc.org#31206-6`
+    /// - Numeric values: `42`, `3.14`
+    /// - Boolean values: `true`, `false`
+    ///
+    /// Generates correct pattern type based on element type:
+    /// - `code` element → `patternCode`
+    /// - `Coding` element → `patternCoding` (with system, code, display)
+    /// - `CodeableConcept` element → `patternCodeableConcept` (with coding array)
     async fn apply_fixed_value_rule(
         &self,
         structure_def: &mut StructureDefinition,
@@ -1024,6 +1638,18 @@ impl ProfileExporter {
 
         trace!("Applying fixed value rule: {} = {}", path_str, value);
 
+        // Handle caret-prefixed paths that were parsed as FixedValueRule
+        // These should be applied to the StructureDefinition itself, not elements
+        // Example: * ^extension[FMM].valueInteger = 5
+        if path_str.starts_with('^') {
+            let field = path_str.trim_start_matches('^');
+            debug!(
+                "Redirecting caret-prefixed FixedValueRule to structure: ^{} = {}",
+                field, value
+            );
+            return self.apply_field_to_structure(structure_def, field, &value);
+        }
+
         let full_path = self.resolve_full_path(structure_def, &path_str).await?;
         let profile_name = structure_def.name.clone();
 
@@ -1034,30 +1660,104 @@ impl ProfileExporter {
             }
         })?;
 
-        // Parse value and determine type
-        // For now, we'll store as pattern (less strict than fixed)
+        // Get the element type to determine correct pattern type
+        let element_type = get_element_type(element);
+
+        // Parse value and generate appropriate pattern
         let mut pattern_map = std::collections::HashMap::new();
 
-        // Determine the type from the element or infer from value
-        if value.starts_with('"') {
+        // Check if it's a FSH code value (contains #)
+        if let Some(fsh_code) = parse_fsh_code_value(&value) {
+            // Generate pattern based on element type
+            match element_type.as_deref() {
+                Some("CodeableConcept") => {
+                    // Generate patternCodeableConcept with coding array
+                    let mut coding = serde_json::Map::new();
+                    if let Some(system) = &fsh_code.system {
+                        coding.insert("system".to_string(), JsonValue::String(system.clone()));
+                    }
+                    coding.insert("code".to_string(), JsonValue::String(fsh_code.code.clone()));
+                    if let Some(display) = &fsh_code.display {
+                        coding.insert("display".to_string(), JsonValue::String(display.clone()));
+                    }
+
+                    let codeable_concept = serde_json::json!({
+                        "coding": [JsonValue::Object(coding)]
+                    });
+                    pattern_map.insert("patternCodeableConcept".to_string(), codeable_concept);
+                }
+                Some("Coding") => {
+                    // Generate patternCoding
+                    let mut coding = serde_json::Map::new();
+                    if let Some(system) = &fsh_code.system {
+                        coding.insert("system".to_string(), JsonValue::String(system.clone()));
+                    }
+                    coding.insert("code".to_string(), JsonValue::String(fsh_code.code.clone()));
+                    if let Some(display) = &fsh_code.display {
+                        coding.insert("display".to_string(), JsonValue::String(display.clone()));
+                    }
+                    pattern_map.insert("patternCoding".to_string(), JsonValue::Object(coding));
+                }
+                Some("code") | None => {
+                    // Generate patternCode (just the code string)
+                    pattern_map.insert(
+                        "patternCode".to_string(),
+                        JsonValue::String(fsh_code.code.clone()),
+                    );
+                }
+                _ => {
+                    // Unknown type - default to patternCodeableConcept for safety
+                    // as it's the most common use case
+                    let mut coding = serde_json::Map::new();
+                    if let Some(system) = &fsh_code.system {
+                        coding.insert("system".to_string(), JsonValue::String(system.clone()));
+                    }
+                    coding.insert("code".to_string(), JsonValue::String(fsh_code.code.clone()));
+                    if let Some(display) = &fsh_code.display {
+                        coding.insert("display".to_string(), JsonValue::String(display.clone()));
+                    }
+
+                    let codeable_concept = serde_json::json!({
+                        "coding": [JsonValue::Object(coding)]
+                    });
+                    pattern_map.insert("patternCodeableConcept".to_string(), codeable_concept);
+                }
+            }
+        } else if value.starts_with('"') && value.ends_with('"') {
             // String value
-            let parsed_value: JsonValue = serde_json::from_str(&value)?;
-            pattern_map.insert("patternString".to_string(), parsed_value);
-        } else if value.starts_with('#') {
-            // Code value
-            let code = value.trim_start_matches('#');
+            let string_val = &value[1..value.len() - 1];
             pattern_map.insert(
-                "patternCode".to_string(),
-                JsonValue::String(code.to_string()),
+                "patternString".to_string(),
+                JsonValue::String(string_val.to_string()),
             );
-        } else if value.parse::<i64>().is_ok() || value.parse::<f64>().is_ok() {
-            // Numeric value
-            let parsed_value: JsonValue = serde_json::from_str(&value)?;
-            pattern_map.insert("patternInteger".to_string(), parsed_value);
+        } else if value == "true" || value == "false" {
+            // Boolean value
+            pattern_map.insert(
+                "patternBoolean".to_string(),
+                JsonValue::Bool(value == "true"),
+            );
+        } else if let Ok(int_val) = value.parse::<i64>() {
+            // Integer value
+            pattern_map.insert(
+                "patternInteger".to_string(),
+                JsonValue::Number(serde_json::Number::from(int_val)),
+            );
+        } else if let Ok(float_val) = value.parse::<f64>() {
+            // Decimal value
+            if let Some(num) = serde_json::Number::from_f64(float_val) {
+                pattern_map.insert("patternDecimal".to_string(), JsonValue::Number(num));
+            }
         } else {
-            // Treat as identifier/code
-            pattern_map.insert("patternCode".to_string(), JsonValue::String(value));
-        };
+            // Fallback: treat as code if it looks like one, otherwise string
+            if value
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
+                pattern_map.insert("patternCode".to_string(), JsonValue::String(value));
+            } else {
+                pattern_map.insert("patternString".to_string(), JsonValue::String(value));
+            }
+        }
 
         element.pattern = Some(pattern_map);
 
@@ -1077,6 +1777,23 @@ impl ProfileExporter {
         structure_def: &StructureDefinition,
         path: &str,
     ) -> Result<String, ExportError> {
+        // SAFETY: Strip any caret prefix from path - carets indicate metadata fields,
+        // not element paths. If a caret appears in the path, it's a bug in path extraction.
+        let path = path.trim_start_matches('^');
+
+        // Warn if path still contains caret (indicates malformed input)
+        if path.contains('^') {
+            warn!(
+                "Path contains caret character (^) which indicates a metadata field, not an element path: {}",
+                path
+            );
+        }
+
+        // Handle root element: "." → ResourceType (e.g., "Patient")
+        if path == "." {
+            return Ok(structure_def.type_field.clone());
+        }
+
         // If path already includes resource type, use as-is
         if path.contains('.') {
             // Use structured path parsing instead of string splitting
@@ -1087,18 +1804,25 @@ impl ProfileExporter {
         }
 
         // Handle bracket notation for slicing: "identifier[system]" → "identifier:system"
+        // BUT preserve FHIR choice type notation: "deceased[x]" stays as "deceased[x]"
         let normalized_path = if path.contains('[') && path.contains(']') {
-            // Extract the slice name from brackets
-            let re = regex::Regex::new(r"([^\[]+)\[([^\]]+)\](.*)").unwrap();
-            if let Some(caps) = re.captures(path) {
-                let base = caps.get(1).map_or("", |m| m.as_str());
-                let slice = caps.get(2).map_or("", |m| m.as_str());
-                let rest = caps.get(3).map_or("", |m| m.as_str());
-
-                // Use colon notation for slices: base:sliceName
-                format!("{}:{}{}", base, slice, rest)
-            } else {
+            // Check if this is a FHIR choice type (ends with [x])
+            if path.ends_with("[x]") {
+                // Preserve [x] notation for choice types
                 path.to_string()
+            } else {
+                // Extract the slice name from brackets
+                let re = regex::Regex::new(r"([^\[]+)\[([^\]]+)\](.*)").unwrap();
+                if let Some(caps) = re.captures(path) {
+                    let base = caps.get(1).map_or("", |m| m.as_str());
+                    let slice = caps.get(2).map_or("", |m| m.as_str());
+                    let rest = caps.get(3).map_or("", |m| m.as_str());
+
+                    // Use colon notation for slices: base:sliceName
+                    format!("{}:{}{}", base, slice, rest)
+                } else {
+                    path.to_string()
+                }
             }
         } else {
             path.to_string()
@@ -1219,17 +1943,13 @@ impl ProfileExporter {
         let snapshot = structure_def.get_or_create_snapshot();
 
         if let Some(element) = snapshot.element.iter_mut().find(|e| e.path == full_path) {
-            // Set the type constraint
-            element.type_ = Some(
-                types
-                    .iter()
-                    .map(|t| ElementDefinitionType {
-                        code: t.clone(),
-                        profile: None,
-                        target_profile: None,
-                    })
-                    .collect(),
-            );
+            // Set the type constraint - parse each type to handle Reference, canonical, etc.
+            let mut parsed_types = Vec::new();
+            for type_str in &types {
+                let element_type = self.parse_type_constraint(type_str).await;
+                parsed_types.push(element_type);
+            }
+            element.type_ = Some(parsed_types);
 
             debug!("Constrained {} to types: {:?}", full_path, types);
         } else {
@@ -1374,6 +2094,11 @@ impl ProfileExporter {
         field: &str,
         value: &str,
     ) -> Result<(), ExportError> {
+        // Handle extension paths: extension[FMM].valueInteger = 5
+        if field.starts_with("extension[") {
+            return self.apply_extension_to_structure(structure_def, field, value);
+        }
+
         match field {
             "version" => {
                 structure_def.version = Some(value.trim_matches('"').to_string());
@@ -1398,6 +2123,107 @@ impl ProfileExporter {
                 // available in the current StructureDefinition struct
             }
         }
+        Ok(())
+    }
+
+    /// Apply an extension to the StructureDefinition
+    /// Handles paths like: extension[FMM].valueInteger = 5
+    fn apply_extension_to_structure(
+        &self,
+        structure_def: &mut StructureDefinition,
+        field: &str,
+        value: &str,
+    ) -> Result<(), ExportError> {
+        // Parse extension path: extension[NAME].valueTYPE
+        let re = regex::Regex::new(r"extension\[([^\]]+)\]\.(\w+)").unwrap();
+        if let Some(caps) = re.captures(field) {
+            let extension_name = caps.get(1).map_or("", |m| m.as_str());
+            let value_field = caps.get(2).map_or("", |m| m.as_str());
+
+            // Resolve extension URL from alias table
+            let extension_url = self
+                .alias_table
+                .resolve(extension_name)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    // If not an alias, assume it's already a URL or construct one
+                    if extension_name.starts_with("http://")
+                        || extension_name.starts_with("https://")
+                    {
+                        extension_name.to_string()
+                    } else {
+                        format!(
+                            "{}/StructureDefinition/{}",
+                            self.base_url,
+                            camel_to_kebab(extension_name)
+                        )
+                    }
+                });
+
+            // Parse the value based on the value field type
+            let typed_value: serde_json::Value = match value_field {
+                "valueInteger" => {
+                    let int_val: i64 = value.parse().map_err(|_| {
+                        ExportError::InvalidValue(format!(
+                            "Invalid integer value '{}' for {}",
+                            value, field
+                        ))
+                    })?;
+                    serde_json::json!(int_val)
+                }
+                "valueString" => {
+                    serde_json::json!(value.trim_matches('"'))
+                }
+                "valueBoolean" => {
+                    serde_json::json!(value == "true")
+                }
+                "valueCode" => {
+                    serde_json::json!(value.trim_start_matches('#'))
+                }
+                "valueUri" | "valueUrl" | "valueCanonical" => {
+                    serde_json::json!(value.trim_matches('"'))
+                }
+                _ => {
+                    // Default to string for unknown types
+                    serde_json::json!(value.trim_matches('"'))
+                }
+            };
+
+            // Create extension object
+            let extension = serde_json::json!({
+                "url": extension_url,
+                value_field: typed_value
+            });
+
+            // Add to structure_def.extension
+            if structure_def.extension.is_none() {
+                structure_def.extension = Some(Vec::new());
+            }
+
+            if let Some(ref mut extensions) = structure_def.extension {
+                // Check if extension with this URL already exists
+                if let Some(existing) = extensions
+                    .iter_mut()
+                    .find(|e| e.get("url").and_then(|u| u.as_str()) == Some(&extension_url))
+                {
+                    // Update existing extension
+                    if let Some(obj) = existing.as_object_mut() {
+                        obj.insert(value_field.to_string(), typed_value);
+                    }
+                } else {
+                    // Add new extension
+                    extensions.push(extension);
+                }
+            }
+
+            debug!(
+                "Applied extension: {} = {} (URL: {})",
+                field, value, extension_url
+            );
+        } else {
+            warn!("Could not parse extension path: {}", field);
+        }
+
         Ok(())
     }
 

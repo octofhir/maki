@@ -580,7 +580,7 @@ impl DefinitionSession {
                 "{}@{}",
                 resource_index.package_name, resource_index.package_version
             ),
-            version: resource_index.metadata.version.clone(),
+            version: resource_index.version.clone(),
             content: Arc::new(resource.content),
         });
 
@@ -659,7 +659,7 @@ impl DefinitionSession {
                     "{}@{}",
                     resource_index.package_name, resource_index.package_version
                 ),
-                version: resource_index.metadata.version.clone(),
+                version: resource_index.version.clone(),
                 content: Arc::new(resource.content),
             });
 
@@ -772,6 +772,180 @@ impl DefinitionSession {
                 );
                 Ok(None)
             }
+        }
+    }
+
+    /// Set package priorities from dependencies list
+    ///
+    /// First dependency gets highest priority (100), decreasing by 10 for each subsequent.
+    /// This ensures that when resolving resources, dependencies are preferred over core packages.
+    pub async fn set_dependencies_priority(
+        &self,
+        deps: &[(String, String)],
+    ) -> CanonicalResult<()> {
+        for (i, (name, version)) in deps.iter().enumerate() {
+            let priority = 100 - (i as i32 * 10);
+            self.facade
+                .manager
+                .storage()
+                .package_storage()
+                .set_package_priority(name, version, priority)
+                .await
+                .map_err(CanonicalLoaderError::from)?;
+            debug!(
+                "Set package priority for {}@{}: {}",
+                name, version, priority
+            );
+        }
+        Ok(())
+    }
+
+    /// Find a StructureDefinition parent by key (id, name, or URL), excluding Extensions
+    ///
+    /// This method is optimized for resolving parent definitions during profile building.
+    /// It uses case-insensitive matching and excludes Extension resources to avoid
+    /// accidentally resolving an Extension when looking for a Profile/Resource parent.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The identifier to search for (can be id, name, or canonical URL)
+    ///
+    /// # Returns
+    ///
+    /// The parent StructureDefinition if found, or None if not found
+    pub async fn find_profile_parent(
+        &self,
+        key: &str,
+    ) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
+        // Use the new find_resource_info with:
+        // - types = Profile, Resource, Type, Logical (NOT Extension)
+        // - exclude_extensions = true
+        // - sort_by_priority = true (prefer dependencies over core packages)
+        let types = ["Profile", "Resource", "Type", "Logical"];
+        let result = self
+            .facade
+            .manager
+            .storage()
+            .package_storage()
+            .find_resource_info(key, Some(&types), true, true)
+            .await
+            .map_err(CanonicalLoaderError::from)?;
+
+        if let Some(resource_index) = result {
+            let canonical_url = resource_index.canonical_url.clone();
+
+            // Check caches first
+            if let Some(existing) = self.local_cache.get(&canonical_url) {
+                return Ok(Some(existing.clone()));
+            }
+            if let Some(existing) = self.facade.global_cache.get(&canonical_url) {
+                let arc = existing.clone();
+                self.local_cache.insert(canonical_url.clone(), arc.clone());
+                return Ok(Some(arc));
+            }
+
+            // Load the actual resource content
+            let resource = self
+                .facade
+                .manager
+                .storage()
+                .package_storage()
+                .get_resource(&resource_index)
+                .await
+                .map_err(CanonicalLoaderError::from)?;
+
+            let resolved = Arc::new(DefinitionResource {
+                canonical_url: canonical_url.clone(),
+                resource_type: resource_index.resource_type,
+                package_id: format!(
+                    "{}@{}",
+                    resource_index.package_name, resource_index.package_version
+                ),
+                version: resource_index.version,
+                content: Arc::new(resource.content),
+            });
+
+            self.facade
+                .global_cache
+                .insert(canonical_url.clone(), resolved.clone());
+            self.local_cache.insert(canonical_url, resolved.clone());
+
+            Ok(Some(resolved))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Find resource by key (id, name, or URL) with optional type filtering
+    ///
+    /// This provides access to the new case-insensitive, priority-aware search.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The identifier to search for
+    /// * `types` - Optional SD flavor types to filter by
+    /// * `exclude_extensions` - If true, exclude Extension resources
+    ///
+    /// # Returns
+    ///
+    /// The matching resource if found
+    pub async fn find_resource_by_key(
+        &self,
+        key: &str,
+        types: Option<&[&str]>,
+        exclude_extensions: bool,
+    ) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
+        let result = self
+            .facade
+            .manager
+            .storage()
+            .package_storage()
+            .find_resource_info(key, types, exclude_extensions, true)
+            .await
+            .map_err(CanonicalLoaderError::from)?;
+
+        if let Some(resource_index) = result {
+            let canonical_url = resource_index.canonical_url.clone();
+
+            // Check caches first
+            if let Some(existing) = self.local_cache.get(&canonical_url) {
+                return Ok(Some(existing.clone()));
+            }
+            if let Some(existing) = self.facade.global_cache.get(&canonical_url) {
+                let arc = existing.clone();
+                self.local_cache.insert(canonical_url.clone(), arc.clone());
+                return Ok(Some(arc));
+            }
+
+            // Load the actual resource content
+            let resource = self
+                .facade
+                .manager
+                .storage()
+                .package_storage()
+                .get_resource(&resource_index)
+                .await
+                .map_err(CanonicalLoaderError::from)?;
+
+            let resolved = Arc::new(DefinitionResource {
+                canonical_url: canonical_url.clone(),
+                resource_type: resource_index.resource_type,
+                package_id: format!(
+                    "{}@{}",
+                    resource_index.package_name, resource_index.package_version
+                ),
+                version: resource_index.version,
+                content: Arc::new(resource.content),
+            });
+
+            self.facade
+                .global_cache
+                .insert(canonical_url.clone(), resolved.clone());
+            self.local_cache.insert(canonical_url, resolved.clone());
+
+            Ok(Some(resolved))
+        } else {
+            Ok(None)
         }
     }
 }

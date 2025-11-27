@@ -482,9 +482,7 @@ impl CompiledGritQLPattern {
             }
 
             // Underscore pattern: _ - matches any node without binding
-            Pattern::Underscore => {
-                Ok((true, bindings.clone()))
-            }
+            Pattern::Underscore => Ok((true, bindings.clone())),
 
             // Assignment pattern: Profile: $name
             // Extract the field value and bind it to the variable
@@ -590,10 +588,7 @@ impl CompiledGritQLPattern {
                                 );
                                 std::borrow::Cow::Owned(value.clone())
                             } else {
-                                tracing::debug!(
-                                    "Variable '{}' not bound, using node text",
-                                    name
-                                );
+                                tracing::debug!("Variable '{}' not bound, using node text", name);
                                 node.text().map_err(|e| {
                                     MakiError::rule_error(
                                         &self.rule_id,

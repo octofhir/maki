@@ -447,6 +447,135 @@ impl RuleProcessor {
         }
     }
 
+    /// Resolve a type name to its canonical URL
+    ///
+    /// Resolution order:
+    /// 1. Check if already a URL
+    /// 2. Try canonical manager by name
+    /// 3. Try FHIR core canonical URL format
+    async fn resolve_type_to_canonical(&self, type_name: &str) -> Option<String> {
+        // If already a URL, return as-is
+        if type_name.starts_with("http://") || type_name.starts_with("https://") {
+            return Some(type_name.to_string());
+        }
+
+        // Try canonical manager by name
+        if let Ok(resource) = self.canonical_session.resolve(type_name).await {
+            if let Ok(sd) =
+                serde_json::from_value::<StructureDefinition>((*resource.content).clone())
+            {
+                return Some(sd.url.clone());
+            }
+        }
+
+        // Try FHIR core canonical URL format
+        let core_candidate = format!("http://hl7.org/fhir/StructureDefinition/{}", type_name);
+        if let Ok(_) = self.canonical_session.resolve(&core_candidate).await {
+            return Some(core_candidate);
+        }
+
+        None
+    }
+
+    /// Parse a type constraint string and resolve it to an ElementDefinitionType
+    ///
+    /// Handles:
+    /// - `Reference(TypeName)` → code: "Reference", targetProfile: [resolved URL]
+    /// - `Reference(Type1 or Type2)` → code: "Reference", targetProfile: [urls]
+    /// - `canonical(TypeName)` → code: "canonical", targetProfile: [resolved URL]
+    /// - Simple types like `string`, `Quantity` → code: type_name
+    async fn parse_type_constraint(&self, type_str: &str) -> ElementDefinitionType {
+        // Check for Reference(Type) pattern
+        if type_str.starts_with("Reference(") && type_str.ends_with(')') {
+            let inner = &type_str[10..type_str.len() - 1]; // Extract content between ()
+            let targets: Vec<&str> = inner.split(" or ").map(|s| s.trim()).collect();
+
+            let mut target_profiles = Vec::new();
+            for target in targets {
+                if let Some(canonical_url) = self.resolve_type_to_canonical(target).await {
+                    target_profiles.push(canonical_url);
+                } else {
+                    // Fallback: construct URL with base_url if not resolvable
+                    let fallback_url = format!("{}/StructureDefinition/{}", self.base_url, target);
+                    warn!(
+                        "Could not resolve Reference target '{}', using fallback URL: {}",
+                        target, fallback_url
+                    );
+                    target_profiles.push(fallback_url);
+                }
+            }
+
+            return ElementDefinitionType {
+                code: "Reference".to_string(),
+                profile: None,
+                target_profile: if target_profiles.is_empty() {
+                    None
+                } else {
+                    Some(target_profiles)
+                },
+            };
+        }
+
+        // Check for canonical(Type) pattern
+        if type_str.starts_with("canonical(") && type_str.ends_with(')') {
+            let inner = &type_str[10..type_str.len() - 1];
+            let targets: Vec<&str> = inner.split(" or ").map(|s| s.trim()).collect();
+
+            let mut target_profiles = Vec::new();
+            for target in targets {
+                if let Some(canonical_url) = self.resolve_type_to_canonical(target).await {
+                    target_profiles.push(canonical_url);
+                } else {
+                    let fallback_url = format!("{}/StructureDefinition/{}", self.base_url, target);
+                    target_profiles.push(fallback_url);
+                }
+            }
+
+            return ElementDefinitionType {
+                code: "canonical".to_string(),
+                profile: None,
+                target_profile: if target_profiles.is_empty() {
+                    None
+                } else {
+                    Some(target_profiles)
+                },
+            };
+        }
+
+        // Check for CodeableReference(Type) pattern
+        if type_str.starts_with("CodeableReference(") && type_str.ends_with(')') {
+            let inner = &type_str[18..type_str.len() - 1];
+            let targets: Vec<&str> = inner.split(" or ").map(|s| s.trim()).collect();
+
+            let mut target_profiles = Vec::new();
+            for target in targets {
+                if let Some(canonical_url) = self.resolve_type_to_canonical(target).await {
+                    target_profiles.push(canonical_url);
+                } else {
+                    let fallback_url = format!("{}/StructureDefinition/{}", self.base_url, target);
+                    target_profiles.push(fallback_url);
+                }
+            }
+
+            return ElementDefinitionType {
+                code: "CodeableReference".to_string(),
+                profile: None,
+                target_profile: if target_profiles.is_empty() {
+                    None
+                } else {
+                    Some(target_profiles)
+                },
+            };
+        }
+
+        // Simple type - just use as code
+        ElementDefinitionType {
+            code: type_str.to_string(),
+            profile: None,
+            target_profile: None,
+        }
+    }
+
     /// Process CardRule (cardinality constraints)
     ///
     /// Creates or updates ElementDefinition with min/max cardinality values.
@@ -578,24 +707,105 @@ impl RuleProcessor {
 
         trace!("Processing FlagRule: {} {:?}", path_str, flags);
 
-        // Resolve full FHIR path
-        let full_path = self.resolve_full_path(&context.base_definition, &path_str)?;
+        // Check if this is an extension slice reference (e.g., extension[us-core-birthsex])
+        let re = regex::Regex::new(r"^extension\[([^\]]+)\](.*)$").unwrap();
+        let (element, display_path) = if let Some(caps) = re.captures(&path_str) {
+            let fsh_reference = caps.get(1).map_or("", |m| m.as_str());
+            let rest = caps.get(2).map_or("", |m| m.as_str());
 
-        // Find or create element in differential with proper merging
-        let element = self.find_or_create_element(&mut context.current_differential, &full_path);
+            // Try to resolve the actual slice name from parent's snapshot
+            let actual_slice_name = self
+                .resolve_extension_slice_name(&context.base_definition, fsh_reference)
+                .unwrap_or_else(|| fsh_reference.to_string());
+
+            // Construct proper path and id for extension slice
+            let resource_type = &context.base_definition.type_field;
+            let base_path = format!("{}.extension", resource_type);
+            let element_id = format!("{}:{}{}", base_path, actual_slice_name, rest);
+
+            trace!(
+                "Extension slice resolved: fsh_ref={}, actual_slice={}, path={}, id={}",
+                fsh_reference, actual_slice_name, base_path, element_id
+            );
+
+            // Find or create element with proper extension slice handling
+            let elem = self.find_or_create_extension_slice_element(
+                &mut context.current_differential,
+                &base_path,
+                &element_id,
+                &actual_slice_name,
+            );
+            (elem, element_id)
+        } else {
+            // Regular path resolution
+            let full_path = self.resolve_full_path(&context.base_definition, &path_str)?;
+            let elem = self.find_or_create_element(&mut context.current_differential, &full_path);
+            (elem, full_path)
+        };
 
         // Apply flags with conflict detection and merging
         for flag in flags {
-            self.apply_flag_to_element_with_merging(element, &flag, &full_path)?;
+            self.apply_flag_to_element_with_merging(element, &flag, &display_path)?;
         }
 
         debug!(
             "Applied flags {:?} to {}",
             rule.flags_as_strings(),
-            full_path
+            display_path
         );
 
         Ok(())
+    }
+
+    /// Resolve extension slice name from parent snapshot
+    ///
+    /// Looks up the parent profile's snapshot to find the actual slice name
+    /// for an extension reference. FSH allows referencing extensions by alias
+    /// or by the parent's slice name.
+    fn resolve_extension_slice_name(
+        &self,
+        base_definition: &StructureDefinition,
+        fsh_reference: &str,
+    ) -> Option<String> {
+        // Get parent's snapshot
+        let snapshot = base_definition.snapshot.as_ref()?;
+
+        // Resource type prefix for path matching
+        let resource_type = &base_definition.type_field;
+
+        // Look for extension slices in parent's snapshot
+        for element in &snapshot.element {
+            // Extension slices have path like "Patient.extension" with a slice_name
+            if element.path == format!("{}.extension", resource_type) {
+                if let Some(ref slice_name) = element.slice_name {
+                    // Direct match: FSH reference matches slice name
+                    if slice_name == fsh_reference {
+                        return Some(slice_name.clone());
+                    }
+
+                    // Check if FSH reference (as alias/URL) matches the extension's type profile
+                    // Extension slices have type[0].profile[0] = extension URL
+                    if let Some(ref types) = element.type_ {
+                        for type_def in types {
+                            if let Some(ref profiles) = type_def.profile {
+                                for profile_url in profiles {
+                                    // Check if the FSH reference matches the profile URL
+                                    // e.g., fsh_reference = "us-core-birthsex" and
+                                    // profile_url = "http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex"
+                                    if profile_url.ends_with(fsh_reference)
+                                        || profile_url.contains(&format!("/{}", fsh_reference))
+                                    {
+                                        return Some(slice_name.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     /// Helper method to resolve FSH path to full FHIR path
@@ -604,6 +814,23 @@ impl RuleProcessor {
         base_definition: &StructureDefinition,
         path: &str,
     ) -> Result<String, DifferentialError> {
+        // SAFETY: Strip any caret prefix from path - carets indicate metadata fields,
+        // not element paths. If a caret appears in the path, it's a bug in path extraction.
+        let path = path.trim_start_matches('^');
+
+        // Warn if path still contains caret (indicates malformed input)
+        if path.contains('^') {
+            warn!(
+                "Path contains caret character (^) which indicates a metadata field, not an element path: {}",
+                path
+            );
+        }
+
+        // Handle root element: "." → ResourceType (e.g., "Patient")
+        if path == "." {
+            return Ok(base_definition.type_field.clone());
+        }
+
         // If path already includes resource type, use as-is
         if path.contains('.') {
             let parts: Vec<&str> = path.split('.').collect();
@@ -613,18 +840,25 @@ impl RuleProcessor {
         }
 
         // Handle bracket notation for slicing: "identifier[system]" → "identifier:system"
+        // BUT preserve FHIR choice type notation: "deceased[x]" stays as "deceased[x]"
         let normalized_path = if path.contains('[') && path.contains(']') {
-            // Extract the slice name from brackets
-            let re = regex::Regex::new(r"([^\[]+)\[([^\]]+)\](.*)").unwrap();
-            if let Some(caps) = re.captures(path) {
-                let base = caps.get(1).map_or("", |m| m.as_str());
-                let slice = caps.get(2).map_or("", |m| m.as_str());
-                let rest = caps.get(3).map_or("", |m| m.as_str());
-
-                // Use colon notation for slices: base:sliceName
-                format!("{}:{}{}", base, slice, rest)
-            } else {
+            // Check if this is a FHIR choice type (ends with [x])
+            if path.ends_with("[x]") {
+                // Preserve [x] notation for choice types
                 path.to_string()
+            } else {
+                // Extract the slice name from brackets
+                let re = regex::Regex::new(r"([^\[]+)\[([^\]]+)\](.*)").unwrap();
+                if let Some(caps) = re.captures(path) {
+                    let base = caps.get(1).map_or("", |m| m.as_str());
+                    let slice = caps.get(2).map_or("", |m| m.as_str());
+                    let rest = caps.get(3).map_or("", |m| m.as_str());
+
+                    // Use colon notation for slices: base:sliceName
+                    format!("{}:{}{}", base, slice, rest)
+                } else {
+                    path.to_string()
+                }
             }
         } else {
             path.to_string()
@@ -668,6 +902,57 @@ impl RuleProcessor {
         let insert_index = differential
             .iter()
             .position(|e| e.path.as_str() > path)
+            .unwrap_or(differential.len());
+
+        differential.insert(insert_index, element);
+
+        // Return mutable reference to the inserted element
+        &mut differential[insert_index]
+    }
+
+    /// Helper method to find or create extension slice element in differential
+    ///
+    /// For extension slices, we need separate path and id:
+    /// - path: "Patient.extension" (base element path without slice)
+    /// - id: "Patient.extension:sliceName" (includes slice name)
+    /// - slice_name: "sliceName" (explicit slice name property)
+    fn find_or_create_extension_slice_element<'a>(
+        &self,
+        differential: &'a mut Vec<ElementDefinition>,
+        path: &str,
+        id: &str,
+        slice_name: &str,
+    ) -> &'a mut ElementDefinition {
+        // Look for existing element by id (for extension slices, id is the unique identifier)
+        if let Some(index) = differential
+            .iter()
+            .position(|e| e.id.as_deref() == Some(id))
+        {
+            trace!(
+                "Found existing extension slice element in differential: {}",
+                id
+            );
+            return &mut differential[index];
+        }
+
+        // Create new element with proper initialization for extension slice
+        let mut element = ElementDefinition::new(path.to_string());
+        element.id = Some(id.to_string());
+        element.slice_name = Some(slice_name.to_string());
+
+        trace!(
+            "Created new extension slice element: path={}, id={}, sliceName={}",
+            path, id, slice_name
+        );
+
+        // Insert element in proper order (sorted by id for extension slices)
+        let insert_index = differential
+            .iter()
+            .position(|e| {
+                e.id.as_ref()
+                    .map(|existing_id| existing_id.as_str() > id)
+                    .unwrap_or(false)
+            })
             .unwrap_or(differential.len());
 
         differential.insert(insert_index, element);
@@ -871,6 +1156,18 @@ impl RuleProcessor {
 
         trace!("Processing FixedValueRule: {} = {}", path_str, value);
 
+        // Skip profile-level caret rules that were parsed as FixedValue
+        // These have paths starting with ^ and should NOT create differential elements.
+        // Example: * ^extension[FMM].valueInteger = 5 becomes path=^extension[FMM].valueInteger
+        // These rules apply to StructureDefinition metadata, not element definitions.
+        if path_str.starts_with('^') {
+            trace!(
+                "Skipping caret rule in FixedValueRule handler: {} = {}",
+                path_str, value
+            );
+            return Ok(());
+        }
+
         // Resolve full FHIR path
         let full_path = self.resolve_full_path(&context.base_definition, &path_str)?;
 
@@ -1010,17 +1307,13 @@ impl RuleProcessor {
             );
         }
 
-        // Set type constraints
-        element.type_ = Some(
-            types
-                .iter()
-                .map(|t| ElementDefinitionType {
-                    code: t.clone(),
-                    profile: None,
-                    target_profile: None,
-                })
-                .collect(),
-        );
+        // Set type constraints - parse each type to handle Reference, canonical, etc.
+        let mut parsed_types = Vec::new();
+        for type_str in &types {
+            let element_type = self.parse_type_constraint(type_str).await;
+            parsed_types.push(element_type);
+        }
+        element.type_ = Some(parsed_types);
 
         debug!("Applied type constraint {:?} to {}", types, full_path);
 
@@ -1219,6 +1512,19 @@ impl RuleProcessor {
                 path: "unknown".to_string(),
                 reason: "missing value".to_string(),
             })?;
+
+        // Skip profile-level extension caret rules - these set metadata on the
+        // StructureDefinition itself, not on elements. They should be handled by
+        // profile_exporter.rs apply_field_to_structure() instead.
+        // Examples: * ^extension[FMM].valueInteger = 5
+        //           * ^extension[standards-status].valueCode = #trial-use
+        if field.starts_with("extension[") {
+            trace!(
+                "Skipping StructureDefinition-level extension caret rule: ^{} = {}",
+                field, value
+            );
+            return Ok(());
+        }
 
         // Check if this is an element-level caret rule or profile-level
         if let Some(element_path) = rule.element_path() {

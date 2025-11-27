@@ -363,13 +363,15 @@ impl BuildOrchestrator {
         info!("Step 3: ✓ Session created successfully");
 
         // Install dependencies using the SAME session
+        // Use all_dependencies() to merge top-level and build-section dependencies
+        let dependencies = self.config.all_dependencies();
         eprintln!(
-            "[DEBUG BUILD.RS LINE 365] config.dependencies = {:?}",
-            self.config.dependencies
+            "[DEBUG BUILD.RS LINE 365] all_dependencies() = {:?}",
+            dependencies
         );
-        if let Some(ref dependencies) = self.config.dependencies {
+        if !dependencies.is_empty() {
             eprintln!(
-                "[DEBUG BUILD.RS LINE 367] INSIDE if Some block! dependencies.len() = {}",
+                "[DEBUG BUILD.RS LINE 367] dependencies.len() = {}",
                 dependencies.len()
             );
             info!(
@@ -377,75 +379,96 @@ impl BuildOrchestrator {
                 dependencies.len()
             );
 
-            if !dependencies.is_empty() {
-                eprintln!("[DEBUG BUILD.RS LINE 374] Dependencies NOT empty, installing...");
-                use crate::canonical::PackageCoordinate;
+            eprintln!("[DEBUG BUILD.RS LINE 374] Dependencies NOT empty, installing...");
+            use crate::canonical::PackageCoordinate;
 
-                let mut coords = Vec::new();
+            let mut coords = Vec::new();
 
-                for (package_id, version) in dependencies {
-                    let version_str = match version {
-                        crate::config::DependencyVersion::Simple(v) => v.clone(),
-                        crate::config::DependencyVersion::Complex { version, .. } => {
-                            version.clone()
-                        }
-                    };
+            for (package_id, version) in &dependencies {
+                let version_str = match version {
+                    crate::config::DependencyVersion::Simple(v) => v.clone(),
+                    crate::config::DependencyVersion::Complex { version, .. } => version.clone(),
+                };
 
-                    info!("  → Queueing: {}@{}", package_id, version_str);
+                info!("  → Queueing: {}@{}", package_id, version_str);
 
-                    coords.push(PackageCoordinate {
-                        name: package_id.clone(),
-                        version: version_str.clone(),
-                        priority: 100, // Lower priority than core packages
-                    });
+                coords.push(PackageCoordinate {
+                    name: package_id.clone(),
+                    version: version_str.clone(),
+                    priority: 100, // Lower priority than core packages
+                });
+            }
+
+            // Install all dependencies at once in the main session with timeout
+            eprintln!(
+                "[DEBUG BUILD.RS LINE 398] About to call ensure_packages with {} packages: {:?}",
+                coords.len(),
+                coords
+            );
+            info!(
+                "Step 4a: Calling ensure_packages with {} packages...",
+                coords.len()
+            );
+            let result = session.ensure_packages(coords).await;
+            eprintln!("[DEBUG BUILD.RS LINE 403] ensure_packages returned!");
+            match result {
+                Ok(()) => {
+                    info!("Step 4b: ✓ All dependencies installed successfully");
+
+                    // Set package priorities based on dependency order
+                    // First dependency gets highest priority (100), decreasing by 10 for each subsequent
+                    // This ensures resources from explicitly listed dependencies are preferred over core packages
+                    let deps_for_priority: Vec<(String, String)> = dependencies
+                        .iter()
+                        .map(|(pkg_id, version)| {
+                            let version_str = match version {
+                                crate::config::DependencyVersion::Simple(v) => v.clone(),
+                                crate::config::DependencyVersion::Complex { version, .. } => {
+                                    version.clone()
+                                }
+                            };
+                            (pkg_id.clone(), version_str)
+                        })
+                        .collect();
+
+                    if let Err(e) = session.set_dependencies_priority(&deps_for_priority).await {
+                        warn!("Step 4c: ⚠ Failed to set dependency priorities: {}", e);
+                    } else {
+                        info!(
+                            "Step 4c: ✓ Dependency priorities set ({} packages)",
+                            deps_for_priority.len()
+                        );
+                    }
                 }
-
-                // Install all dependencies at once in the main session with timeout
-                eprintln!(
-                    "[DEBUG BUILD.RS LINE 398] About to call ensure_packages with {} packages: {:?}",
-                    coords.len(),
-                    coords
-                );
-                info!(
-                    "Step 4a: Calling ensure_packages with {} packages...",
-                    coords.len()
-                );
-                let result = session.ensure_packages(coords).await;
-                eprintln!("[DEBUG BUILD.RS LINE 403] ensure_packages returned!");
-                match result {
-                    Ok(()) => {
-                        info!("Step 4b: ✓ All dependencies installed successfully");
-                    }
-                    Err(CanonicalLoaderError::PackageInstallTimeout {
-                        packages,
-                        timeout_secs,
-                    }) => {
-                        let package_list = packages
-                            .iter()
-                            .map(|pkg| format!("{}@{}", pkg.name, pkg.version))
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        error!(
-                            "Step 4b: ❌ TIMEOUT: Dependency installation exceeded {}s for [{}]",
-                            timeout_secs, package_list
-                        );
-                        error!("  This indicates a bug in the canonical package manager.");
-                        error!("  Please report this issue with the following debug information:");
-                        error!(
-                            "    - IG: {}",
-                            self.build_config().name.as_deref().unwrap_or("Unknown")
-                        );
-                        error!("    - Dependencies: {} packages", dependencies.len());
-                        error!("    - Database: ~/.maki/index/storage.db");
-                        return Err(BuildError::ExportError(format!(
-                            "Dependency installation timed out after {} seconds for [{}]",
-                            timeout_secs, package_list
-                        )));
-                    }
-                    Err(e) => {
-                        warn!("Step 4b: ⚠ Failed to install some dependencies: {}", e);
-                        warn!("  Continuing with partial dependencies...");
-                    }
+                Err(CanonicalLoaderError::PackageInstallTimeout {
+                    packages,
+                    timeout_secs,
+                }) => {
+                    let package_list = packages
+                        .iter()
+                        .map(|pkg| format!("{}@{}", pkg.name, pkg.version))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    error!(
+                        "Step 4b: ❌ TIMEOUT: Dependency installation exceeded {}s for [{}]",
+                        timeout_secs, package_list
+                    );
+                    error!("  This indicates a bug in the canonical package manager.");
+                    error!("  Please report this issue with the following debug information:");
+                    error!(
+                        "    - IG: {}",
+                        self.build_config().name.as_deref().unwrap_or("Unknown")
+                    );
+                    error!("    - Dependencies: {} packages", dependencies.len());
+                    error!("    - Database: ~/.maki/index/storage.db");
+                    return Err(BuildError::ExportError(format!(
+                        "Dependency installation timed out after {} seconds for [{}]",
+                        timeout_secs, package_list
+                    )));
+                }
+                Err(e) => {
+                    warn!("Step 4b: ⚠ Failed to install some dependencies: {}", e);
+                    warn!("  Continuing with partial dependencies...");
                 }
             }
         } else {
@@ -1755,6 +1778,15 @@ impl BuildOrchestrator {
                                     .and_then(|id_clause| id_clause.value())
                                     .unwrap_or_else(|| instance_name.clone());
 
+                                // BUG FIX: Use the actual resourceType from exported JSON for file naming
+                                // This ensures files are named like "Condition-xxx.json" instead of "PrimaryCancerCondition-xxx.json"
+                                // SUSHI uses the base FHIR resource type, not the profile name
+                                let actual_resource_type = resource_json
+                                    .get("resourceType")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_else(|| instance_type.clone());
+
                                 // Register the instance for reference resolution (requires lock)
                                 {
                                     let mut exporter = instance_exporter.lock().await;
@@ -1766,7 +1798,7 @@ impl BuildOrchestrator {
 
                                 exported_instances_shared.lock().await.push((
                                     instance_name,
-                                    instance_type,
+                                    actual_resource_type,
                                     instance_id,
                                     resource_json,
                                     source_file,
@@ -2286,7 +2318,12 @@ impl BuildOrchestrator {
         let ig = ig_generator.generate();
 
         // Write ImplementationGuide resource
-        let id = self.build_config().id.as_deref().unwrap_or("ig");
+        let id = ig
+            .id
+            .as_deref()
+            .or_else(|| self.build_config().id.as_deref())
+            .or_else(|| self.build_config().package_id())
+            .unwrap_or("ig");
         let filename = format!("ImplementationGuide-{}.json", id);
         file_structure
             .write_resource(&filename, &ig)

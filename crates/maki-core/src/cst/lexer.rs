@@ -501,10 +501,18 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
                         errors.push(err);
                     }
                     tokens.push(CstToken::new(kind, &input[start..end], span(start, end)));
+                    // Update last_non_trivia_token for special literals (dates, times, etc.)
+                    if !kind.is_trivia() {
+                        last_non_trivia_token = Some(kind);
+                    }
                     i = end;
                 } else {
                     let (kind, end) = lex_word(input, start);
                     tokens.push(CstToken::new(kind, &input[start..end], span(start, end)));
+                    // BUG FIX: Update last_non_trivia_token for identifiers and keywords
+                    // This ensures inline comments after identifiers are recognized correctly
+                    // e.g., "Parent: Observation  // comment" should parse the // as a comment
+                    last_non_trivia_token = Some(kind);
                     i = end;
                 }
             }

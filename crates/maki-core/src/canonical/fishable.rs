@@ -361,6 +361,16 @@ impl Fishable for DefinitionSession {
             }
         }
 
+        // Strategy 3: Try as name (search by type and name)
+        // This handles cases like USCoreVitalSignsProfile where the name differs from the ID
+        if let Some(resource) = self.fish_by_name(item).await? {
+            let metadata = FhirMetadata::from_definition(&resource);
+            if metadata.matches_types(types) {
+                debug!("Found '{}' by name", item);
+                return Ok(Some(resource));
+            }
+        }
+
         debug!("Not found: '{}'", item);
         Ok(None)
     }
@@ -404,11 +414,53 @@ impl Fishable for DefinitionSession {
 
     async fn fish_by_name(
         &self,
-        _name: &str,
+        name: &str,
     ) -> crate::canonical::CanonicalResult<Option<Arc<DefinitionResource>>> {
-        // Name-based lookups are tricky - would require iterating through all resources
-        // For now, return None - can be optimized later with a name index
-        // TODO: Implement name-based lookup with index
+        debug!("fish_by_name: searching for '{}'", name);
+
+        // Try common definition resource types that have names
+        for resource_type in &["StructureDefinition", "ValueSet", "CodeSystem"] {
+            // Try exact name match
+            if let Ok(Some(resource)) = self.resource_by_type_and_name(resource_type, name).await {
+                debug!(
+                    "fish_by_name: found '{}' by exact name match (type: {})",
+                    name, resource_type
+                );
+                return Ok(Some(resource));
+            }
+
+            // Try with "Profile" suffix (common US Core pattern: USCorePatient -> USCorePatientProfile)
+            if *resource_type == "StructureDefinition" && !name.ends_with("Profile") {
+                let with_suffix = format!("{}Profile", name);
+                if let Ok(Some(resource)) = self
+                    .resource_by_type_and_name(resource_type, &with_suffix)
+                    .await
+                {
+                    debug!(
+                        "fish_by_name: found '{}' with Profile suffix as '{}'",
+                        name, with_suffix
+                    );
+                    return Ok(Some(resource));
+                }
+            }
+
+            // Try without "Profile" suffix (USCorePatientProfile -> USCorePatient)
+            if *resource_type == "StructureDefinition" && name.ends_with("Profile") {
+                let without_suffix = &name[..name.len() - 7]; // Remove "Profile"
+                if let Ok(Some(resource)) = self
+                    .resource_by_type_and_name(resource_type, without_suffix)
+                    .await
+                {
+                    debug!(
+                        "fish_by_name: found '{}' without Profile suffix as '{}'",
+                        name, without_suffix
+                    );
+                    return Ok(Some(resource));
+                }
+            }
+        }
+
+        debug!("fish_by_name: '{}' not found", name);
         Ok(None)
     }
 

@@ -966,7 +966,11 @@ pub fn format_document(source: &str, options: &FormatOptions) -> String {
         indent_size: options.indent_style.size(),
         line_width: options.max_line_length,
         use_tabs,
-        tab_width: if use_tabs { 4 } else { options.indent_style.size() as u32 },
+        tab_width: if use_tabs {
+            4
+        } else {
+            options.indent_style.size() as u32
+        },
     };
     let mut printer = Printer::new(printer_options);
 

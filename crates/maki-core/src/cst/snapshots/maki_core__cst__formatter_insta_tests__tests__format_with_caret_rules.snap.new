@@ -1,0 +1,11 @@
+---
+source: crates/maki-core/src/cst/formatter_insta_tests.rs
+assertion_line: 41
+expression: formatted
+---
+Profile:Test
+Parent:Patient
+
+*^version = "1.0.0"
+*^status = #active
+*name 1..1

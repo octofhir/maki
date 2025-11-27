@@ -315,8 +315,23 @@ impl FishingContext {
     ) -> CanonicalResult<Option<StructureDefinition>> {
         trace!("Fishing for StructureDefinition: {}", identifier);
 
+        // Resolve alias first
+        let identifier = self
+            .resolve_alias(identifier)
+            .unwrap_or_else(|| identifier.to_string());
+
+        // Helper to generate name variants
+        let mut name_candidates = Vec::new();
+        name_candidates.push(identifier.clone());
+        name_candidates.push(identifier.to_ascii_lowercase());
+        name_candidates.push(camel_to_kebab(&identifier));
+
+        // Helper to skip unexpected Extension hits (SUSHI behavior for non-extension parents)
+        let is_unexpected_extension =
+            |sd: &StructureDefinition| sd.type_field == "Extension" && identifier != "Extension";
+
         // Check package first
-        if let Some(json) = self.fish_in_package(identifier).await?
+        if let Some(json) = self.fish_in_package(identifier.as_str()).await?
             && let Ok(sd) = serde_json::from_value((*json).clone())
         {
             return Ok(Some(sd));
@@ -328,7 +343,7 @@ impl FishingContext {
             ResourceType::Extension,
             ResourceType::Logical,
         ];
-        if self.is_in_tank(identifier, &resource_types).await {
+        if self.is_in_tank(identifier.as_str(), &resource_types).await {
             debug!(
                 "Found StructureDefinition {} in tank - blocking external lookup",
                 identifier
@@ -336,22 +351,142 @@ impl FishingContext {
             return Ok(None);
         }
 
-        // Check canonical
-        match self
-            .canonical_session
-            .resolve_structure_definition(identifier)
-            .await
-        {
-            Ok(Some(sd)) => {
-                debug!("Found StructureDefinition {} in canonical", identifier);
-                Ok(Some(sd))
+        // Fast path: Use find_profile_parent for case-insensitive search with Extension exclusion
+        // This is optimized to search by id/name/url with proper package priority ordering
+        // Skip this for Extension lookups (they should match Extensions)
+        for cand in &name_candidates {
+            if cand == "Extension" {
+                continue;
             }
-            Ok(None) => Ok(None),
-            Err(e) => {
-                debug!("Error resolving StructureDefinition {}: {}", identifier, e);
-                Err(e)
+
+            if let Ok(Some(resource)) = self.canonical_session.find_profile_parent(cand).await {
+                if let Ok(sd) =
+                    serde_json::from_value::<StructureDefinition>((*resource.content).clone())
+                {
+                    debug!("Found StructureDefinition {} via find_profile_parent", cand);
+                    return Ok(Some(sd));
+                }
             }
         }
+
+        // Try canonical by URL for each candidate
+        for cand in &name_candidates {
+            match self
+                .canonical_session
+                .resolve_structure_definition(cand)
+                .await
+            {
+                Ok(Some(sd)) => {
+                    if is_unexpected_extension(&sd) {
+                        debug!(
+                            "StructureDefinition {} resolved to Extension ({}), continuing search",
+                            cand, sd.url
+                        );
+                        continue;
+                    }
+                    debug!("Found StructureDefinition {} in canonical by URL", cand);
+                    return Ok(Some(sd));
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    debug!("Error resolving StructureDefinition {} by URL: {}", cand, e);
+                }
+            }
+        }
+
+        // Name-based lookups (with suffix variants) for each candidate
+        for cand in &name_candidates {
+            // Direct name
+            if let Ok(Some(resource)) = self
+                .canonical_session
+                .resource_by_type_and_name("StructureDefinition", cand)
+                .await
+            {
+                if let Ok(sd) = serde_json::from_value((*resource.content).clone()) {
+                    if is_unexpected_extension(&sd) {
+                        debug!(
+                            "StructureDefinition {} resolved to Extension ({}), continuing search",
+                            cand, sd.url
+                        );
+                    } else {
+                        debug!("Found StructureDefinition {} in canonical by name", cand);
+                        return Ok(Some(sd));
+                    }
+                }
+            }
+
+            // ID-based lookup (some packages use id separate from name)
+            if let Ok(Some(resource)) = self
+                .canonical_session
+                .resource_by_type_and_id("StructureDefinition", cand)
+                .await
+            {
+                if let Ok(sd) = serde_json::from_value((*resource.content).clone()) {
+                    if is_unexpected_extension(&sd) {
+                        debug!(
+                            "StructureDefinition {} (id) resolved to Extension ({}), continuing search",
+                            cand, sd.url
+                        );
+                    } else {
+                        debug!("Found StructureDefinition {} in canonical by id", cand);
+                        return Ok(Some(sd));
+                    }
+                }
+            }
+
+            // With Profile suffix
+            if !cand.ends_with("Profile") {
+                let with_suffix = format!("{}Profile", cand);
+                if let Ok(Some(resource)) = self
+                    .canonical_session
+                    .resource_by_type_and_name("StructureDefinition", &with_suffix)
+                    .await
+                {
+                    if let Ok(sd) = serde_json::from_value((*resource.content).clone()) {
+                        if is_unexpected_extension(&sd) {
+                            debug!(
+                                "StructureDefinition {} (suffix) resolved to Extension ({}), continuing search",
+                                with_suffix, sd.url
+                            );
+                        } else {
+                            debug!(
+                                "Found StructureDefinition {} in canonical by name with Profile suffix as {}",
+                                cand, with_suffix
+                            );
+                            return Ok(Some(sd));
+                        }
+                    }
+                }
+            }
+
+            // Without Profile suffix
+            if cand.ends_with("Profile") {
+                let without_suffix = &cand[..cand.len() - 7];
+                if let Ok(Some(resource)) = self
+                    .canonical_session
+                    .resource_by_type_and_name("StructureDefinition", without_suffix)
+                    .await
+                {
+                    if let Ok(sd) = serde_json::from_value((*resource.content).clone()) {
+                        if is_unexpected_extension(&sd) {
+                            debug!(
+                                "StructureDefinition {} (no suffix) resolved to Extension ({}), continuing search",
+                                without_suffix, sd.url
+                            );
+                        } else {
+                            debug!(
+                                "Found StructureDefinition {} in canonical by name without Profile suffix as {}",
+                                cand, without_suffix
+                            );
+                            return Ok(Some(sd));
+                        }
+                    }
+                }
+            }
+        }
+
+        debug!("StructureDefinition {} not found in canonical", identifier);
+        Ok(None)
     }
 
     /// Check if a resource is in the package
@@ -477,6 +612,27 @@ impl FishingContext {
             instance_usage: None, // TODO: Extract from Instance metadata when available
         }
     }
+}
+
+/// Convert CamelCase to kebab-case (simple heuristic)
+fn camel_to_kebab(s: &str) -> String {
+    let mut result = String::new();
+    let mut prev_was_lower = false;
+
+    for (i, ch) in s.chars().enumerate() {
+        if ch.is_uppercase() {
+            if i > 0 && prev_was_lower {
+                result.push('-');
+            }
+            result.push(ch.to_ascii_lowercase());
+            prev_was_lower = false;
+        } else {
+            result.push(ch);
+            prev_was_lower = ch.is_lowercase();
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]

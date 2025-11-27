@@ -458,7 +458,11 @@ pub async fn lint_command(
                 for fix in &fixes {
                     println!(
                         "  {} {} in {}",
-                        if use_colors { "\x1b[32m✓\x1b[0m" } else { "✓" },
+                        if use_colors {
+                            "\x1b[32m✓\x1b[0m"
+                        } else {
+                            "✓"
+                        },
                         fix.description,
                         fix.location.file.display()
                     );
