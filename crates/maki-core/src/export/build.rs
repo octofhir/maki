@@ -8,6 +8,7 @@ use crate::cst::TextRange;
 use crate::cst::ast::{CodeSystem, Extension, Instance, Profile, ValueSet};
 use crate::export::ruleset_integration::RuleSetProcessor;
 use crate::export::*;
+use crate::semantic::ruleset::RuleSetExpander;
 use crate::semantic::{DefaultSemanticAnalyzer, DeferredRule};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value as JsonValue;
@@ -144,7 +145,6 @@ impl Default for BuildOptions {
         }
     }
 }
-
 /// Build statistics
 #[derive(Debug, Clone, Default)]
 pub struct BuildStats {
@@ -628,12 +628,12 @@ impl BuildOrchestrator {
         };
 
         let (rulesets_found, inserts_expanded) = ruleset_processor.stats();
-        if self.options.show_progress {
-            info!(
-                "  Found {} RuleSets, expanded {} InsertRules",
-                rulesets_found, inserts_expanded
-            );
-        }
+        info!(
+            "  RuleSet stats: found {} RuleSets, expanded {} InsertRules",
+            rulesets_found, inserts_expanded
+        );
+
+        let ruleset_expander: Arc<RuleSetExpander> = Arc::new(ruleset_processor.into_expander());
 
         // === PHASE 2: Export Resources ===
         if self.options.show_progress {
@@ -657,6 +657,7 @@ impl BuildOrchestrator {
             session.clone(),
             package.clone(),
             fishing_ctx.clone(),
+            ruleset_expander.clone(),
             &resources,
             &file_structure,
             &mut stats,
@@ -1097,7 +1098,47 @@ impl BuildOrchestrator {
         // Clone alias_table before using it (one for ProfileExporter, one for dependency graph)
         let alias_table_for_deps = alias_table.clone();
 
-        // Create exporters
+        // Pre-register extension URLs in package so profiles can resolve them
+        // This MUST happen BEFORE ProfileExporter::new so the extension_url_map gets populated
+        {
+            let mut pkg = package.write().await;
+            let base_url = &self.build_config().canonical;
+            for tracked in &resources.extensions {
+                let extension = &tracked.resource;
+                let ext_name = extension.name().unwrap_or_else(|| "Unknown".to_string());
+                // Use explicit Id if present, otherwise convert name to kebab-case
+                let ext_id = extension
+                    .id()
+                    .and_then(|id_clause| id_clause.value())
+                    .unwrap_or_else(|| {
+                        // Convert PascalCase to kebab-case
+                        let mut result = String::new();
+                        for (i, c) in ext_name.chars().enumerate() {
+                            if c.is_uppercase() {
+                                if i > 0 {
+                                    result.push('-');
+                                }
+                                result.push(c.to_lowercase().next().unwrap());
+                            } else {
+                                result.push(c);
+                            }
+                        }
+                        result
+                    });
+                let url = format!("{}/StructureDefinition/{}", base_url, ext_id);
+                // Add minimal entry for extension lookup
+                let json = serde_json::json!({
+                    "resourceType": "StructureDefinition",
+                    "name": ext_name,
+                    "url": url,
+                    "kind": "complex-type"
+                });
+                pkg.add_resource(url.clone(), json);
+                debug!("Pre-registered extension {} -> {}", ext_name, url);
+            }
+        }
+
+        // Create exporters (AFTER pre-registration so extension_url_map is populated)
         let publisher_name = self
             .build_config()
             .publisher
@@ -1220,99 +1261,108 @@ impl BuildOrchestrator {
                 let level_tasks: Vec<_> = batch_profiles
                     .iter()
                     .map(|tracked| {
-                    let profile = tracked.resource.clone();
-                    let profile_exporter = profile_exporter.clone();
-                    let file_structure = file_structure.clone();
-                    let failed_profiles_shared = failed_profiles_shared.clone();
-                    let fsh_index_shared = fsh_index_shared.clone();
-                    let profile_count = profile_count.clone();
-                    let error_count = error_count.clone();
-                    let profile_pb = profile_pb_arc.clone();
-                    let package = package.clone();
-                    let source_file = tracked.source_file.clone();
-                    let start_line = tracked.start_line;
-                    let end_line = tracked.end_line;
-                    let input_dir = self.options.input_dir.clone();
+                        let profile = tracked.resource.clone();
+                        let profile_exporter = profile_exporter.clone();
+                        let file_structure = file_structure.clone();
+                        let failed_profiles_shared = failed_profiles_shared.clone();
+                        let fsh_index_shared = fsh_index_shared.clone();
+                        let profile_count = profile_count.clone();
+                        let error_count = error_count.clone();
+                        let profile_pb = profile_pb_arc.clone();
+                        let package = package.clone();
+                        let source_file = tracked.source_file.clone();
+                        let start_line = tracked.start_line;
+                        let end_line = tracked.end_line;
+                        let input_dir = self.options.input_dir.clone();
 
-                    async move {
-                        let profile_name = profile.name().unwrap_or_else(|| "Unknown".to_string());
-                        debug!("Exporting profile: {}", profile_name);
+                        async move {
+                            let profile_name =
+                                profile.name().unwrap_or_else(|| "Unknown".to_string());
+                            debug!("Exporting profile: {}", profile_name);
 
-                        match profile_exporter.export(&profile).await {
-                            Ok(structure_def) => {
-                                // Use Id field for filename if present, otherwise fall back to name
-                                let profile_id = profile
-                                    .id()
-                                    .and_then(|id_clause| id_clause.value())
-                                    .unwrap_or_else(|| profile_name.clone());
+                            match profile_exporter.export(&profile).await {
+                                Ok(structure_def) => {
+                                    // Use Id field for filename if present, otherwise fall back to name
+                                    let profile_id = profile
+                                        .id()
+                                        .and_then(|id_clause| id_clause.value())
+                                        .unwrap_or_else(|| profile_name.clone());
 
-                                // Write to file
-                                let filename = format!("StructureDefinition-{}.json", profile_id);
-                                if let Err(e) =
-                                    file_structure.write_resource(&filename, &structure_def)
-                                {
-                                    let error_msg =
-                                        format!("Failed to write profile {}: {}", profile_name, e);
-                                    warn!("{}", error_msg);
+                                    // Write to file
+                                    let filename =
+                                        format!("StructureDefinition-{}.json", profile_id);
+                                    if let Err(e) =
+                                        file_structure.write_resource(&filename, &structure_def)
+                                    {
+                                        let error_msg = format!(
+                                            "Failed to write profile {}: {}",
+                                            profile_name, e
+                                        );
+                                        warn!("{}", error_msg);
+                                        failed_profiles_shared
+                                            .lock()
+                                            .await
+                                            .push((profile_name.clone(), error_msg));
+                                        error_count
+                                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                    } else {
+                                        profile_count
+                                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+                                        // Calculate relative path
+                                        let relative_path = source_file
+                                            .strip_prefix(&input_dir)
+                                            .unwrap_or(&source_file)
+                                            .to_string_lossy()
+                                            .to_string();
+
+                                        fsh_index_shared.lock().await.push(FshIndexEntry {
+                                            output_file: filename,
+                                            fsh_name: profile_name.clone(),
+                                            fsh_type: "Profile".to_string(),
+                                            fsh_file: relative_path,
+                                            start_line,
+                                            end_line,
+                                        });
+
+                                        // ⚡ ADD TO PACKAGE ⚡
+                                        if !structure_def.url.is_empty()
+                                            && let Ok(json) = serde_json::to_value(&structure_def)
+                                        {
+                                            package
+                                                .write()
+                                                .await
+                                                .add_resource(structure_def.url.clone(), json);
+                                            debug!(
+                                                "Added profile {} to Package",
+                                                structure_def.url
+                                            );
+                                        }
+
+                                        debug!("Successfully exported profile: {}", profile_name);
+                                    }
+                                }
+                                Err(e) => {
+                                    let error_msg = format!("{}", e);
+                                    warn!(
+                                        "Failed to export profile '{}': {}",
+                                        profile_name, error_msg
+                                    );
                                     failed_profiles_shared
                                         .lock()
                                         .await
                                         .push((profile_name.clone(), error_msg));
                                     error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                                } else {
-                                    profile_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-                                    // Calculate relative path
-                                    let relative_path = source_file
-                                        .strip_prefix(&input_dir)
-                                        .unwrap_or(&source_file)
-                                        .to_string_lossy()
-                                        .to_string();
-
-                                    fsh_index_shared.lock().await.push(FshIndexEntry {
-                                        output_file: filename,
-                                        fsh_name: profile_name.clone(),
-                                        fsh_type: "Profile".to_string(),
-                                        fsh_file: relative_path,
-                                        start_line,
-                                        end_line,
-                                    });
-
-                                    // ⚡ ADD TO PACKAGE ⚡
-                                    if !structure_def.url.is_empty()
-                                        && let Ok(json) = serde_json::to_value(&structure_def)
-                                    {
-                                        package
-                                            .write()
-                                            .await
-                                            .add_resource(structure_def.url.clone(), json);
-                                        debug!(
-                                            "Added profile {} to Package",
-                                            structure_def.url
-                                        );
-                                    }
-
-                                    debug!("Successfully exported profile: {}", profile_name);
                                 }
                             }
-                            Err(e) => {
-                                let error_msg = format!("{}", e);
-                                warn!("Failed to export profile '{}': {}", profile_name, error_msg);
-                                failed_profiles_shared
-                                    .lock()
-                                    .await
-                                    .push((profile_name.clone(), error_msg));
-                                error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+                            // Update progress bar
+                            if let Some(pb) = profile_pb.as_ref() {
+                                pb.inc(1);
                             }
                         }
-
-                        // Update progress bar
-                        if let Some(pb) = profile_pb.as_ref() {
-                            pb.inc(1);
-                        }
-                    }
-                })
-                .collect();
+                    })
+                    .collect();
 
                 // Execute this level's tasks with high concurrency
                 // Profiles within the same level have no dependencies on each other
@@ -1324,7 +1374,11 @@ impl BuildOrchestrator {
                     // Task completed
                 }
 
-                debug!("Completed level {}/{}", level_idx + 1, profiles_by_batch.len());
+                debug!(
+                    "Completed level {}/{}",
+                    level_idx + 1,
+                    profiles_by_batch.len()
+                );
             }
 
             // Finish progress bar
@@ -1513,6 +1567,7 @@ impl BuildOrchestrator {
         session: Arc<crate::canonical::DefinitionSession>,
         package: Arc<tokio::sync::RwLock<crate::semantic::Package>>,
         fishing_ctx: Arc<crate::semantic::FishingContext>,
+        ruleset_expander: Arc<RuleSetExpander>,
         resources: &ParsedResources,
         file_structure: &FileStructureGenerator,
         stats: &mut BuildStats,
@@ -1530,7 +1585,8 @@ impl BuildOrchestrator {
                 .map_err(|e| {
                     BuildError::ExportError(format!("Failed to create InstanceExporter: {}", e))
                 })?
-                .with_fishing_context(fishing_ctx);
+                .with_fishing_context(fishing_ctx)
+                .with_ruleset_expander(ruleset_expander);
 
         // Create progress bar for instances if show_progress is enabled
         let instance_pb = if self.options.show_progress && !resources.instances.is_empty() {
@@ -1638,6 +1694,7 @@ impl BuildOrchestrator {
                                     "Failed to export instance {} (pass 1): {}",
                                     instance_name, e
                                 );
+                                eprintln!("Instance export failed: {} -> {}", instance_name, e);
                                 error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                             }
                         }

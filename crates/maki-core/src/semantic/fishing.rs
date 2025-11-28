@@ -114,14 +114,12 @@ impl FshTank {
             ResourceType::Profile
             | ResourceType::Extension
             | ResourceType::ValueSet
-            | ResourceType::CodeSystem => {
-                Some(format!(
-                    "{}/{}/{}",
-                    self.canonical_base,
-                    resource.resource_type.as_str(),
-                    resource.id
-                ))
-            }
+            | ResourceType::CodeSystem => Some(format!(
+                "{}/{}/{}",
+                self.canonical_base,
+                resource.resource_type.as_str(),
+                resource.id
+            )),
             _ => None,
         }
     }
@@ -154,43 +152,9 @@ impl FshTank {
         false
     }
 
-    /// Extract lightweight metadata from a FhirResource
-    ///
-    /// Converts a full FhirResource into FishableMetadata using the configured canonical base.
+    /// Extract lightweight metadata from a FhirResource using the configured canonical base.
     fn extract_metadata(&self, resource: &FhirResource) -> FishableMetadata {
-        // Determine the FHIR resource type string
-        let resource_type = match resource.resource_type {
-            ResourceType::Profile | ResourceType::Extension | ResourceType::Logical => {
-                "StructureDefinition".to_string()
-            }
-            ResourceType::ValueSet => "ValueSet".to_string(),
-            ResourceType::CodeSystem => "CodeSystem".to_string(),
-            ResourceType::Instance => "Instance".to_string(),
-            ResourceType::Invariant => "Invariant".to_string(),
-            ResourceType::RuleSet => "RuleSet".to_string(),
-            ResourceType::Mapping => "Mapping".to_string(),
-        };
-
-        // Determine the StructureDefinition type if applicable
-        let sd_type = match resource.resource_type {
-            ResourceType::Profile => Some("Profile".to_string()),
-            ResourceType::Extension => Some("Extension".to_string()),
-            ResourceType::Logical => Some("Logical".to_string()),
-            _ => None,
-        };
-
-        // Construct canonical URL from configured base
-        let url = format!("{}/{}/{}", self.canonical_base, resource_type, resource.id);
-
-        FishableMetadata {
-            id: resource.id.clone(),
-            name: resource.name.clone().unwrap_or_else(|| resource.id.clone()),
-            url,
-            resource_type,
-            sd_type,
-            parent: resource.parent.clone(),
-            instance_usage: None,
-        }
+        extract_metadata_with_base(resource, &self.canonical_base)
     }
 
     /// Fish for a resource in the tank
@@ -298,6 +262,43 @@ pub struct FishingContext {
     alias_table: Option<Arc<crate::semantic::AliasTable>>,
 }
 
+/// Shared helper to build FishableMetadata with a specific canonical base
+fn extract_metadata_with_base(resource: &FhirResource, canonical_base: &str) -> FishableMetadata {
+    // Determine the FHIR resource type string
+    let resource_type = match resource.resource_type {
+        ResourceType::Profile | ResourceType::Extension | ResourceType::Logical => {
+            "StructureDefinition".to_string()
+        }
+        ResourceType::ValueSet => "ValueSet".to_string(),
+        ResourceType::CodeSystem => "CodeSystem".to_string(),
+        ResourceType::Instance => "Instance".to_string(),
+        ResourceType::Invariant => "Invariant".to_string(),
+        ResourceType::RuleSet => "RuleSet".to_string(),
+        ResourceType::Mapping => "Mapping".to_string(),
+    };
+
+    // Determine the StructureDefinition type if applicable
+    let sd_type = match resource.resource_type {
+        ResourceType::Profile => Some("Profile".to_string()),
+        ResourceType::Extension => Some("Extension".to_string()),
+        ResourceType::Logical => Some("Logical".to_string()),
+        _ => None,
+    };
+
+    // Construct canonical URL from configured base
+    let url = format!("{}/{}/{}", canonical_base, resource_type, resource.id);
+
+    FishableMetadata {
+        id: resource.id.clone(),
+        name: resource.name.clone().unwrap_or_else(|| resource.id.clone()),
+        url,
+        resource_type,
+        sd_type,
+        parent: resource.parent.clone(),
+        instance_usage: None,
+    }
+}
+
 impl FishingContext {
     /// Create a new fishing context
     pub fn new(
@@ -317,6 +318,11 @@ impl FishingContext {
     pub fn with_alias_table(mut self, alias_table: Arc<crate::semantic::AliasTable>) -> Self {
         self.alias_table = Some(alias_table);
         self
+    }
+
+    /// Public helper to extract metadata without needing a tank/context instance (used in tests)
+    pub fn extract_metadata(resource: &FhirResource) -> FishableMetadata {
+        extract_metadata_with_base(resource, "http://example.org/fhir")
     }
 
     /// Resolve an alias to its canonical URL
@@ -576,9 +582,15 @@ impl FishingContext {
         }
 
         // Check tank for Extension type
-        if self.is_in_tank(identifier.as_str(), &[ResourceType::Extension]).await {
+        if self
+            .is_in_tank(identifier.as_str(), &[ResourceType::Extension])
+            .await
+        {
             // Try to get metadata from tank
-            if let Some(metadata) = self.fish_metadata(&identifier, &[ResourceType::Extension]).await {
+            if let Some(metadata) = self
+                .fish_metadata(&identifier, &[ResourceType::Extension])
+                .await
+            {
                 if !metadata.url.is_empty() {
                     // Build a minimal StructureDefinition with the URL
                     // We only need url for extension resolution
@@ -614,7 +626,9 @@ impl FishingContext {
                 .resource_by_type_and_name("StructureDefinition", cand)
                 .await
             {
-                if let Ok(sd) = serde_json::from_value::<StructureDefinition>((*resource.content).clone()) {
+                if let Ok(sd) =
+                    serde_json::from_value::<StructureDefinition>((*resource.content).clone())
+                {
                     if sd.type_field == "Extension" {
                         debug!("Found Extension {} in canonical by name", cand);
                         return Ok(Some(sd));
@@ -628,7 +642,9 @@ impl FishingContext {
                 .resource_by_type_and_id("StructureDefinition", cand)
                 .await
             {
-                if let Ok(sd) = serde_json::from_value::<StructureDefinition>((*resource.content).clone()) {
+                if let Ok(sd) =
+                    serde_json::from_value::<StructureDefinition>((*resource.content).clone())
+                {
                     if sd.type_field == "Extension" {
                         debug!("Found Extension {} in canonical by id", cand);
                         return Ok(Some(sd));
@@ -711,7 +727,6 @@ impl FishingContext {
         // Extract lightweight metadata using tank's canonical base
         Some(tank.extract_metadata(resource))
     }
-
 }
 
 /// Convert CamelCase to kebab-case (simple heuristic)

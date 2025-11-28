@@ -19,7 +19,7 @@
 //!
 //! **Phase 2 (Future)**: Full component rule support
 //! - Parse and export include/exclude components
-//! - Handle filters (is-a, descendent-of, regex, exists)
+//! - Handle filters (is-a, descendant-of, regex, exists)
 //! - Support valueset references
 //! - Note: Requires parser enhancements for ValueSet component syntax
 //!
@@ -76,6 +76,7 @@ const CODE_SYSTEM_ALIASES: &[(&str, &str)] = &[
     ("LOINC", "http://loinc.org"),
     ("SCT", "http://snomed.info/sct"),
     ("SNOMED", "http://snomed.info/sct"),
+    ("NCIT", "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl"),
     ("ICD10CM", "http://hl7.org/fhir/sid/icd-10-cm"),
     ("ICD10", "http://hl7.org/fhir/sid/icd-10"),
     ("UCUM", "http://unitsofmeasure.org"),
@@ -99,19 +100,19 @@ fn resolve_code_system_alias(alias: &str) -> Option<&'static str> {
 const CODE_SYSTEM_COPYRIGHTS: &[(&str, &str)] = &[
     (
         "http://snomed.info/sct",
-        "This value set includes content from SNOMED CT, which is copyright © 2002+ International Health Terminology Standards Development Organisation (IHTSDO), and distributed by agreement between IHTSDO and HL7. Implementer use of SNOMED CT is not covered by this agreement"
+        "This value set includes content from SNOMED CT, which is copyright © 2002+ International Health Terminology Standards Development Organisation (IHTSDO), and distributed by agreement between IHTSDO and HL7. Implementer use of SNOMED CT is not covered by this agreement",
     ),
     (
         "http://loinc.org",
-        "This material contains content from LOINC (http://loinc.org). LOINC is copyright © 1995-2020, Regenstrief Institute, Inc. and the Logical Observation Identifiers Names and Codes (LOINC) Committee and is available at no cost under the license at http://loinc.org/license. LOINC® is a registered United States trademark of Regenstrief Institute, Inc"
+        "This material contains content from LOINC (http://loinc.org). LOINC is copyright © 1995-2020, Regenstrief Institute, Inc. and the Logical Observation Identifiers Names and Codes (LOINC) Committee and is available at no cost under the license at http://loinc.org/license. LOINC® is a registered United States trademark of Regenstrief Institute, Inc",
     ),
     (
         "http://www.nlm.nih.gov/research/umls/rxnorm",
-        "This material contains content from the National Library of Medicine's RxNorm (https://www.nlm.nih.gov/research/umls/rxnorm). RxNorm is a registered trademark of the National Library of Medicine"
+        "This material contains content from the National Library of Medicine's RxNorm (https://www.nlm.nih.gov/research/umls/rxnorm). RxNorm is a registered trademark of the National Library of Medicine",
     ),
     (
         "http://www.ama-assn.org/go/cpt",
-        "Current Procedural Terminology (CPT) is copyright 2020 American Medical Association. All rights reserved"
+        "Current Procedural Terminology (CPT) is copyright 2020 American Medical Association. All rights reserved",
     ),
 ];
 
@@ -188,6 +189,16 @@ enum ComponentRule {
     ExcludeFilter {
         system: String,
         filter: ValueSetFilter,
+        version: Option<String>,
+    },
+    /// Include all codes from a system: * include codes from system X
+    IncludeSystem {
+        system: String,
+        version: Option<String>,
+    },
+    /// Exclude all codes from a system: * exclude codes from system X
+    ExcludeSystem {
+        system: String,
         version: Option<String>,
     },
     /// Include from another ValueSet: * include codes from valueset "http://..."
@@ -427,6 +438,7 @@ impl ValueSetExporter {
                 | Rule::Obeys(_)
                 | Rule::Mapping(_)
                 | Rule::CodeCaretValue(_)
+                | Rule::Insert(_)
                 | Rule::CodeInsert(_) => {
                     // These rules don't apply to valuesets
                     trace!("Skipping contains/only/obeys rule in valueset");
@@ -453,6 +465,7 @@ impl ValueSetExporter {
 
         // Add system-based includes (SUSHI parity: filters get separate includes, concepts are grouped)
         for (system, (concepts, filters, version)) in system_includes {
+            let mut added_for_system = false;
             // Each filter gets its own include block (SUSHI behavior)
             for filter in filters {
                 let mut include = ValueSetInclude::from_system(system.clone());
@@ -462,16 +475,25 @@ impl ValueSetExporter {
                 include.add_filter(filter);
                 compose.add_include(include);
                 has_content = true;
+                added_for_system = true;
             }
 
             // Concepts are grouped together in one include block
             if !concepts.is_empty() {
-                let mut include = ValueSetInclude::from_system(system);
+                let mut include = ValueSetInclude::from_system(system.clone());
                 if let Some(v) = version {
                     include.version = Some(v);
                 }
                 for concept in concepts {
                     include.add_concept(concept);
+                }
+                compose.add_include(include);
+                has_content = true;
+            } else if !added_for_system {
+                // Bare system include (e.g., "include codes from system X")
+                let mut include = ValueSetInclude::from_system(system);
+                if let Some(v) = version {
+                    include.version = Some(v);
                 }
                 compose.add_include(include);
                 has_content = true;
@@ -487,6 +509,7 @@ impl ValueSetExporter {
 
         // Build compose.exclude from grouped rules (SUSHI parity: filters get separate excludes, concepts are grouped)
         for (system, (concepts, filters, version)) in system_excludes {
+            let mut added_for_system = false;
             // Each filter gets its own exclude block (SUSHI behavior)
             for filter in filters {
                 let mut exclude = ValueSetInclude::from_system(system.clone());
@@ -496,16 +519,25 @@ impl ValueSetExporter {
                 exclude.add_filter(filter);
                 compose.add_exclude(exclude);
                 has_content = true;
+                added_for_system = true;
             }
 
             // Concepts are grouped together in one exclude block
             if !concepts.is_empty() {
-                let mut exclude = ValueSetInclude::from_system(system);
+                let mut exclude = ValueSetInclude::from_system(system.clone());
                 if let Some(v) = version {
                     exclude.version = Some(v);
                 }
                 for concept in concepts {
                     exclude.add_concept(concept);
+                }
+                compose.add_exclude(exclude);
+                has_content = true;
+            } else if !added_for_system {
+                // Bare system exclude (e.g., "exclude codes from system X")
+                let mut exclude = ValueSetInclude::from_system(system);
+                if let Some(v) = version {
+                    exclude.version = Some(v);
                 }
                 compose.add_exclude(exclude);
                 has_content = true;
@@ -965,6 +997,16 @@ impl ValueSetExporter {
             ComponentRule::ExcludeValueSet { value_set_url } => {
                 valueset_excludes.push(value_set_url);
             }
+            ComponentRule::IncludeSystem { system, version } => {
+                system_includes
+                    .entry(system)
+                    .or_insert_with(|| (Vec::new(), Vec::new(), version));
+            }
+            ComponentRule::ExcludeSystem { system, version } => {
+                system_excludes
+                    .entry(system)
+                    .or_insert_with(|| (Vec::new(), Vec::new(), version));
+            }
         }
     }
 
@@ -1100,6 +1142,15 @@ impl ValueSetExporter {
                 alias_map,
                 valueset_id_map,
             );
+        }
+
+        // Check for "codes from system" syntax
+        if remaining_text.contains("codes from system") {
+            if let Some(component_rule) =
+                self.parse_system_reference(remaining_text, is_exclude, alias_map)?
+            {
+                return Ok(Some(component_rule));
+            }
         }
 
         // Check for "where" clause (filter syntax)
@@ -1278,9 +1329,14 @@ impl ValueSetExporter {
             // Concept-based filters
             (r"concept\s+is-a\s+#?(\S+)", "concept", "is-a"),
             (
-                r"concept\s+descendent-of\s+#?(\S+)",
+                r"concept\s+descend(?:e|a)nt-of\s+#?(\S+)",
                 "concept",
-                "descendent-of",
+                "descendant-of",
+            ),
+            (
+                r"concept\s+descendsFrom\s+#?(\S+)",
+                "concept",
+                "descendant-of",
             ),
             (r"concept\s+is-not-a\s+#?(\S+)", "concept", "is-not-a"),
             (r"concept\s+generalizes\s+#?(\S+)", "concept", "generalizes"),
@@ -1317,9 +1373,10 @@ impl ValueSetExporter {
                 let clean_value = self.clean_filter_value(value);
 
                 // Validate the operator is supported
-                self.validate_filter_operator(op, property)?;
+                let normalized_op = Self::normalize_filter_operator(op);
+                self.validate_filter_operator(&normalized_op, property)?;
 
-                return Ok(ValueSetFilter::new(property, op, clean_value));
+                return Ok(ValueSetFilter::new(property, normalized_op, clean_value));
             }
         }
 
@@ -1328,12 +1385,12 @@ impl ValueSetExporter {
         let words: Vec<&str> = filter_text.split_whitespace().collect();
         if words.len() >= 3 {
             let property = words[0];
-            let op = words[1];
+            let op = Self::normalize_filter_operator(words[1]);
             let value = words[2..].join(" ");
             let clean_value = self.clean_filter_value(&value);
 
             // Validate the operator
-            self.validate_filter_operator(op, property)?;
+            self.validate_filter_operator(&op, property)?;
 
             return Ok(ValueSetFilter::new(property, op, clean_value));
         }
@@ -1373,13 +1430,21 @@ impl ValueSetExporter {
         Ok(())
     }
 
+    /// Normalize filter operators to their canonical form (e.g., descendent-of -> descendant-of)
+    fn normalize_filter_operator(op: &str) -> String {
+        match op {
+            "descendent-of" | "descendsFrom" => "descendant-of".to_string(),
+            _ => op.to_string(),
+        }
+    }
+
     /// Validate that the filter operator is supported
     fn validate_filter_operator(&self, op: &str, property: &str) -> Result<(), ExportError> {
         let valid_operators = [
             "=",
             "!=",
             "is-a",
-            "descendent-of",
+            "descendant-of",
             "is-not-a",
             "regex",
             "in",
@@ -1405,7 +1470,7 @@ impl ValueSetExporter {
                     "The 'exists' operator is not valid for the 'concept' property".to_string(),
                 ));
             }
-            (_, "is-a" | "descendent-of" | "is-not-a" | "generalizes") if property != "concept" => {
+            (_, "is-a" | "descendant-of" | "is-not-a" | "generalizes") if property != "concept" => {
                 warn!(
                     "Hierarchical operator '{}' used with property '{}' - may not be supported by all systems",
                     op, property
@@ -1456,6 +1521,59 @@ impl ValueSetExporter {
         }
 
         Ok(None)
+    }
+
+    /// Parse "codes from system" component (system-only include/exclude)
+    fn parse_system_reference(
+        &self,
+        rule_text: &str,
+        is_exclude: bool,
+        alias_map: &HashMap<String, String>,
+    ) -> Result<Option<ComponentRule>, ExportError> {
+        if let Some(start) = rule_text.find("codes from system") {
+            let mut system_part = rule_text[start + "codes from system".len()..].trim();
+            let mut version: Option<String> = None;
+
+            if let Some(version_pos) = system_part.find(" version ") {
+                version = Some(
+                    self.extract_string_value(&system_part[version_pos + " version ".len()..]),
+                );
+                system_part = system_part[..version_pos].trim();
+            }
+
+            let system_url = self.resolve_system_identifier(system_part, alias_map);
+
+            let component_rule = if is_exclude {
+                ComponentRule::ExcludeSystem {
+                    system: system_url,
+                    version,
+                }
+            } else {
+                ComponentRule::IncludeSystem {
+                    system: system_url,
+                    version,
+                }
+            };
+
+            return Ok(Some(component_rule));
+        }
+
+        Ok(None)
+    }
+
+    /// Resolve a system identifier using document aliases or built-in mappings
+    fn resolve_system_identifier(
+        &self,
+        identifier: &str,
+        alias_map: &HashMap<String, String>,
+    ) -> String {
+        let extracted = self.extract_string_value(identifier);
+
+        alias_map
+            .get(&extracted)
+            .cloned()
+            .or_else(|| resolve_code_system_alias(&extracted).map(|u| u.to_string()))
+            .unwrap_or(extracted)
     }
 
     /// Normalize a ValueSet reference to a canonical URL
@@ -1821,7 +1939,7 @@ mod tests {
         let filter = ValueSetFilter::descendent_of("12345");
 
         assert_eq!(filter.property, "concept");
-        assert_eq!(filter.op, "descendent-of");
+        assert_eq!(filter.op, "descendant-of");
         assert_eq!(filter.value, "12345");
     }
 

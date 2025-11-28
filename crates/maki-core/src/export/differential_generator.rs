@@ -102,6 +102,8 @@ pub struct RuleContext {
     pub current_differential: Vec<ElementDefinition>,
     /// Base URL for generating canonical URLs
     pub base_url: String,
+    /// Local extension name to URL mapping (populated by profile_exporter)
+    pub extension_url_map: std::collections::HashMap<String, String>,
 }
 
 /// Core differential generation engine
@@ -117,6 +119,8 @@ pub struct DifferentialGenerator {
     rule_processor: RuleProcessor,
     /// Base URL for generated canonical URLs
     base_url: String,
+    /// Local extension name to URL mapping (for resolving local extensions)
+    extension_url_map: std::collections::HashMap<String, String>,
 }
 
 impl DifferentialGenerator {
@@ -143,7 +147,16 @@ impl DifferentialGenerator {
             path_resolver,
             rule_processor,
             base_url,
+            extension_url_map: std::collections::HashMap::new(),
         }
+    }
+
+    /// Set the local extension URL map (call before generate_differential)
+    ///
+    /// Maps extension names (e.g., "CancerDiseaseStatusEvidenceType") to their
+    /// canonical URLs (e.g., "http://hl7.org/fhir/us/mcode/StructureDefinition/mcode-cancer-disease-status-evidence-type")
+    pub fn set_extension_url_map(&mut self, map: std::collections::HashMap<String, String>) {
+        self.extension_url_map = map;
     }
 
     /// Generate differential from FSH rules (primary method)
@@ -177,6 +190,7 @@ impl DifferentialGenerator {
             path_resolver: self.path_resolver.clone(),
             current_differential: Vec::new(),
             base_url: self.base_url.clone(),
+            extension_url_map: self.extension_url_map.clone(),
         };
 
         // Process each rule and accumulate differential elements
@@ -266,7 +280,7 @@ impl DifferentialGenerator {
                     .process_caret_value_rule(caret_rule, context)
                     .await
             }
-            Rule::CodeCaretValue(_) | Rule::CodeInsert(_) => {
+            Rule::CodeCaretValue(_) | Rule::Insert(_) | Rule::CodeInsert(_) => {
                 // Code-level rules handled in CodeSystem/ValueSet exporters
                 Ok(())
             }
@@ -808,6 +822,89 @@ impl RuleProcessor {
         None
     }
 
+    /// Resolve an extension type name to its canonical URL.
+    ///
+    /// Uses the canonical session to look up extension definitions,
+    /// falling back to a kebab-case URL if not found.
+    async fn resolve_extension_url(&self, ext_type: &str, context: &RuleContext) -> String {
+        // If it's already a full URL, use as-is
+        if ext_type.contains("://") {
+            return ext_type.to_string();
+        }
+
+        // Check local extension map first (populated by profile_exporter from local package)
+        if let Some(url) = context.extension_url_map.get(ext_type) {
+            debug!(
+                "Resolved extension '{}' from local extension map -> '{}'",
+                ext_type, url
+            );
+            return url.clone();
+        }
+
+        // Try to resolve via canonical session
+        // Extensions are StructureDefinitions with kind = "complex-type"
+        match context
+            .canonical_session
+            .resolve(&format!("StructureDefinition/{}", ext_type))
+            .await
+        {
+            Ok(sd) => {
+                debug!(
+                    "Resolved extension '{}' from canonical session -> '{}'",
+                    ext_type, sd.canonical_url
+                );
+                return sd.canonical_url.clone();
+            }
+            Err(_) => {
+                // Not found, try kebab-case variant
+            }
+        }
+
+        // Try kebab-case variant
+        let kebab = Self::pascal_to_kebab(ext_type);
+        match context
+            .canonical_session
+            .resolve(&format!("StructureDefinition/{}", kebab))
+            .await
+        {
+            Ok(sd) => {
+                debug!(
+                    "Resolved extension '{}' (kebab: {}) from canonical session -> '{}'",
+                    ext_type, kebab, sd.canonical_url
+                );
+                return sd.canonical_url.clone();
+            }
+            Err(_) => {
+                // Not found, fall through to fallback
+            }
+        }
+
+        // Fallback: construct URL from base_url and extension type name (kebab-case)
+        let extension_url = format!("{}/StructureDefinition/{}", context.base_url, kebab);
+        debug!(
+            "Extension '{}' not found, using fallback URL: {}",
+            ext_type, extension_url
+        );
+        extension_url
+    }
+
+    /// Convert PascalCase to kebab-case
+    /// Example: "CancerDiseaseStatusEvidenceType" -> "cancer-disease-status-evidence-type"
+    fn pascal_to_kebab(s: &str) -> String {
+        let mut result = String::new();
+        for (i, c) in s.chars().enumerate() {
+            if c.is_uppercase() {
+                if i > 0 {
+                    result.push('-');
+                }
+                result.push(c.to_lowercase().next().unwrap());
+            } else {
+                result.push(c);
+            }
+        }
+        result
+    }
+
     /// Helper method to resolve FSH path to full FHIR path
     fn resolve_full_path(
         &self,
@@ -1339,8 +1436,9 @@ impl RuleProcessor {
             }
         })?;
 
-        let items = rule.items();
-        if items.is_empty() {
+        // Get items with both extension type and slice name
+        let items_with_types = rule.items_with_types();
+        if items_with_types.is_empty() {
             return Err(DifferentialError::RuleProcessing {
                 rule: "ContainsRule".to_string(),
                 path: path_str,
@@ -1348,7 +1446,10 @@ impl RuleProcessor {
             });
         }
 
-        trace!("Processing ContainsRule: {} contains {:?}", path_str, items);
+        trace!(
+            "Processing ContainsRule: {} contains {:?}",
+            path_str, items_with_types
+        );
 
         // Resolve full FHIR path
         let full_path = self.resolve_full_path(&context.base_definition, &path_str)?;
@@ -1360,33 +1461,40 @@ impl RuleProcessor {
             || path_str.ends_with(".modifierExtension");
 
         // Create slice elements for each item
-        for item in items {
-            let slice_path = format!("{}:{}", full_path, item);
+        for (ext_type, slice_name) in items_with_types {
+            let slice_path = format!("{}:{}", full_path, slice_name);
 
-            // Find or create slice element
+            // For extension slices, resolve the URL BEFORE getting mutable ref to avoid borrow conflict
+            let extension_url = if is_extension {
+                if ext_type.starts_with("http://") || ext_type.starts_with("https://") {
+                    Some(ext_type.clone())
+                } else {
+                    // Resolve extension URL - try to find the extension definition
+                    Some(self.resolve_extension_url(&ext_type, context).await)
+                }
+            } else {
+                None
+            };
+
+            // Find or create slice element (mutable borrow of context.current_differential)
             let slice_element =
                 self.find_or_create_element(&mut context.current_differential, &slice_path);
 
             // Set slice metadata
-            slice_element.short = Some(format!("Slice: {}", item));
+            slice_element.slice_name = Some(slice_name.clone());
+            slice_element.short = Some(format!("Slice: {}", slice_name));
 
             // For extension slices, set the profile
-            if is_extension {
-                let extension_url = if item.starts_with("http://") || item.starts_with("https://") {
-                    item.clone()
-                } else {
-                    format!("{}/StructureDefinition/{}", context.base_url, item)
-                };
-
+            if let Some(url) = extension_url {
                 slice_element.type_ = Some(vec![ElementDefinitionType {
                     code: "Extension".to_string(),
-                    profile: Some(vec![extension_url.clone()]),
+                    profile: Some(vec![url.clone()]),
                     target_profile: None,
                 }]);
 
                 debug!(
-                    "Created extension slice {} with profile {}",
-                    slice_path, extension_url
+                    "Created extension slice {} (type: {}) with profile {}",
+                    slice_path, ext_type, url
                 );
             } else {
                 debug!("Created slice element: {}", slice_path);

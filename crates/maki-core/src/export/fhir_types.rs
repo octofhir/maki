@@ -251,6 +251,10 @@ pub struct ElementDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub constraint: Option<Vec<ElementDefinitionConstraint>>,
 
+    /// Definition of slicing provided on this element
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slicing: Option<ElementDefinitionSlicing>,
+
     /// Fixed value
     #[serde(skip_serializing_if = "Option::is_none", flatten)]
     pub fixed: Option<HashMap<String, serde_json::Value>>,
@@ -282,6 +286,7 @@ impl ElementDefinition {
             is_summary: None,
             binding: None,
             constraint: None,
+            slicing: None,
             fixed: None,
             pattern: None,
             mapping: None,
@@ -302,6 +307,7 @@ impl ElementDefinition {
             || self.is_summary.is_some()
             || self.binding.is_some()
             || self.constraint.is_some()
+            || self.slicing.is_some()
             || self.fixed.is_some()
             || self.pattern.is_some()
     }
@@ -319,6 +325,7 @@ impl ElementDefinition {
             || self.is_summary != base.is_summary
             || self.binding != base.binding
             || self.constraint != base.constraint
+            || self.slicing != base.slicing
             || self.fixed != base.fixed
             || self.pattern != base.pattern
     }
@@ -408,6 +415,39 @@ pub struct ElementDefinitionConstraint {
     /// FHIRPath expression of constraint
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expression: Option<String>,
+}
+
+/// Slicing definition for an element
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ElementDefinitionSlicing {
+    /// Human description of slicing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Whether order of slices matters
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ordered: Option<bool>,
+
+    /// How additional slices are handled (open | closed | openAtEnd)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rules: Option<String>,
+
+    /// Discriminators that differentiate slices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discriminator: Option<Vec<ElementDefinitionSlicingDiscriminator>>,
+}
+
+/// Individual slicing discriminator definition
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ElementDefinitionSlicingDiscriminator {
+    /// Type of discriminator (value | exists | pattern | type | profile)
+    #[serde(rename = "type")]
+    pub discriminator_type: String,
+
+    /// Path used for discrimination
+    pub path: String,
 }
 
 /// Map element to another set of definitions
@@ -530,30 +570,34 @@ pub struct ValueSetResource {
     /// Resource type (always "ValueSet")
     pub resource_type: String,
 
-    /// Logical id of this artifact
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-
-    /// Additional content defined by implementations
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extension: Option<Vec<serde_json::Value>>,
-
-    /// Canonical identifier for this value set
-    pub url: String,
-
-    /// Business version of the value set
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
+    /// draft | active | retired | unknown
+    pub status: String,
 
     /// Name for this value set (computer friendly)
     pub name: String,
+
+    /// Logical id of this artifact
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 
     /// Name for this value set (human friendly)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
 
-    /// draft | active | retired | unknown
-    pub status: String,
+    /// Natural language description of the value set
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Canonical identifier for this value set
+    pub url: String,
+
+    /// Additional content defined by implementations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension: Option<Vec<serde_json::Value>>,
+
+    /// Business version of the value set
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 
     /// For testing or publication: note that this is not intended for use in production
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -566,10 +610,6 @@ pub struct ValueSetResource {
     /// Name of the publisher
     #[serde(skip_serializing_if = "Option::is_none")]
     pub publisher: Option<String>,
-
-    /// Natural language description of the value set
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
 
     /// The context that the content is intended to support
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -605,17 +645,17 @@ impl ValueSetResource {
     pub fn new(url: impl Into<String>, name: impl Into<String>, status: impl Into<String>) -> Self {
         Self {
             resource_type: "ValueSet".to_string(),
-            id: None,
-            extension: None,
-            url: url.into(),
-            version: None,
-            name: name.into(),
-            title: None,
             status: status.into(),
+            name: name.into(),
+            id: None,
+            title: None,
+            description: None,
+            url: url.into(),
+            extension: None,
+            version: None,
             experimental: None,
             date: None,
             publisher: None,
-            description: None,
             use_context: None,
             jurisdiction: None,
             immutable: None,
@@ -926,7 +966,7 @@ pub struct ValueSetFilter {
     /// A property/filter defined by the code system
     pub property: String,
 
-    /// = | is-a | descendent-of | is-not-a | regex | in | not-in | generalizes | exists
+    /// = | is-a | descendant-of | is-not-a | regex | in | not-in | generalizes | exists
     pub op: String,
 
     /// Code from the system, or regex criteria, or boolean value for exists
@@ -952,9 +992,9 @@ impl ValueSetFilter {
         Self::new("concept", "is-a", parent_code)
     }
 
-    /// Create a "descendent-of" filter
+    /// Create a "descendant-of" filter
     pub fn descendent_of(parent_code: impl Into<String>) -> Self {
-        Self::new("concept", "descendent-of", parent_code)
+        Self::new("concept", "descendant-of", parent_code)
     }
 
     /// Create a "regex" filter

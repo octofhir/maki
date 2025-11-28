@@ -52,12 +52,11 @@
 use super::ExportError;
 use super::fhir_types::{ElementDefinition, StructureDefinition};
 use crate::canonical::DefinitionSession;
-use crate::cst::ast::{FixedValueRule, Instance, Rule};
-#[cfg(test)]
-use crate::cst::ast::AstNode;
+use crate::cst::ast::{AstNode, FixedValueRule, Instance, Rule};
 use crate::semantic::FishingContext;
+use crate::semantic::ruleset::{RuleSetExpander, RuleSetInsert};
 use serde_json::{Map, Value as JsonValue};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
@@ -133,6 +132,8 @@ pub struct InstanceExporter {
     current_extension_urls: HashMap<String, String>,
     /// Current base resource type (e.g., "Patient", "Observation") for cardinality lookups
     current_resource_type: Option<String>,
+    /// Optional RuleSet expander for handling insert rules
+    ruleset_expander: Option<Arc<RuleSetExpander>>,
 }
 
 impl InstanceExporter {
@@ -163,6 +164,12 @@ impl InstanceExporter {
         session: Arc<DefinitionSession>,
         base_url: String,
     ) -> Result<Self, ExportError> {
+        // Pre-populate the base resource types cache for later lookups
+        // This ensures is_base_resource_type() works correctly
+        let _ = session.base_resource_types().await.map_err(|e| {
+            ExportError::CanonicalError(format!("Failed to load base resource types: {}", e))
+        })?;
+
         Ok(Self {
             session,
             fishing_context: None,
@@ -173,6 +180,7 @@ impl InstanceExporter {
             current_profile_url: None,
             current_extension_urls: HashMap::new(),
             current_resource_type: None,
+            ruleset_expander: None,
         })
     }
 
@@ -185,9 +193,30 @@ impl InstanceExporter {
         self
     }
 
+    /// Provide a RuleSet expander for handling insert rules
+    pub fn with_ruleset_expander(mut self, expander: Arc<RuleSetExpander>) -> Self {
+        self.ruleset_expander = Some(expander);
+        self
+    }
+
     /// Register an instance for reference resolution
     pub fn register_instance(&mut self, name: String, json: JsonValue) {
-        self.instance_registry.insert(name, json);
+        self.instance_registry.insert(name.clone(), json.clone());
+
+        if let Some(id) = json.get("id").and_then(|v| v.as_str()) {
+            // Allow lookup by raw id
+            self.instance_registry
+                .entry(id.to_string())
+                .or_insert_with(|| json.clone());
+
+            // Allow lookup by typed reference (ResourceType/id)
+            if let Some(rt) = json.get("resourceType").and_then(|v| v.as_str()) {
+                let typed_key = format!("{}/{}", rt, id);
+                self.instance_registry
+                    .entry(typed_key)
+                    .or_insert(json.clone());
+            }
+        }
     }
 
     /// Get a registered instance by name
@@ -318,162 +347,11 @@ impl InstanceExporter {
 
     /// Check if a name is a known base FHIR resource type
     ///
-    /// This checks against common FHIR resource types to determine if we've
-    /// reached the base of the profile inheritance chain.
+    /// This checks against base FHIR resource types loaded from the canonical manager
+    /// to determine if we've reached the base of the profile inheritance chain.
+    /// The cache is populated when the exporter is created via `new()`.
     fn is_base_resource_type(&self, name: &str) -> bool {
-        // Common FHIR R4 resource types
-        // See: http://hl7.org/fhir/R4/resourcelist.html
-        matches!(
-            name,
-            "Account"
-                | "ActivityDefinition"
-                | "AdverseEvent"
-                | "AllergyIntolerance"
-                | "Appointment"
-                | "AppointmentResponse"
-                | "AuditEvent"
-                | "Basic"
-                | "Binary"
-                | "BiologicallyDerivedProduct"
-                | "BodyStructure"
-                | "Bundle"
-                | "CapabilityStatement"
-                | "CarePlan"
-                | "CareTeam"
-                | "CatalogEntry"
-                | "ChargeItem"
-                | "ChargeItemDefinition"
-                | "Claim"
-                | "ClaimResponse"
-                | "ClinicalImpression"
-                | "CodeSystem"
-                | "Communication"
-                | "CommunicationRequest"
-                | "CompartmentDefinition"
-                | "Composition"
-                | "ConceptMap"
-                | "Condition"
-                | "Consent"
-                | "Contract"
-                | "Coverage"
-                | "CoverageEligibilityRequest"
-                | "CoverageEligibilityResponse"
-                | "DetectedIssue"
-                | "Device"
-                | "DeviceDefinition"
-                | "DeviceMetric"
-                | "DeviceRequest"
-                | "DeviceUseStatement"
-                | "DiagnosticReport"
-                | "DocumentManifest"
-                | "DocumentReference"
-                | "DomainResource"
-                | "EffectEvidenceSynthesis"
-                | "Encounter"
-                | "Endpoint"
-                | "EnrollmentRequest"
-                | "EnrollmentResponse"
-                | "EpisodeOfCare"
-                | "EventDefinition"
-                | "Evidence"
-                | "EvidenceVariable"
-                | "ExampleScenario"
-                | "ExplanationOfBenefit"
-                | "FamilyMemberHistory"
-                | "Flag"
-                | "Goal"
-                | "GraphDefinition"
-                | "Group"
-                | "GuidanceResponse"
-                | "HealthcareService"
-                | "ImagingStudy"
-                | "Immunization"
-                | "ImmunizationEvaluation"
-                | "ImmunizationRecommendation"
-                | "ImplementationGuide"
-                | "InsurancePlan"
-                | "Invoice"
-                | "Library"
-                | "Linkage"
-                | "List"
-                | "Location"
-                | "Measure"
-                | "MeasureReport"
-                | "Media"
-                | "Medication"
-                | "MedicationAdministration"
-                | "MedicationDispense"
-                | "MedicationKnowledge"
-                | "MedicationRequest"
-                | "MedicationStatement"
-                | "MedicinalProduct"
-                | "MedicinalProductAuthorization"
-                | "MedicinalProductContraindication"
-                | "MedicinalProductIndication"
-                | "MedicinalProductIngredient"
-                | "MedicinalProductInteraction"
-                | "MedicinalProductManufactured"
-                | "MedicinalProductPackaged"
-                | "MedicinalProductPharmaceutical"
-                | "MedicinalProductUndesirableEffect"
-                | "MessageDefinition"
-                | "MessageHeader"
-                | "MolecularSequence"
-                | "NamingSystem"
-                | "NutritionOrder"
-                | "Observation"
-                | "ObservationDefinition"
-                | "OperationDefinition"
-                | "OperationOutcome"
-                | "Organization"
-                | "OrganizationAffiliation"
-                | "Parameters"
-                | "Patient"
-                | "PaymentNotice"
-                | "PaymentReconciliation"
-                | "Person"
-                | "PlanDefinition"
-                | "Practitioner"
-                | "PractitionerRole"
-                | "Procedure"
-                | "Provenance"
-                | "Questionnaire"
-                | "QuestionnaireResponse"
-                | "RelatedPerson"
-                | "RequestGroup"
-                | "ResearchDefinition"
-                | "ResearchElementDefinition"
-                | "ResearchStudy"
-                | "ResearchSubject"
-                | "Resource"
-                | "RiskAssessment"
-                | "RiskEvidenceSynthesis"
-                | "Schedule"
-                | "SearchParameter"
-                | "ServiceRequest"
-                | "Slot"
-                | "Specimen"
-                | "SpecimenDefinition"
-                | "StructureDefinition"
-                | "StructureMap"
-                | "Subscription"
-                | "Substance"
-                | "SubstanceNucleicAcid"
-                | "SubstancePolymer"
-                | "SubstanceProtein"
-                | "SubstanceReferenceInformation"
-                | "SubstanceSourceMaterial"
-                | "SubstanceSpecification"
-                | "SupplyDelivery"
-                | "SupplyRequest"
-                | "Task"
-                | "TerminologyCapabilities"
-                | "TestReport"
-                | "TestScript"
-                | "ValueSet"
-                | "VerificationResult"
-                | "VisionPrescription"
-        )
+        self.session.is_base_resource_type(name)
     }
 
     /// Export an Instance to a FHIR resource (JSON)
@@ -666,9 +544,39 @@ impl InstanceExporter {
             })
         };
 
+        // Pre-populate fixed/pattern values from the profile chain (SUSHI parity)
+        if let Some(sd) = sd_opt.as_ref() {
+            let profile_chain = if let Some(fishing_ctx) = &self.fishing_context {
+                self.collect_profile_chain(fishing_ctx, sd).await
+            } else {
+                vec![sd.clone()]
+            };
+
+            self.apply_profile_constraints(&mut resource, &profile_chain)
+                .await?;
+        }
+
         // Apply rules
         for rule in instance.rules() {
-            self.apply_rule(&mut resource, &rule).await?;
+            if let Err(e) = self.apply_rule(&mut resource, &rule).await {
+                let path_hint = match &rule {
+                    Rule::FixedValue(fv) => fv.path().map(|p| p.as_string()).unwrap_or_default(),
+                    _ => String::new(),
+                };
+                eprintln!(
+                    "Instance '{}' failed applying rule `{}` (path: '{}'): {}",
+                    name,
+                    rule.syntax().text(),
+                    path_hint,
+                    e
+                );
+                return Err(e);
+            }
+        }
+
+        // Inline referenced instances inside Bundle entries (SUSHI parity)
+        if resource["resourceType"] == "Bundle" {
+            self.inline_bundle_resources(&mut resource);
         }
 
         // Safety net: ensure BodyStructure instances retain patient reference (parity with SUSHI)
@@ -689,7 +597,9 @@ impl InstanceExporter {
                     name
                 );
                 let segments = self.parse_path("patient")?;
-                let json_value = self.convert_value_with_path(&patient_value, "patient").await?;
+                let json_value = self
+                    .convert_value_with_path(&patient_value, "patient")
+                    .await?;
                 self.set_value_at_path(&mut resource, &segments, json_value)
                     .await?;
             } else {
@@ -746,9 +656,40 @@ impl InstanceExporter {
             | Rule::Mapping(_)
             | Rule::CaretValue(_)
             | Rule::CodeCaretValue(_)
-            | Rule::CodeInsert(_) => {
-                // These rules don't apply to instances
-                trace!("Skipping contains/only/obeys rule in instance");
+            | Rule::CodeInsert(_)
+            | Rule::Insert(_) => {
+                match rule {
+                    Rule::Insert(insert_rule) => {
+                        if let Some(name) = insert_rule.ruleset_reference() {
+                            let args = insert_rule.arguments();
+                            let range = insert_rule.syntax().text_range();
+                            self.apply_ruleset_insert(
+                                resource,
+                                &name,
+                                args,
+                                range.start().into()..range.end().into(),
+                            )
+                            .await?;
+                        }
+                    }
+                    Rule::CodeInsert(insert_rule) => {
+                        if let Some(name) = insert_rule.ruleset_reference() {
+                            let args = insert_rule.arguments();
+                            let range = insert_rule.syntax().text_range();
+                            self.apply_ruleset_insert(
+                                resource,
+                                &name,
+                                args,
+                                range.start().into()..range.end().into(),
+                            )
+                            .await?;
+                        }
+                    }
+                    _ => {
+                        // These rules don't apply to instances
+                        trace!("Skipping contains/only/obeys rule in instance");
+                    }
+                }
             }
         }
         Ok(())
@@ -769,6 +710,47 @@ impl InstanceExporter {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Replace Bundle.entry.resource string/reference values with inline instances when available
+    fn inline_bundle_resources(&self, bundle: &mut JsonValue) {
+        let Some(entries) = bundle.get_mut("entry").and_then(|v| v.as_array_mut()) else {
+            return;
+        };
+
+        for entry in entries.iter_mut() {
+            let Some(resource_field) = entry.get_mut("resource") else {
+                continue;
+            };
+
+            if let Some(inline) = self.resolve_inline_resource(resource_field) {
+                *resource_field = inline;
+            }
+        }
+    }
+
+    /// Resolve a bundle resource field (string or Reference-like object) to an inline instance
+    fn resolve_inline_resource(&self, resource_field: &JsonValue) -> Option<JsonValue> {
+        match resource_field {
+            JsonValue::String(name) => self.instance_registry.get(name).cloned().or_else(|| {
+                name.rsplit('/')
+                    .next()
+                    .and_then(|id| self.instance_registry.get(id).cloned())
+            }),
+            JsonValue::Object(map) => {
+                map.get("reference")
+                    .and_then(|v| v.as_str())
+                    .and_then(|reference| {
+                        self.instance_registry.get(reference).cloned().or_else(|| {
+                            reference
+                                .rsplit('/')
+                                .next()
+                                .and_then(|id| self.instance_registry.get(id).cloned())
+                        })
+                    })
+            }
+            _ => None,
         }
     }
 
@@ -813,6 +795,85 @@ impl InstanceExporter {
             .await?;
 
         Ok(())
+    }
+
+    /// Expand a RuleSet insert using the configured expander and apply resulting rules.
+    async fn apply_ruleset_insert(
+        &mut self,
+        resource: &mut JsonValue,
+        name: &str,
+        arguments: Vec<String>,
+        source_range: std::ops::Range<usize>,
+    ) -> Result<(), ExportError> {
+        // For now, only expand known instance RuleSets we can translate safely
+        if name != "StagingInstanceRuleSet" {
+            trace!("Skipping RuleSet insert '{}' (not whitelisted)", name);
+            return Ok(());
+        }
+
+        let Some(expander) = &self.ruleset_expander else {
+            trace!("No RuleSet expander configured; skipping insert {}", name);
+            return Ok(());
+        };
+
+        eprintln!(
+            "Applying RuleSet insert '{}' with args {:?}",
+            name, arguments
+        );
+
+        let insert = RuleSetInsert {
+            ruleset_name: name.to_string(),
+            arguments: arguments.clone(),
+            source_range,
+        };
+
+        let expanded = match expander.expand(&insert) {
+            Ok(rules) => rules,
+            Err(e) => {
+                warn!("Failed to expand RuleSet '{}': {}", name, e);
+                return Ok(());
+            }
+        };
+
+        let mut parsed_rules = Vec::new();
+        for raw_rule in expanded {
+            eprintln!("  Raw expanded rule: {}", raw_rule);
+            if let Some((path, value)) = Self::parse_simple_rule(&raw_rule) {
+                eprintln!(
+                    "  Expanded rule from '{}': path='{}' value='{}'",
+                    name, path, value
+                );
+                parsed_rules.push((path, value));
+            } else {
+                eprintln!(
+                    "  Skipping RuleSet '{}' expansion; unsupported rule '{}'",
+                    name, raw_rule
+                );
+                return Ok(());
+            }
+        }
+
+        for (path, value) in parsed_rules {
+            let segments = self.parse_path(&path)?;
+            let json_value = self.convert_value_with_path(&value, &path).await?;
+            self.set_value_at_path(resource, &segments, json_value)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Parse a simple rule string like "* path = value" into (path, value)
+    fn parse_simple_rule(raw: &str) -> Option<(String, String)> {
+        let trimmed = raw.trim_start();
+        let rule_body = trimmed.trim_start_matches('*').trim();
+        let (path_part, value_part) = rule_body
+            .split_once('=')
+            .map(|(p, v)| (p.trim(), v.trim()))?;
+        if path_part.is_empty() || value_part.is_empty() {
+            return None;
+        }
+        Some((path_part.to_string(), value_part.to_string()))
     }
 
     /// Parse a path string into segments
@@ -943,6 +1004,9 @@ impl InstanceExporter {
                 PathSegment::Field(field) => {
                     if is_last {
                         // Set the final value
+                        if !current_value.is_object() {
+                            *current_value = JsonValue::Object(Map::new());
+                        }
                         if let JsonValue::Object(obj) = current_value {
                             // Check if this field should be an array
                             let final_value =
@@ -973,6 +1037,9 @@ impl InstanceExporter {
                         }
                     } else {
                         // Navigate or create intermediate structure
+                        if !current_value.is_object() {
+                            *current_value = JsonValue::Object(Map::new());
+                        }
                         if let JsonValue::Object(obj) = current_value {
                             if !obj.contains_key(field) {
                                 // Only create an array if this is a known FHIR array field
@@ -1019,6 +1086,9 @@ impl InstanceExporter {
                     slice_name,
                 } => {
                     // Ensure parent is an object
+                    if !current_value.is_object() {
+                        *current_value = JsonValue::Object(Map::new());
+                    }
                     if let JsonValue::Object(obj) = current_value {
                         // Ensure array exists
                         if !obj.contains_key(field) {
@@ -1368,6 +1438,232 @@ impl InstanceExporter {
         None
     }
 
+    /// Collect the StructureDefinition chain (profile -> parents) up to a base resource
+    async fn collect_profile_chain(
+        &self,
+        fishing_ctx: &Arc<FishingContext>,
+        starting_sd: &StructureDefinition,
+    ) -> Vec<StructureDefinition> {
+        let mut chain = Vec::new();
+        let mut visited = HashSet::new();
+        let mut current_opt = Some(starting_sd.clone());
+
+        while let Some(current) = current_opt {
+            // Stop if we've already seen this URL to avoid loops
+            if !visited.insert(current.url.clone()) {
+                break;
+            }
+
+            let next_base = current.base_definition.clone();
+            chain.push(current);
+
+            let Some(base_def) = next_base else {
+                break;
+            };
+
+            let base_name = base_def.rsplit('/').next().unwrap_or(&base_def);
+
+            // Stop if we've reached the base FHIR resource
+            if self.is_base_resource_type(base_name) {
+                break;
+            }
+
+            // Try to load the parent StructureDefinition by URL first, then by name
+            let parent_sd = match fishing_ctx.fish_structure_definition(&base_def).await {
+                Ok(Some(sd)) => Some(sd),
+                _ => match fishing_ctx.fish_structure_definition(base_name).await {
+                    Ok(Some(sd)) => Some(sd),
+                    _ => None,
+                },
+            };
+
+            current_opt = parent_sd;
+        }
+
+        chain
+    }
+
+    /// Apply fixed/pattern constraints from the profile chain to the resource JSON
+    async fn apply_profile_constraints(
+        &mut self,
+        resource: &mut JsonValue,
+        profile_chain: &[StructureDefinition],
+    ) -> Result<(), ExportError> {
+        // Apply ancestors first so child profiles can override
+        for sd in profile_chain.iter().rev() {
+            if sd.derivation.as_deref() != Some("constraint") {
+                // Skip base resources/logicals; only apply actual profile constraints
+                continue;
+            }
+
+            let elements = sd
+                .differential
+                .as_ref()
+                .map(|d| d.element.as_slice())
+                .or_else(|| sd.snapshot.as_ref().map(|s| s.element.as_slice()))
+                .unwrap_or(&[]);
+
+            for element in elements {
+                let Some((constraint_key, constraint_value)) =
+                    Self::extract_fixed_or_pattern(element)
+                else {
+                    continue;
+                };
+
+                let Some(path_str) = Self::element_path_to_instance_path(element, &constraint_key)
+                else {
+                    continue;
+                };
+
+                let Ok(segments) = self.parse_path(&path_str) else {
+                    trace!(
+                        "Skipping constraint with unparseable path '{}' derived from '{}'",
+                        path_str, element.path
+                    );
+                    continue;
+                };
+
+                if Self::path_has_value(resource, &segments) {
+                    // Leave explicit instance assignments intact
+                    continue;
+                }
+
+                if element.path.contains("component") {
+                    eprintln!(
+                        "[constraint-trace] applying {} (slice={:?}, min={:?}) -> key={} value={}",
+                        element.path,
+                        element.slice_name,
+                        element.min,
+                        constraint_key,
+                        constraint_value
+                    );
+                }
+
+                self.set_value_at_path(resource, &segments, constraint_value.clone())
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Extract the fixed or pattern constraint value from an element
+    fn extract_fixed_or_pattern(element: &ElementDefinition) -> Option<(String, JsonValue)> {
+        if let Some(fixed_map) = element.fixed.as_ref() {
+            if let Some((key, value)) = fixed_map.iter().find(|(key, _)| key.starts_with("fixed")) {
+                return Some((key.clone(), value.clone()));
+            }
+        }
+
+        if let Some(pattern_map) = element.pattern.as_ref() {
+            if let Some((key, value)) = pattern_map
+                .iter()
+                .find(|(key, _)| key.starts_with("pattern"))
+            {
+                return Some((key.clone(), value.clone()));
+            }
+        }
+
+        None
+    }
+
+    /// Convert an ElementDefinition path to an instance assignment path
+    fn element_path_to_instance_path(
+        element: &ElementDefinition,
+        constraint_key: &str,
+    ) -> Option<String> {
+        let mut parts: Vec<&str> = element.path.split('.').collect();
+        if parts.is_empty() {
+            return None;
+        }
+
+        // Drop the resource type prefix (e.g., "Observation")
+        parts.remove(0);
+        if parts.is_empty() {
+            return None;
+        }
+
+        let mut path_segments = Vec::new();
+        for raw in parts {
+            if let Some((field, slice)) = raw.split_once(':') {
+                path_segments.push(format!("{}[{}]", field, slice));
+                continue;
+            }
+
+            if let Some(choice_base) = raw.strip_suffix("[x]") {
+                path_segments.push(Self::expand_choice_path(choice_base, constraint_key));
+                continue;
+            }
+
+            path_segments.push(raw.to_string());
+        }
+
+        Some(path_segments.join("."))
+    }
+
+    /// Expand a choice element (value[x]) to a concrete path using the constraint type
+    fn expand_choice_path(base: &str, constraint_key: &str) -> String {
+        // constraint_key examples: fixedCodeableConcept, patternQuantity, fixedBoolean
+        let suffix = constraint_key
+            .trim_start_matches("fixed")
+            .trim_start_matches("pattern");
+
+        if suffix.is_empty() {
+            base.to_string()
+        } else {
+            format!("{}{}", base, suffix)
+        }
+    }
+
+    /// Check if a path already has a value in the resource JSON
+    fn path_has_value(resource: &JsonValue, segments: &[PathSegment]) -> bool {
+        let mut current = resource;
+
+        for segment in segments {
+            match segment {
+                PathSegment::Field(field) => {
+                    let Some(obj) = current.as_object() else {
+                        return false;
+                    };
+                    let Some(next) = obj.get(field) else {
+                        return false;
+                    };
+                    current = next;
+                }
+                PathSegment::ArrayAccess {
+                    field,
+                    index,
+                    slice_name: _,
+                } => {
+                    let Some(obj) = current.as_object() else {
+                        return false;
+                    };
+                    let Some(arr) = obj.get(field).and_then(|v| v.as_array()) else {
+                        return false;
+                    };
+
+                    let actual_index = match index {
+                        ArrayIndex::Numeric(n) => *n,
+                        ArrayIndex::Append | ArrayIndex::Current => {
+                            if arr.is_empty() {
+                                return false;
+                            }
+                            arr.len() - 1
+                        }
+                    };
+
+                    if let Some(next) = arr.get(actual_index) {
+                        current = next;
+                    } else {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
     /// Merge two JSON objects, combining their properties
     ///
     /// This is used when assigning multiple properties to the same object.
@@ -1547,10 +1843,7 @@ impl InstanceExporter {
         }
 
         // No code pattern, return as-is (remove quotes if present)
-        trimmed
-            .trim_matches('"')
-            .trim_matches('\'')
-            .to_string()
+        trimmed.trim_matches('"').trim_matches('\'').to_string()
     }
 
     /// Check if a field name represents an array field in FHIR
@@ -1858,6 +2151,8 @@ impl InstanceExporter {
                 | "author" | "collector" | "interpreter" | "informant" | "enterer" => {
                     Some("Practitioner")
                 }
+                // Focus commonly points to a Condition in mCODE staging examples
+                "focus" => Some("Condition"),
                 // Organization references
                 "organization" | "managingOrganization" | "custodian" => Some("Organization"),
                 // Encounter references
@@ -1885,10 +2180,7 @@ impl InstanceExporter {
         if !ref_value.contains('/') {
             // First, try local instance registry
             if let Some(instance_json) = self.instance_registry.get(&ref_value) {
-                if let Some(rt) = instance_json
-                    .get("resourceType")
-                    .and_then(|v| v.as_str())
-                {
+                if let Some(rt) = instance_json.get("resourceType").and_then(|v| v.as_str()) {
                     ref_value = format!("{}/{}", rt, ref_value);
                 }
             }
@@ -1925,7 +2217,6 @@ impl InstanceExporter {
 
         Ok(reference)
     }
-
 
     /// Validate that a reference target exists
     ///
@@ -2025,6 +2316,7 @@ mod tests {
             current_profile_url: None,
             current_extension_urls: HashMap::new(),
             current_resource_type: None,
+            ruleset_expander: None,
         }
     }
 
@@ -2611,5 +2903,98 @@ InstanceOf: RadiotherapyVolume
         assert_eq!(extensions[0]["url"], "http://example.org/ext");
         assert_eq!(extensions[0]["valueString"], "initial");
         assert_eq!(extensions[0]["id"], "ext-id");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_ruleset_insert_expansion_on_instance() {
+        let fsh = r#"
+RuleSet: StagingInstanceRuleSet
+* status = #final
+
+Instance: test-stage
+InstanceOf: Observation
+* insert StagingInstanceRuleSet
+"#;
+
+        let (cst, lex, parse) = crate::cst::parse_fsh(fsh);
+        assert!(lex.is_empty() && parse.is_empty());
+
+        let instance = cst.descendants().find_map(Instance::cast).unwrap();
+
+        let mut expander = crate::semantic::ruleset::RuleSetExpander::new();
+        expander.register_ruleset(crate::semantic::ruleset::RuleSet {
+            name: "StagingInstanceRuleSet".to_string(),
+            parameters: vec![],
+            rules: vec!["* status = #final".to_string()],
+            source_file: std::path::PathBuf::from("test.fsh"),
+            source_range: 0..0,
+        });
+
+        let session = Arc::new(crate::canonical::DefinitionSession::for_testing());
+        let mut exporter = InstanceExporter::new(session, "http://example.org/fhir".to_string())
+            .await
+            .unwrap()
+            .with_ruleset_expander(Arc::new(expander));
+
+        let resource = exporter.export(&instance).await.unwrap();
+        assert_eq!(resource["status"], "final");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_instance_rules_include_insert() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../mcode-ig/input/fsh/EX_Staging_Other.fsh");
+        let content = std::fs::read_to_string(path).expect("read fsh");
+        let (cst, lex, parse) = crate::cst::parse_fsh(&content);
+        assert!(lex.is_empty() && parse.is_empty());
+
+        let instance = cst
+            .descendants()
+            .filter_map(Instance::cast)
+            .find(|inst| inst.name().as_deref() == Some("binet-stage-group-B"))
+            .unwrap();
+
+        let has_insert = instance.rules().any(|r| matches!(r, Rule::Insert(_)));
+        assert!(has_insert, "instance should contain an Insert rule");
+    }
+
+    #[test]
+    fn test_practitioner_rule_paths_present() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../mcode-ig/input/fsh/EX_ExtendedExample.fsh");
+        let content = std::fs::read_to_string(path).expect("read fsh");
+        let (cst, lex, parse) = crate::cst::parse_fsh(&content);
+        assert!(lex.is_empty() && parse.is_empty());
+
+        let instance = cst
+            .descendants()
+            .filter_map(Instance::cast)
+            .find(|inst| inst.name().as_deref() == Some("us-core-practitioner-jane-radiotech"))
+            .unwrap();
+
+        for rule in instance.rules() {
+            if let Rule::FixedValue(fv) = &rule {
+                let path_str = fv.path().map(|p| p.as_string()).unwrap_or_default();
+                println!("RULE path=`{}` text=`{}`", path_str, rule.syntax().text());
+            }
+        }
+
+        let mut found = false;
+        for rule in instance.rules() {
+            if let Rule::FixedValue(fv) = &rule {
+                if let Some(path) = fv.path().map(|p| p.as_string()) {
+                    if path == "address.use" {
+                        found = true;
+                        let text = rule.syntax().text().to_string();
+                        assert!(
+                            text.contains("address.use"),
+                            "Rule text should contain path, got: {}",
+                            text
+                        );
+                    }
+                }
+            }
+        }
+        assert!(found, "Expected address.use rule to be present");
     }
 }

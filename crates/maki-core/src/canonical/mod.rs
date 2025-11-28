@@ -282,6 +282,7 @@ impl CanonicalFacade {
             local_cache: DashMap::new(),
             installed: DashSet::new(),
             cardinality_cache: DashMap::new(),
+            base_resource_types_cache: DashSet::new(),
         };
 
         if self.options.auto_install_core {
@@ -331,6 +332,9 @@ pub struct DefinitionSession {
     /// Cache for element cardinality lookups: element_path -> is_array
     /// Key format: "ResourceType.field" or "ResourceType.field.subfield"
     cardinality_cache: DashMap<String, bool>,
+    /// Cache for base FHIR resource type names (e.g., "Patient", "Observation")
+    /// Populated on first access from canonical manager
+    base_resource_types_cache: DashSet<String>,
 }
 
 impl DefinitionSession {
@@ -656,6 +660,80 @@ impl DefinitionSession {
         &self.releases
     }
 
+    /// Returns the set of base FHIR resource type names (e.g., "Patient", "Observation").
+    ///
+    /// This method queries the canonical manager on first call and caches the result.
+    /// Base resource types are StructureDefinitions with `sd_flavor = 'Resource'`.
+    ///
+    /// # Returns
+    ///
+    /// A HashSet containing all base resource type names for the session's FHIR version.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let session: std::sync::Arc<maki_core::canonical::DefinitionSession> = todo!();
+    /// let base_types = session.base_resource_types().await?;
+    /// assert!(base_types.contains("Patient"));
+    /// assert!(base_types.contains("Observation"));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn base_resource_types(&self) -> CanonicalResult<HashSet<String>> {
+        // Return cached value if available
+        if !self.base_resource_types_cache.is_empty() {
+            return Ok(self
+                .base_resource_types_cache
+                .iter()
+                .map(|r| r.key().clone())
+                .collect());
+        }
+
+        // Query canonical manager for base resource types
+        // Use the first release's version string (e.g., "4.0" for R4)
+        let fhir_version = match self.releases.first() {
+            Some(r) => (*r).to_version_string(),
+            None => "4.0.1",
+        };
+
+        debug!(
+            "Querying base resource types for FHIR version: {}",
+            fhir_version
+        );
+
+        let names = self
+            .facade
+            .manager
+            .list_base_resource_type_names(&fhir_version)
+            .await?;
+
+        debug!("Found {} base resource types", names.len());
+
+        // Populate cache
+        for name in &names {
+            self.base_resource_types_cache.insert(name.clone());
+        }
+
+        Ok(names.into_iter().collect())
+    }
+
+    /// Check if a name is a base FHIR resource type.
+    ///
+    /// This is a convenience method that checks against the cached base resource types.
+    /// Must call `base_resource_types()` first to populate the cache.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The resource type name to check (e.g., "Patient", "Observation")
+    ///
+    /// # Returns
+    ///
+    /// `true` if the name is a base FHIR resource type, `false` otherwise.
+    pub fn is_base_resource_type(&self, name: &str) -> bool {
+        self.base_resource_types_cache.contains(name)
+    }
+
     /// Create a minimal test session for unit testing
     ///
     /// This creates a DefinitionSession with minimal configuration suitable
@@ -701,6 +779,7 @@ impl DefinitionSession {
                 local_cache: dashmap::DashMap::new(),
                 installed: dashmap::DashSet::new(),
                 cardinality_cache: dashmap::DashMap::new(),
+                base_resource_types_cache: dashmap::DashSet::new(),
             }
         }
 
@@ -796,7 +875,8 @@ impl DefinitionSession {
                     "StructureDefinition not found for {}, defaulting to non-array",
                     resource_type
                 );
-                self.cardinality_cache.insert(element_path.to_string(), false);
+                self.cardinality_cache
+                    .insert(element_path.to_string(), false);
                 return false;
             }
             Err(e) => {
@@ -804,7 +884,8 @@ impl DefinitionSession {
                     "Failed to resolve StructureDefinition for {}: {}, defaulting to non-array",
                     resource_type, e
                 );
-                self.cardinality_cache.insert(element_path.to_string(), false);
+                self.cardinality_cache
+                    .insert(element_path.to_string(), false);
                 return false;
             }
         };
@@ -823,7 +904,8 @@ impl DefinitionSession {
             .unwrap_or(false);
 
         // Cache and return result
-        self.cardinality_cache.insert(element_path.to_string(), is_array);
+        self.cardinality_cache
+            .insert(element_path.to_string(), is_array);
         is_array
     }
 

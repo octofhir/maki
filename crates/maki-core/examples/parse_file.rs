@@ -11,7 +11,10 @@ fn main() {
     } else {
         println!("{path}:");
         for err in lexer_errors {
-            println!("  LEX  at {}..{}: {}", err.span.start, err.span.end, err.message);
+            println!(
+                "  LEX  at {}..{}: {}",
+                err.span.start, err.span.end, err.message
+            );
         }
         for err in parse_errors {
             println!(

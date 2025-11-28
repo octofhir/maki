@@ -4,12 +4,12 @@
 //! extracting RuleSets from parsed FSH files and expanding insert statements.
 
 use crate::cst::FshSyntaxNode;
-use crate::cst::ast::{AstNode, Document};
-use crate::semantic::ruleset::{RuleSetError, RuleSetExpander, RuleSetInsert};
+use crate::cst::ast::{AstNode, Document, InsertRule, Rule};
+use crate::semantic::ruleset::{RuleSet, RuleSetError, RuleSetExpander, RuleSetInsert};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use thiserror::Error;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// RuleSet integration errors
 #[derive(Debug, Error)]
@@ -36,6 +36,11 @@ impl RuleSetProcessor {
             rulesets_collected: 0,
             inserts_expanded: 0,
         }
+    }
+
+    /// Consume the processor and return the underlying expander
+    pub fn into_expander(self) -> RuleSetExpander {
+        self.expander
     }
 
     /// Collect all RuleSets from parsed FSH files (Phase 1a)
@@ -70,31 +75,43 @@ impl RuleSetProcessor {
         document: &Document,
         file_path: &PathBuf,
     ) -> Result<(), RuleSetIntegrationError> {
-        // Iterate through all children looking for RuleSet definitions
-        for child in document.syntax().children() {
-            // Check if this is a RuleSet definition
-            if let Some(_ruleset_text) = self.try_parse_ruleset(&child, file_path) {
-                // For now, we'll store the raw text and parse parameters/rules later
-                // This is a simplified implementation
-                debug!("Found RuleSet in {:?}", file_path);
-                self.rulesets_collected += 1;
-            }
+        for rs in document.rule_sets() {
+            let Some(name) = rs.name() else {
+                continue;
+            };
+
+            let params = rs.parameters();
+            let rules: Vec<String> = rs.rules().map(|r| Self::serialize_rule(&r)).collect();
+            let range = rs.syntax().text_range();
+
+            let ruleset = RuleSet {
+                name: name.clone(),
+                parameters: params,
+                rules,
+                source_file: file_path.clone(),
+                source_range: (range.start().into()..range.end().into()),
+            };
+
+            self.expander.register_ruleset(ruleset);
+            self.rulesets_collected += 1;
         }
 
         Ok(())
     }
 
-    /// Try to parse a RuleSet from a syntax node
-    fn try_parse_ruleset(&self, _node: &FshSyntaxNode, _file_path: &PathBuf) -> Option<String> {
-        // This is a placeholder - actual implementation would:
-        // 1. Check if node is a RuleSet definition (RulesetKw)
-        // 2. Extract name and parameters
-        // 3. Extract rules
-        // 4. Create RuleSet struct
-        // 5. Register with expander
-
-        // For now, return None as we need CST parser support
-        None
+    fn serialize_rule(rule: &Rule) -> String {
+        match rule {
+            Rule::FixedValue(fv) => {
+                if let Some(path) = fv.path().map(|p| p.as_string())
+                    && let Some(value) = fv.value()
+                {
+                    format!("* {} = {}", path, value)
+                } else {
+                    rule.syntax().text().to_string()
+                }
+            }
+            _ => rule.syntax().text().to_string(),
+        }
     }
 
     /// Expand insert rules in all entities (Phase 1b)
@@ -206,14 +223,30 @@ impl RuleSetProcessor {
     }
 
     /// Try to parse an insert statement from a syntax node
-    fn try_parse_insert(&self, _node: &FshSyntaxNode) -> Option<RuleSetInsert> {
-        // This is a placeholder - actual implementation would:
-        // 1. Check if node contains InsertKw
-        // 2. Extract RuleSet name
-        // 3. Extract arguments
-        // 4. Create RuleSetInsert struct
+    fn try_parse_insert(&self, node: &FshSyntaxNode) -> Option<RuleSetInsert> {
+        if let Some(insert) = InsertRule::cast(node.clone()) {
+            let name = insert.ruleset_reference()?;
+            let args = insert.arguments();
+            let range = insert.syntax().text_range();
+            return Some(RuleSetInsert {
+                ruleset_name: name,
+                arguments: args,
+                source_range: (range.start().into()..range.end().into()),
+            });
+        }
 
-        // For now, return None as we need CST parser support
+        // Handle code insert (used in CodeSystem)
+        if let Some(code_insert) = crate::cst::ast::CodeInsertRule::cast(node.clone()) {
+            let name = code_insert.ruleset_reference()?;
+            let args = code_insert.arguments();
+            let range = code_insert.syntax().text_range();
+            return Some(RuleSetInsert {
+                ruleset_name: name,
+                arguments: args,
+                source_range: (range.start().into()..range.end().into()),
+            });
+        }
+
         None
     }
 
@@ -223,15 +256,33 @@ impl RuleSetProcessor {
     }
 }
 
-impl Default for RuleSetProcessor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cst::parse_fsh;
+    use crate::semantic::ruleset::RuleSetExpander;
+
+    #[test]
+    fn collect_ruleset_from_file() {
+        let content = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../mcode-ig/input/fsh/EX_Staging_Other.fsh"),
+        )
+        .unwrap();
+        let (cst, lex, parse) = parse_fsh(&content);
+        assert!(lex.is_empty() && parse.is_empty());
+
+        let parsed_files = vec![(PathBuf::from("EX_Staging_Other.fsh"), cst)];
+
+        let mut processor = RuleSetProcessor::new();
+        processor.collect_rulesets(&parsed_files).unwrap();
+
+        let (rulesets_found, _) = processor.stats();
+        assert!(rulesets_found > 0);
+
+        let expander: RuleSetExpander = processor.into_expander();
+        assert!(expander.has_ruleset("StagingInstanceRuleSet"));
+    }
 
     #[test]
     fn test_ruleset_processor_creation() {
@@ -247,5 +298,11 @@ mod tests {
         let parsed_files: Vec<(PathBuf, FshSyntaxNode)> = vec![];
         let result = processor.collect_rulesets(&parsed_files);
         assert!(result.is_ok());
+    }
+}
+
+impl Default for RuleSetProcessor {
+    fn default() -> Self {
+        Self::new()
     }
 }

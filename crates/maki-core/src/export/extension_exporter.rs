@@ -1397,6 +1397,7 @@ impl ExtensionExporter {
             | Rule::Mapping(_)
             | Rule::CaretValue(_)
             | Rule::CodeCaretValue(_)
+            | Rule::Insert(_)
             | Rule::CodeInsert(_) => {
                 // TODO: Implement these rule types for extensions
                 Ok(())

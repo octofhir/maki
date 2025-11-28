@@ -252,6 +252,7 @@ impl CodeSystemExporter {
                 | Rule::Mapping(_)
                 | Rule::CaretValue(_)
                 | Rule::CodeCaretValue(_)
+                | Rule::Insert(_)
                 | Rule::CodeInsert(_) => {
                     // These rules don't apply to codesystems
                     trace!("Skipping contains/only/obeys rule in codesystem");

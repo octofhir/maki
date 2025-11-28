@@ -1,4 +1,4 @@
-use maki_core::cst::{lex_with_trivia, FshSyntaxKind};
+use maki_core::cst::{FshSyntaxKind, lex_with_trivia};
 use std::{env, fs};
 
 fn main() {
@@ -24,7 +24,10 @@ fn main() {
     }
 
     if let Some(last) = tokens.last() {
-        println!("last token kind: {:?}, span: {:?}, text: {}", last.kind, last.span, last.text);
+        println!(
+            "last token kind: {:?}, span: {:?}, text: {}",
+            last.kind, last.span, last.text
+        );
     }
     println!("tokens with text 'Instance': {}", instance_text);
 
@@ -33,7 +36,10 @@ fn main() {
     }
 
     println!("Tokens around 10900..11100:");
-    for t in tokens.iter().filter(|t| t.span.start >= 10900 && t.span.start <= 11100) {
+    for t in tokens
+        .iter()
+        .filter(|t| t.span.start >= 10900 && t.span.start <= 11100)
+    {
         println!("{:?} {:?} {:?}", t.kind, t.span, t.text);
     }
 }

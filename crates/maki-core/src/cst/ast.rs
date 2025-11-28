@@ -233,6 +233,10 @@ impl Document {
     pub fn invariants(&self) -> impl Iterator<Item = Invariant> {
         self.syntax.children().filter_map(Invariant::cast)
     }
+
+    pub fn rule_sets(&self) -> impl Iterator<Item = RuleSetDef> {
+        self.syntax.children().filter_map(RuleSetDef::cast)
+    }
 }
 
 // ============================================================================
@@ -1504,7 +1508,9 @@ impl AstNode for IdClause {
 
 impl IdClause {
     pub fn value(&self) -> Option<String> {
-        get_ident_text(&self.syntax)
+        // Use clause text after colon since IDs may contain hyphens (e.g., "mcode-cancer-patient")
+        // which are not valid in a single Ident token
+        get_clause_text_after_colon(&self.syntax)
     }
 }
 
@@ -1821,6 +1827,7 @@ pub enum Rule {
     Mapping(MappingRule),
     CaretValue(CaretValueRule),
     CodeCaretValue(CodeCaretValueRule),
+    Insert(InsertRule),
     CodeInsert(CodeInsertRule),
 }
 
@@ -1841,6 +1848,7 @@ impl Rule {
             FshSyntaxKind::CodeCaretValueRule => {
                 CodeCaretValueRule::cast(node).map(Rule::CodeCaretValue)
             }
+            FshSyntaxKind::InsertRule => InsertRule::cast(node).map(Rule::Insert),
             FshSyntaxKind::CodeInsertRule => CodeInsertRule::cast(node).map(Rule::CodeInsert),
             _ => None,
         }
@@ -1860,6 +1868,7 @@ impl Rule {
             Rule::Mapping(r) => r.syntax(),
             Rule::CaretValue(r) => r.syntax(),
             Rule::CodeCaretValue(r) => r.syntax(),
+            Rule::Insert(r) => r.syntax(),
             Rule::CodeInsert(r) => r.syntax(),
         }
     }
@@ -2193,10 +2202,11 @@ impl FixedValueRule {
 
     /// Strip trailing comments from a value string
     /// FSH comments start with // and continue to end of line
+    /// But don't strip // in URLs (preceded by :)
     fn strip_trailing_comment(text: &str) -> String {
-        // Find // that's not inside a string
+        // Find // that's not inside a string and not part of a URL
         let mut in_double_quote = false;
-        let mut chars: Vec<char> = text.chars().collect();
+        let chars: Vec<char> = text.chars().collect();
         let mut i = 0;
 
         while i < chars.len() {
@@ -2204,14 +2214,17 @@ impl FixedValueRule {
             if c == '"' {
                 in_double_quote = !in_double_quote;
             } else if !in_double_quote && c == '/' && i + 1 < chars.len() && chars[i + 1] == '/' {
-                // Found a comment - truncate here
-                chars.truncate(i);
-                break;
+                // Check if this is a URL (preceded by :)
+                let is_url = i > 0 && chars[i - 1] == ':';
+                if !is_url {
+                    // Found a comment - truncate here
+                    return chars[..i].iter().collect::<String>().trim().to_string();
+                }
             }
             i += 1;
         }
 
-        chars.into_iter().collect::<String>().trim().to_string()
+        text.trim().to_string()
     }
 }
 
@@ -2284,7 +2297,22 @@ impl ContainsRule {
 
     /// Get the contains items (slice names)
     /// Example: "Item1 and Item2" or "Item1 named slice1"
+    ///
+    /// When "named" syntax is used, returns the slice name (after "named").
+    /// When no "named" is present, returns the extension type name (used as both type and slice).
     pub fn items(&self) -> Vec<String> {
+        self.items_with_types()
+            .into_iter()
+            .map(|(_, slice_name)| slice_name)
+            .collect()
+    }
+
+    /// Get the contains items with both extension type and slice name.
+    /// Returns Vec<(extension_type, slice_name)>.
+    ///
+    /// Example: "ExtType named sliceName 0..1" → [("ExtType", "sliceName")]
+    /// Example: "ExtType 0..1" → [("ExtType", "ExtType")]
+    pub fn items_with_types(&self) -> Vec<(String, String)> {
         let text = self.syntax.text().to_string();
 
         // Remove "contains" keyword and clean up whitespace/newlines
@@ -2300,35 +2328,49 @@ impl ContainsRule {
         // Split by "and" keyword and extract item names
         cleaned_text
             .split("and")
-            .map(|item| {
+            .filter_map(|item| {
                 let item = item.trim();
 
-                // Handle "Item1 named slice1" format - extract the item name before "named"
-                if let Some(named_pos) = item.find("named") {
-                    item[..named_pos].trim().to_string()
+                // Handle "ExtType named sliceName" format
+                if let Some(named_pos) = item.find(" named ") {
+                    let ext_type = item[..named_pos].trim();
+                    let after_named = item[named_pos + 7..].trim(); // 7 = " named ".len()
+
+                    // Extract slice name (first word after "named", before cardinality/flags)
+                    let slice_name = after_named
+                        .split_whitespace()
+                        .next()
+                        .filter(|w| {
+                            !w.contains("..") && *w != "MS" && *w != "SU" && !w.starts_with("//")
+                        })
+                        .unwrap_or(ext_type);
+
+                    if !ext_type.is_empty() {
+                        Some((ext_type.to_string(), slice_name.to_string()))
+                    } else {
+                        None
+                    }
                 } else {
-                    // Extract just the extension name (first word before cardinality/flags)
+                    // No "named" - extension type is also the slice name
                     let words: Vec<&str> = item.split_whitespace().collect();
                     if let Some(first_word) = words.first() {
                         let first_word = first_word.trim();
                         // Skip cardinality patterns and flags
                         if !first_word.is_empty()
-                            && !first_word.contains("..")  // Skip cardinality like "0..1"
-                            && first_word != "MS"          // Skip MustSupport flag
-                            && first_word != "SU"          // Skip Summary flag
+                            && !first_word.contains("..")
+                            && first_word != "MS"
+                            && first_word != "SU"
                             && !first_word.starts_with("//")
-                        // Skip comments
                         {
-                            first_word.to_string()
+                            Some((first_word.to_string(), first_word.to_string()))
                         } else {
-                            String::new()
+                            None
                         }
                     } else {
-                        item.to_string()
+                        None
                     }
                 }
             })
-            .filter(|s| !s.is_empty())
             .collect()
     }
 }
@@ -2997,6 +3039,104 @@ impl InsertRuleArguments {
         }
 
         items
+    }
+}
+
+/// Generic insert rule: * insert RuleSetName(param1, param2)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InsertRule {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for InsertRule {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::InsertRule
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl InsertRule {
+    pub fn ruleset_reference(&self) -> Option<String> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|c| c.into_token())
+            .find(|t| {
+                matches!(
+                    t.kind(),
+                    FshSyntaxKind::Ident
+                        | FshSyntaxKind::PlainParamToken
+                        | FshSyntaxKind::BracketedParamToken
+                )
+            })
+            .map(|t| t.text().to_string())
+    }
+
+    pub fn arguments(&self) -> Vec<String> {
+        child_of_kind(&self.syntax, FshSyntaxKind::InsertRuleArgs)
+            .and_then(InsertRuleArguments::cast)
+            .map(|args| args.items())
+            .unwrap_or_default()
+    }
+}
+
+/// RuleSet definition: RuleSet: Name(param1, param2)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSetDef {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for RuleSetDef {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::RuleSet
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl RuleSetDef {
+    pub fn name(&self) -> Option<String> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|c| c.into_token())
+            .find(|t| t.kind() == FshSyntaxKind::Ident)
+            .map(|t| t.text().to_string())
+    }
+
+    pub fn parameters(&self) -> Vec<String> {
+        child_of_kind(&self.syntax, FshSyntaxKind::ParameterList)
+            .map(|node| {
+                node.children_with_tokens()
+                    .filter_map(|c| c.into_token())
+                    .filter(|t| t.kind() == FshSyntaxKind::Ident)
+                    .map(|t| t.text().to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn rules(&self) -> impl Iterator<Item = Rule> {
+        self.syntax.children().filter_map(Rule::cast)
     }
 }
 

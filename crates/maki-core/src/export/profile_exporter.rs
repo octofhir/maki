@@ -408,8 +408,27 @@ impl ProfileExporter {
         package: Arc<tokio::sync::RwLock<crate::semantic::Package>>,
     ) -> Result<Self, ExportError> {
         let path_resolver = Arc::new(PathResolver::new(session.clone()));
-        let differential_generator =
+        let mut differential_generator =
             DifferentialGenerator::new(session.clone(), path_resolver.clone(), base_url.clone());
+
+        // Build extension URL map from local package for differential generator
+        {
+            let pkg = package.read().await;
+            let mut ext_map = std::collections::HashMap::new();
+            for (url, resource) in pkg.all_resources() {
+                if let (Some(name), Some("StructureDefinition"), Some("complex-type")) = (
+                    resource.get("name").and_then(|n| n.as_str()),
+                    resource.get("resourceType").and_then(|t| t.as_str()),
+                    resource.get("kind").and_then(|k| k.as_str()),
+                ) {
+                    ext_map.insert(name.to_string(), url.clone());
+                }
+            }
+            if !ext_map.is_empty() {
+                debug!("Populated extension URL map with {} entries", ext_map.len());
+            }
+            differential_generator.set_extension_url_map(ext_map);
+        }
 
         Ok(Self {
             session,
@@ -1220,9 +1239,10 @@ impl ProfileExporter {
         structure_def.experimental = None;
         structure_def.date = None;
         structure_def.publisher = None;
+        structure_def.version = None; // only set when explicitly provided via caret
 
-        // NOTE: Mappings should NOT be cleared - they are inherited from parent
-        // (SUSHI behavior: mappings stay in snapshot, only NEW mappings in differential)
+        // Drop inherited mappings; only include FSH-defined mappings (parity with SUSHI)
+        structure_def.mapping = None;
 
         // Note: Fields like contact, use_context, jurisdiction, purpose, copyright, keyword
         // don't exist in our simplified struct yet. They would be cleared in a full implementation.
@@ -1248,6 +1268,15 @@ impl ProfileExporter {
             } else {
                 Some(filtered)
             };
+        }
+
+        // STEP 3b: Sort extensions deterministically by URL for stable output
+        if let Some(exts) = structure_def.extension.as_mut() {
+            exts.sort_by(|a, b| {
+                let a_url = a.get("url").and_then(|u| u.as_str()).unwrap_or_default();
+                let b_url = b.get("url").and_then(|u| u.as_str()).unwrap_or_default();
+                a_url.cmp(b_url)
+            });
         }
 
         // STEP 4: Set new metadata from profile
@@ -1294,9 +1323,6 @@ impl ProfileExporter {
         // Set publisher from config if available
         structure_def.publisher = self.publisher.clone();
 
-        // Set version from config if available (SUSHI parity)
-        structure_def.version = self.version.clone();
-
         Ok(())
     }
 
@@ -1340,8 +1366,8 @@ impl ProfileExporter {
                 // Code caret rules are handled when exporting CodeSystems/ValueSets
                 Ok(())
             }
-            Rule::CodeInsert(_) => {
-                // Code insert rules are not applicable for StructureDefinition export
+            Rule::Insert(_) | Rule::CodeInsert(_) => {
+                // Insert/Code insert rules are not applicable for StructureDefinition export
                 Ok(())
             }
         }
@@ -1765,9 +1791,12 @@ impl ProfileExporter {
             // base_elem.slicing would be set here in full implementation
         }
 
+        // Get items with both extension type and slice name
+        let items_with_types = contains_rule.items_with_types();
+
         // Create slice elements for each item
-        for item in items {
-            let slice_path = format!("{}:{}", full_path, item);
+        for (ext_type, slice_name) in items_with_types {
+            let slice_path = format!("{}:{}", full_path, slice_name);
 
             // Check if slice already exists
             if snapshot.element.iter().any(|e| e.path == slice_path) {
@@ -1777,12 +1806,13 @@ impl ProfileExporter {
 
             // Create the slice element
             let mut slice_element = ElementDefinition::new(slice_path.clone());
-            slice_element.short = Some(format!("Slice: {}", item));
+            slice_element.slice_name = Some(slice_name.clone());
+            slice_element.short = Some(format!("Slice: {}", slice_name));
 
             // For extension slices, try to resolve the extension and set its profile
             if is_extension {
-                // Try to resolve extension URL
-                let extension_url = format!("{}/StructureDefinition/{}", self.base_url, item);
+                // Try to resolve extension URL by looking up the extension definition
+                let extension_url = self.resolve_extension_url(&ext_type).await;
 
                 // Set type with profile
                 slice_element.type_ = Some(vec![ElementDefinitionType {
@@ -1792,8 +1822,8 @@ impl ProfileExporter {
                 }]);
 
                 debug!(
-                    "Created extension slice {} with profile {}",
-                    slice_path, extension_url
+                    "Created extension slice {} (type: {}) with profile {}",
+                    slice_path, ext_type, extension_url
                 );
             }
 
@@ -1801,6 +1831,73 @@ impl ProfileExporter {
         }
 
         Ok(())
+    }
+
+    /// Resolve an extension type name to its canonical URL.
+    ///
+    /// Looks up the extension definition using available resolution methods.
+    async fn resolve_extension_url(&self, ext_type: &str) -> String {
+        // If it's already a full URL, use as-is
+        if ext_type.contains("://") {
+            return ext_type.to_string();
+        }
+
+        // Check alias table first
+        if let Some(url) = self.alias_table.resolve(ext_type) {
+            debug!(
+                "Resolved extension '{}' from alias table -> '{}'",
+                ext_type, url
+            );
+            return url.to_string();
+        }
+
+        // Check local package for extension definitions
+        {
+            let package = self.package.read().await;
+            // Package stores resources by canonical URL, try to find by matching name
+            for (url, resource) in package.all_resources() {
+                if let Some(name) = resource.get("name").and_then(|n| n.as_str()) {
+                    if name == ext_type
+                        && resource.get("resourceType").and_then(|t| t.as_str())
+                            == Some("StructureDefinition")
+                        && resource.get("kind").and_then(|k| k.as_str()) == Some("complex-type")
+                    {
+                        debug!(
+                            "Resolved extension '{}' from local package -> '{}'",
+                            ext_type, url
+                        );
+                        return url.clone();
+                    }
+                }
+            }
+        }
+
+        // Fallback: construct URL from base_url and extension type name
+        // Convert PascalCase to kebab-case with IG prefix for SUSHI parity
+        let kebab = Self::pascal_to_kebab(ext_type);
+        let extension_url = format!("{}/StructureDefinition/{}", self.base_url, kebab);
+        debug!(
+            "Extension '{}' not found, using fallback URL: {}",
+            ext_type, extension_url
+        );
+        extension_url
+    }
+
+    /// Convert PascalCase to kebab-case
+    /// Example: "CancerDiseaseStatusEvidenceType" -> "cancer-disease-status-evidence-type"
+    fn pascal_to_kebab(s: &str) -> String {
+        let mut result = String::new();
+        for (i, c) in s.chars().enumerate() {
+            if c.is_uppercase() {
+                if i > 0 {
+                    result.push('-');
+                }
+                result.push(c.to_lowercase().next().unwrap());
+            } else {
+                result.push(c);
+            }
+        }
+        result
     }
 
     /// Apply only rule (type constraint)

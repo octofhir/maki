@@ -346,8 +346,8 @@ pub async fn lint_command(
     // Step: Collect all ValueSet names from all FSH files for cross-file reference checking
     // This pre-pass enables the binding-without-valueset rule to find ValueSets defined in other files
     {
-        use maki_core::cst::ast::{AstNode, Document};
         use maki_core::Parser;
+        use maki_core::cst::ast::{AstNode, Document};
         use std::collections::HashSet;
 
         let mut global_valuesets: HashSet<String> = HashSet::new();

@@ -381,7 +381,9 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
             }
             '?' => {
                 // Either modifier flag '?!' or standalone '?'
-                if let Some((next, next_size)) = next_char(input, i + size) && next == '!' {
+                if let Some((next, next_size)) = next_char(input, i + size)
+                    && next == '!'
+                {
                     tokens.push(CstToken::new(
                         FshSyntaxKind::ModifierFlag,
                         "?!",
