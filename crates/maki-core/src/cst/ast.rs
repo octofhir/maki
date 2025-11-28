@@ -2132,15 +2132,24 @@ impl FixedValueRule {
         //
         // Strategy: Collect all relevant tokens after the "=" sign until newline/comment
 
-        // First check if there's a NameValue child node (for complex values like IDTYPE#PT "display")
+        // First check if there's a structured child node (for complex values)
         for child in self.syntax.children() {
             if child.kind() == FshSyntaxKind::NameValue {
-                // Extract text from NameValue node
+                // Extract text from NameValue node (CodeableConcept pattern like IDTYPE#PT "display")
+                // Strip any trailing comments
                 let text = child.text().to_string();
+                let text = Self::strip_trailing_comment(&text);
                 return Some(text.trim().to_string());
             }
             if child.kind() == FshSyntaxKind::ReferenceValue {
                 let text = child.text().to_string();
+                let text = Self::strip_trailing_comment(&text);
+                return Some(text.trim().to_string());
+            }
+            if child.kind() == FshSyntaxKind::Quantity {
+                // Extract text from Quantity node (e.g., 272.01 'mg' "mg")
+                let text = child.text().to_string();
+                let text = Self::strip_trailing_comment(&text);
                 return Some(text.trim().to_string());
             }
         }
@@ -2180,6 +2189,29 @@ impl FixedValueRule {
 
         // Build the value string from collected token texts
         Some(value_parts.join("").trim().to_string())
+    }
+
+    /// Strip trailing comments from a value string
+    /// FSH comments start with // and continue to end of line
+    fn strip_trailing_comment(text: &str) -> String {
+        // Find // that's not inside a string
+        let mut in_double_quote = false;
+        let mut chars: Vec<char> = text.chars().collect();
+        let mut i = 0;
+
+        while i < chars.len() {
+            let c = chars[i];
+            if c == '"' {
+                in_double_quote = !in_double_quote;
+            } else if !in_double_quote && c == '/' && i + 1 < chars.len() && chars[i + 1] == '/' {
+                // Found a comment - truncate here
+                chars.truncate(i);
+                break;
+            }
+            i += 1;
+        }
+
+        chars.into_iter().collect::<String>().trim().to_string()
     }
 }
 

@@ -17,6 +17,11 @@ use std::sync::Arc;
 
 use dashmap::{DashMap, DashSet};
 use octofhir_canonical_manager::{CanonicalManager, FcmError, config::FcmConfig};
+
+// Re-export config types for CLI commands to use
+pub use octofhir_canonical_manager::config::{
+    FcmConfig as CanonicalManagerConfig, OptimizationConfig, RegistryConfig, StorageConfig,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::fs;
@@ -236,11 +241,8 @@ impl CanonicalFacade {
             config.add_package(&pkg.name, &pkg.version, Some(pkg.priority));
         }
 
-        eprintln!("[DEBUG MAKI] About to call CanonicalManager::new()");
         let manager = CanonicalManager::new(config).await?;
-        eprintln!("[DEBUG MAKI] CanonicalManager::new() returned successfully");
 
-        eprintln!("[DEBUG MAKI] Creating CanonicalFacade");
         Ok(Self {
             manager: Arc::new(manager),
             options,
@@ -279,6 +281,7 @@ impl CanonicalFacade {
             releases: unique.into_iter().collect(),
             local_cache: DashMap::new(),
             installed: DashSet::new(),
+            cardinality_cache: DashMap::new(),
         };
 
         if self.options.auto_install_core {
@@ -325,6 +328,9 @@ pub struct DefinitionSession {
     releases: Vec<FhirRelease>,
     local_cache: DashMap<String, Arc<DefinitionResource>>,
     installed: DashSet<String>,
+    /// Cache for element cardinality lookups: element_path -> is_array
+    /// Key format: "ResourceType.field" or "ResourceType.field.subfield"
+    cardinality_cache: DashMap<String, bool>,
 }
 
 impl DefinitionSession {
@@ -538,23 +544,11 @@ impl DefinitionSession {
         resource_type: &str,
         name: &str,
     ) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
-        eprintln!(
-            "[DEBUG] >>> resource_by_type_and_name: direct SQL lookup for {}:{}",
-            resource_type, name
-        );
-        let search_start = std::time::Instant::now();
-
         let results = self
             .facade
             .manager
             .find_by_type_and_name(resource_type, name)
             .await?;
-
-        eprintln!(
-            "[DEBUG]     find_by_type_and_name() returned {} results after {:?}",
-            results.len(),
-            search_start.elapsed()
-        );
 
         if results.is_empty() {
             return Ok(None);
@@ -584,11 +578,6 @@ impl DefinitionSession {
             content: Arc::new(resource.content),
         });
 
-        eprintln!(
-            "[DEBUG]     Found and cached resource by name: {}",
-            canonical_url
-        );
-
         self.facade
             .global_cache
             .insert(canonical_url.clone(), resolved.clone());
@@ -606,24 +595,12 @@ impl DefinitionSession {
         resource_type: &str,
         id: &str,
     ) -> CanonicalResult<Option<Arc<DefinitionResource>>> {
-        eprintln!(
-            "[DEBUG] >>> resource_by_type_and_id: direct SQL lookup for {}:{}",
-            resource_type, id
-        );
-        let search_start = std::time::Instant::now();
-
         // Use fast direct SQL lookup instead of slow text search
         let results = self
             .facade
             .manager
             .find_by_type_and_id(resource_type, id)
             .await?;
-
-        eprintln!(
-            "[DEBUG]     find_by_type_and_id() returned {} results after {:?}",
-            results.len(),
-            search_start.elapsed()
-        );
 
         // Get the primary FHIR version for filtering
         let fhir_version_filter = self.releases.first().map(|r| r.to_version_string());
@@ -663,8 +640,6 @@ impl DefinitionSession {
                 content: Arc::new(resource.content),
             });
 
-            eprintln!("[DEBUG]     Found and cached resource: {}", canonical_url);
-
             self.facade
                 .global_cache
                 .insert(canonical_url.clone(), resolved.clone());
@@ -673,10 +648,6 @@ impl DefinitionSession {
             return Ok(Some(resolved));
         }
 
-        eprintln!(
-            "[DEBUG]     No matching resource found for {}:{}",
-            resource_type, id
-        );
         Ok(None)
     }
 
@@ -729,6 +700,7 @@ impl DefinitionSession {
                 releases: vec![FhirRelease::R4],
                 local_cache: dashmap::DashMap::new(),
                 installed: dashmap::DashSet::new(),
+                cardinality_cache: dashmap::DashMap::new(),
             }
         }
 
@@ -773,6 +745,86 @@ impl DefinitionSession {
                 Ok(None)
             }
         }
+    }
+
+    /// Check if an element path represents an array field based on StructureDefinition cardinality.
+    ///
+    /// This method looks up the element's max cardinality from the FHIR StructureDefinition
+    /// and returns true if max != "1" (i.e., the field can hold multiple values).
+    ///
+    /// # Arguments
+    ///
+    /// * `element_path` - Full FHIR element path like "Patient.identifier" or "Observation.component.code"
+    ///
+    /// # Returns
+    ///
+    /// `true` if the element is an array (max cardinality > 1 or "*"), `false` otherwise.
+    /// Returns `false` for unknown elements.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # async fn example(session: &maki_core::canonical::DefinitionSession) {
+    /// // Patient.identifier has max cardinality "*", so it's an array
+    /// assert!(session.is_array_element("Patient.identifier").await);
+    ///
+    /// // Patient.active has max cardinality "1", so it's not an array
+    /// assert!(!session.is_array_element("Patient.active").await);
+    /// # }
+    /// ```
+    pub async fn is_array_element(&self, element_path: &str) -> bool {
+        // Check cache first
+        if let Some(cached) = self.cardinality_cache.get(element_path) {
+            return *cached;
+        }
+
+        // Extract resource type from path (first segment)
+        let resource_type = match element_path.split('.').next() {
+            Some(rt) => rt,
+            None => {
+                debug!("Invalid element path (no resource type): {}", element_path);
+                return false;
+            }
+        };
+
+        // Resolve StructureDefinition for the resource type
+        let sd_url = format!("http://hl7.org/fhir/StructureDefinition/{}", resource_type);
+        let sd = match self.resolve_structure_definition(&sd_url).await {
+            Ok(Some(sd)) => sd,
+            Ok(None) => {
+                debug!(
+                    "StructureDefinition not found for {}, defaulting to non-array",
+                    resource_type
+                );
+                self.cardinality_cache.insert(element_path.to_string(), false);
+                return false;
+            }
+            Err(e) => {
+                debug!(
+                    "Failed to resolve StructureDefinition for {}: {}, defaulting to non-array",
+                    resource_type, e
+                );
+                self.cardinality_cache.insert(element_path.to_string(), false);
+                return false;
+            }
+        };
+
+        // Find element in snapshot
+        let is_array = sd
+            .snapshot
+            .as_ref()
+            .and_then(|s| {
+                s.element
+                    .iter()
+                    .find(|e| e.path == element_path)
+                    .and_then(|e| e.max.as_ref())
+                    .map(|max| max != "1" && max != "0")
+            })
+            .unwrap_or(false);
+
+        // Cache and return result
+        self.cardinality_cache.insert(element_path.to_string(), is_array);
+        is_array
     }
 
     /// Set package priorities from dependencies list
@@ -961,6 +1013,57 @@ async fn ensure_storage_dirs(config: &FcmConfig) -> CanonicalResult<()> {
     ensure(&config.storage.cache_dir).await?;
     ensure(&config.storage.packages_dir).await?;
     Ok(())
+}
+
+/// Creates the default MAKI FcmConfig with standard storage paths.
+///
+/// This configuration uses:
+/// - `~/.maki/cache` for cache storage
+/// - `~/.maki/packages` for package storage (and SQLite database)
+///
+/// This ensures all MAKI commands (build, lint, etc.) use the same database
+/// and storage locations for consistency.
+///
+/// # Arguments
+///
+/// * `enable_metrics` - Whether to enable performance metrics collection
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use maki_core::canonical::create_default_maki_config;
+///
+/// let config = create_default_maki_config(false);
+/// ```
+pub fn create_default_maki_config(enable_metrics: bool) -> FcmConfig {
+    let home_dir = std::env::var("HOME").unwrap_or_else(|_| String::from("/tmp"));
+    let maki_dir = PathBuf::from(home_dir).join(".maki");
+
+    FcmConfig {
+        registry: RegistryConfig {
+            url: "https://fs.get-ig.org/pkgs/".to_string(),
+            timeout: 60,
+            retry_attempts: 3,
+        },
+        storage: StorageConfig {
+            cache_dir: maki_dir.join("cache"),
+            packages_dir: maki_dir.join("packages"),
+            max_cache_size: "5GB".to_string(),
+            connection_pool_size: 32,
+        },
+        optimization: OptimizationConfig {
+            parallel_workers: rayon::current_num_threads(),
+            batch_size: 200,
+            enable_checksums: true,
+            checksum_algorithm: "blake3".to_string(),
+            checksum_cache_size: 50000,
+            enable_metrics,
+            metrics_interval: "30s".to_string(),
+        },
+        packages: vec![],
+        local_packages: vec![],
+        resource_directories: vec![],
+    }
 }
 
 #[cfg(test)]

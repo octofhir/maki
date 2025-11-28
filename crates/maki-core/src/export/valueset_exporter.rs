@@ -95,6 +95,70 @@ fn resolve_code_system_alias(alias: &str) -> Option<&'static str> {
         .find_map(|(name, url)| (*name == alias).then(|| *url))
 }
 
+// Standard copyright notices for common code systems (SUSHI parity)
+const CODE_SYSTEM_COPYRIGHTS: &[(&str, &str)] = &[
+    (
+        "http://snomed.info/sct",
+        "This value set includes content from SNOMED CT, which is copyright © 2002+ International Health Terminology Standards Development Organisation (IHTSDO), and distributed by agreement between IHTSDO and HL7. Implementer use of SNOMED CT is not covered by this agreement"
+    ),
+    (
+        "http://loinc.org",
+        "This material contains content from LOINC (http://loinc.org). LOINC is copyright © 1995-2020, Regenstrief Institute, Inc. and the Logical Observation Identifiers Names and Codes (LOINC) Committee and is available at no cost under the license at http://loinc.org/license. LOINC® is a registered United States trademark of Regenstrief Institute, Inc"
+    ),
+    (
+        "http://www.nlm.nih.gov/research/umls/rxnorm",
+        "This material contains content from the National Library of Medicine's RxNorm (https://www.nlm.nih.gov/research/umls/rxnorm). RxNorm is a registered trademark of the National Library of Medicine"
+    ),
+    (
+        "http://www.ama-assn.org/go/cpt",
+        "Current Procedural Terminology (CPT) is copyright 2020 American Medical Association. All rights reserved"
+    ),
+];
+
+/// Generate copyright text based on code systems used in a ValueSet compose
+fn generate_copyright_from_compose(compose: &ValueSetCompose) -> Option<String> {
+    let mut copyrights = Vec::new();
+    let mut seen_systems = std::collections::HashSet::new();
+
+    // Check include systems
+    if let Some(includes) = &compose.include {
+        for include in includes {
+            if let Some(system) = &include.system {
+                if seen_systems.insert(system.clone()) {
+                    if let Some(copyright) = get_copyright_for_system(system) {
+                        copyrights.push(copyright);
+                    }
+                }
+            }
+        }
+    }
+
+    // Check exclude systems
+    if let Some(excludes) = &compose.exclude {
+        for exclude in excludes {
+            if let Some(system) = &exclude.system {
+                if seen_systems.insert(system.clone()) {
+                    if let Some(copyright) = get_copyright_for_system(system) {
+                        copyrights.push(copyright);
+                    }
+                }
+            }
+        }
+    }
+
+    if copyrights.is_empty() {
+        None
+    } else {
+        Some(copyrights.join("\n\n"))
+    }
+}
+
+fn get_copyright_for_system(system: &str) -> Option<&'static str> {
+    CODE_SYSTEM_COPYRIGHTS
+        .iter()
+        .find_map(|(url, copyright)| (system == *url).then(|| *copyright))
+}
+
 // ============================================================================
 // Component Rule Types
 // ============================================================================
@@ -178,6 +242,8 @@ pub struct ValueSetExporter {
     /// Version from config
     #[allow(dead_code)]
     version: Option<String>,
+    /// Status from config (draft | active | retired | unknown)
+    status: Option<String>,
 }
 
 impl ValueSetExporter {
@@ -201,6 +267,7 @@ impl ValueSetExporter {
     ///     session,
     ///     "http://example.org/fhir".to_string(),
     ///     None,
+    ///     Some("active".to_string()),
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -209,11 +276,13 @@ impl ValueSetExporter {
         session: Arc<DefinitionSession>,
         base_url: String,
         version: Option<String>,
+        status: Option<String>,
     ) -> Result<Self, ExportError> {
         Ok(Self {
             session,
             base_url,
             version,
+            status,
         })
     }
 
@@ -264,8 +333,11 @@ impl ValueSetExporter {
         // Generate canonical URL using the canonical id
         let url = format!("{}/ValueSet/{}", self.base_url, canonical_id);
 
-        // Create base resource with default status
-        let mut resource = ValueSetResource::new(url, name.clone(), "draft");
+        // Create base resource with status from config (defaults to "draft")
+        let status = self.status.as_deref().unwrap_or("draft");
+        let mut resource = ValueSetResource::new(url, name.clone(), status);
+        // Set experimental to false by default (SUSHI parity)
+        resource.experimental = Some(false);
         // Ensure id is always present for parity with SUSHI defaults
         resource.id = Some(canonical_id.clone());
 
@@ -379,20 +451,31 @@ impl ValueSetExporter {
         // Build compose.include from grouped rules
         let mut has_content = false;
 
-        // Add system-based includes
+        // Add system-based includes (SUSHI parity: filters get separate includes, concepts are grouped)
         for (system, (concepts, filters, version)) in system_includes {
-            let mut include = ValueSetInclude::from_system(system);
-            if let Some(v) = version {
-                include.version = Some(v);
-            }
-            for concept in concepts {
-                include.add_concept(concept);
-            }
+            // Each filter gets its own include block (SUSHI behavior)
             for filter in filters {
+                let mut include = ValueSetInclude::from_system(system.clone());
+                if let Some(v) = &version {
+                    include.version = Some(v.clone());
+                }
                 include.add_filter(filter);
+                compose.add_include(include);
+                has_content = true;
             }
-            compose.add_include(include);
-            has_content = true;
+
+            // Concepts are grouped together in one include block
+            if !concepts.is_empty() {
+                let mut include = ValueSetInclude::from_system(system);
+                if let Some(v) = version {
+                    include.version = Some(v);
+                }
+                for concept in concepts {
+                    include.add_concept(concept);
+                }
+                compose.add_include(include);
+                has_content = true;
+            }
         }
 
         // Add ValueSet-based includes
@@ -402,20 +485,31 @@ impl ValueSetExporter {
             has_content = true;
         }
 
-        // Build compose.exclude from grouped rules
+        // Build compose.exclude from grouped rules (SUSHI parity: filters get separate excludes, concepts are grouped)
         for (system, (concepts, filters, version)) in system_excludes {
-            let mut exclude = ValueSetInclude::from_system(system);
-            if let Some(v) = version {
-                exclude.version = Some(v);
-            }
-            for concept in concepts {
-                exclude.add_concept(concept);
-            }
+            // Each filter gets its own exclude block (SUSHI behavior)
             for filter in filters {
+                let mut exclude = ValueSetInclude::from_system(system.clone());
+                if let Some(v) = &version {
+                    exclude.version = Some(v.clone());
+                }
                 exclude.add_filter(filter);
+                compose.add_exclude(exclude);
+                has_content = true;
             }
-            compose.add_exclude(exclude);
-            has_content = true;
+
+            // Concepts are grouped together in one exclude block
+            if !concepts.is_empty() {
+                let mut exclude = ValueSetInclude::from_system(system);
+                if let Some(v) = version {
+                    exclude.version = Some(v);
+                }
+                for concept in concepts {
+                    exclude.add_concept(concept);
+                }
+                compose.add_exclude(exclude);
+                has_content = true;
+            }
         }
 
         // Add ValueSet-based excludes
@@ -428,6 +522,13 @@ impl ValueSetExporter {
         if has_content {
             // Validate exclude rules don't conflict with include rules
             self.validate_exclude_conflicts(&compose, &name)?;
+
+            // Generate copyright notice based on code systems used (SUSHI parity)
+            // Only set if not already set via FSH metadata rules
+            if resource.copyright.is_none() {
+                resource.copyright = generate_copyright_from_compose(&compose);
+            }
+
             resource.compose = Some(compose);
         }
 
@@ -937,7 +1038,9 @@ impl ValueSetExporter {
                         filter_def.operator_string(),
                         filter_def.value_string(),
                     ) {
-                        let filter = ValueSetFilter::new(&property, &operator, value);
+                        // Strip # prefix from code values (SUSHI parity)
+                        let clean_value = self.clean_filter_value(&value);
+                        let filter = ValueSetFilter::new(&property, &operator, clean_value);
 
                         if is_exclude {
                             let entry = system_excludes
@@ -1115,16 +1218,18 @@ impl ValueSetExporter {
             (system_part, None)
         };
 
-        // Resolve system alias
+        // Resolve system alias (document alias, built-ins, or fallback)
         let system_url = match alias_map.get(system_prefix) {
             Some(url) => url.clone(),
-            None => {
-                warn!(
-                    "Unresolved alias '{}' in ValueSet {}. Using as-is.",
-                    system_prefix, valueset_name
-                );
-                system_prefix.to_string()
-            }
+            None => resolve_code_system_alias(system_prefix)
+                .map(|u| u.to_string())
+                .unwrap_or_else(|| {
+                    warn!(
+                        "Unresolved alias '{}' in ValueSet {}. Using as-is.",
+                        system_prefix, valueset_name
+                    );
+                    system_prefix.to_string()
+                }),
         };
 
         // Parse filter expression: property op value
@@ -1616,6 +1721,7 @@ mod tests {
             session: Arc::new(crate::canonical::DefinitionSession::for_testing()),
             base_url: "http://example.org/fhir".to_string(),
             version: None,
+            status: None,
         }
     }
 

@@ -113,7 +113,7 @@ fn suspicious_rules_detect_risky_patterns() {
 #[test]
 fn style_rules_focus_on_readability() {
     let rules = BuiltinRules::style_rules();
-    assert_eq!(rules.len(), 2); // Updated count
+    assert_eq!(rules.len(), 1); // Only naming_convention_rule remains (duplicate removed)
 
     for rule in &rules {
         assert_rule_basics(rule);

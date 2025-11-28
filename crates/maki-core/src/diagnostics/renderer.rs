@@ -243,7 +243,11 @@ impl DiagnosticRenderer {
                 frame.push_str(&self.console.colorize(" │ ", Color::Dim));
                 frame.push_str(&" ".repeat(error_col.saturating_sub(1)));
 
-                let carets = "^".repeat(error_len.max(1));
+                // Cap caret length to remaining line content (don't extend past end of line)
+                let col_offset = error_col.saturating_sub(1);
+                let max_caret_len = line_content.len().saturating_sub(col_offset);
+                let caret_len = error_len.max(1).min(max_caret_len.max(1));
+                let carets = "^".repeat(caret_len);
                 frame.push_str(&self.console.colorize(&carets, highlight_color));
 
                 frame.push('\n');
@@ -373,11 +377,22 @@ impl DiagnosticRenderer {
 
         // Calculate the portion of the line being replaced
         let start_col = suggestion.location.column.saturating_sub(1); // 0-indexed
-        let end_col = suggestion
-            .location
-            .end_column
-            .unwrap_or(original_line.len())
-            .saturating_sub(1);
+
+        // If the location spans multiple lines (end_line > line), the end_column
+        // refers to a different line, so we should replace to the end of the current line.
+        // Otherwise, use end_column from the location.
+        let end_line = suggestion.location.end_line.unwrap_or(line_num);
+        let end_col = if end_line > line_num {
+            // Multi-line span: replace to end of current line
+            original_line.len()
+        } else {
+            // Same line: use actual end_column
+            suggestion
+                .location
+                .end_column
+                .unwrap_or(original_line.len() + 1) // +1 because 1-indexed
+                .saturating_sub(1)
+        };
 
         // Build the modified text by replacing the specified range
         let prefix = &original_line[..start_col.min(original_line.len())];
@@ -385,7 +400,7 @@ impl DiagnosticRenderer {
             let suffix = &original_line[end_col..];
             format!("{}{}{}", prefix, suggestion.replacement, suffix)
         } else {
-            // If location is invalid, just append
+            // If location is invalid, just append the replacement
             format!("{}{}", prefix, suggestion.replacement)
         };
 

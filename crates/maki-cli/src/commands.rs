@@ -21,7 +21,7 @@ use maki_core::{
     DefaultAutofixEngine, DefaultExecutor, DefaultFileDiscovery, DefaultSemanticAnalyzer,
     DefinitionSession, ExecutionContext, Executor, FhirRelease, FileDiscovery, FixConfig,
     FormatterConfiguration, PackageCoordinate, Result, Rule, RuleCategory, RuleEngine,
-    RuleMetadata,
+    RuleMetadata, create_default_maki_config,
 };
 use maki_rules::gritql::GritQLRuleLoader;
 use maki_rules::{BuiltinRules, DefaultRuleEngine};
@@ -94,8 +94,9 @@ pub async fn lint_command(
     {
         info!("Setting up FHIR package dependencies from configuration...");
 
-        // Create canonical facade
+        // Create canonical facade with standard MAKI config (uses ~/.maki storage)
         let canonical_options = CanonicalOptions {
+            config: Some(create_default_maki_config(false)), // Metrics disabled for lint
             quick_init: true,
             ..Default::default()
         };
@@ -341,6 +342,43 @@ pub async fn lint_command(
     }
 
     debug!("Total rules loaded: {}", compiled_rules.len());
+
+    // Step: Collect all ValueSet names from all FSH files for cross-file reference checking
+    // This pre-pass enables the binding-without-valueset rule to find ValueSets defined in other files
+    {
+        use maki_core::cst::ast::{AstNode, Document};
+        use maki_core::Parser;
+        use std::collections::HashSet;
+
+        let mut global_valuesets: HashSet<String> = HashSet::new();
+
+        debug!(
+            "Pre-parsing {} files to collect global ValueSet registry",
+            fsh_files.len()
+        );
+
+        if let Ok(mut parser) = CachedFshParser::new() {
+            for file_path in &fsh_files {
+                if let Ok(source) = std::fs::read_to_string(file_path) {
+                    if let Ok(parse_result) = parser.parse(&source) {
+                        if let Some(document) = Document::cast(parse_result.cst) {
+                            for vs in document.value_sets() {
+                                if let Some(name) = vs.name() {
+                                    global_valuesets.insert(name);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        debug!(
+            "Found {} ValueSets across all project files",
+            global_valuesets.len()
+        );
+        rule_engine.set_global_valuesets(global_valuesets);
+    }
 
     let semantic_analyzer = Box::new(DefaultSemanticAnalyzer::new());
     let context = ExecutionContext::new(config.clone(), compiled_rules);

@@ -4,6 +4,7 @@ use maki_core::{AutofixTemplate, FixSafety, Rule, RuleCategory, RuleMetadata, Se
 
 pub mod binding;
 pub mod cardinality;
+pub mod caret_path;
 pub mod duplicates;
 pub mod metadata;
 pub mod naming;
@@ -169,28 +170,15 @@ impl BuiltinRules {
     /// Rule for detecting invalid caret paths
     fn invalid_caret_path_rule() -> Rule {
         Rule {
-            id: "correctness/invalid-caret-path".to_string(),
+            id: caret_path::INVALID_CARET_PATH.to_string(),
             severity: Severity::Error,
             description: "Detects invalid caret path syntax".to_string(),
-            gritql_pattern: r#"
-                caret_rule where {
-                    $path where {
-                        or {
-                            $path <: r"\.\.",
-                            $path <: r"^\.",
-                            $path <: r"\.$",
-                            $path <: r"[^a-zA-Z0-9\.\[\]_-]",
-                            $path <: r"\[\]"
-                        }
-                    }
-                }
-            "#
-            .to_string(),
+            gritql_pattern: String::new(), // AST-based rule, no GritQL pattern
             autofix: None,
             metadata: RuleMetadata {
-                id: "correctness/invalid-caret-path".to_string(),
+                id: caret_path::INVALID_CARET_PATH.to_string(),
                 name: "Invalid Caret Path".to_string(),
-                description: "Detects invalid caret path syntax in FSH rules".to_string(),
+                description: "Detects invalid caret path syntax in FSH rules (double dots, empty brackets, unbalanced brackets)".to_string(),
                 severity: Severity::Error,
                 category: RuleCategory::Correctness,
                 tags: vec![
@@ -204,7 +192,7 @@ impl BuiltinRules {
                         .to_string(),
                 ),
             },
-            is_ast_rule: false,
+            is_ast_rule: true, // Now an AST-based rule
         }
     }
 

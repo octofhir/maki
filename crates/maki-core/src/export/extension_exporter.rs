@@ -213,9 +213,16 @@ impl ExtensionExporter {
             .name()
             .ok_or_else(|| ExportError::MissingRequiredField("name".to_string()))?;
 
+        // Prefer explicit Id for canonical/url; fall back to name if missing
+        let canonical_id = extension
+            .id()
+            .and_then(|id| id.value())
+            .unwrap_or_else(|| extension_name.clone());
+
         // Update metadata fields with proper extension configuration
         structure_def.name = extension_name.clone();
-        structure_def.url = format!("{}/Extension/{}", self.base_url, extension_name);
+        structure_def.id = Some(canonical_id.clone());
+        structure_def.url = format!("{}/StructureDefinition/{}", self.base_url, canonical_id);
         structure_def.kind = StructureDefinitionKind::ComplexType;
         structure_def.type_field = "Extension".to_string();
         structure_def.base_definition =
@@ -225,13 +232,6 @@ impl ExtensionExporter {
 
         // Set status to active for extensions (SUSHI parity)
         structure_def.status = "active".to_string();
-
-        // Optional metadata
-        if let Some(id_clause) = extension.id()
-            && let Some(id) = id_clause.value()
-        {
-            structure_def.id = Some(id);
-        }
 
         if let Some(title_clause) = extension.title()
             && let Some(title) = title_clause.value()
@@ -871,7 +871,7 @@ impl ExtensionExporter {
                     nested_element.type_ = Some(vec![ElementDefinitionType::new("Extension")]);
 
                     // Generate nested extension URL
-                    let nested_url = format!("{}/Extension/{}", self.base_url, name);
+                    let nested_url = format!("{}/StructureDefinition/{}", self.base_url, name);
 
                     // Set slicing discriminator for the nested extension
                     nested_element.short = Some(format!("Extension: {}", name));
@@ -1225,7 +1225,7 @@ impl ExtensionExporter {
                     nested_element.type_ = Some(vec![ElementDefinitionType::new("Extension")]);
 
                     // Generate nested extension URL
-                    let nested_url = format!("{}/Extension/{}", self.base_url, name);
+                    let nested_url = format!("{}/StructureDefinition/{}", self.base_url, name);
 
                     // Set slicing discriminator for the nested extension
                     nested_element.short = Some(format!("Extension: {}", name));

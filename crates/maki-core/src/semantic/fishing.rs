@@ -10,7 +10,7 @@
 //! from being used when a local FSH definition exists but hasn't been exported yet.
 
 use crate::canonical::{CanonicalResult, DefinitionSession};
-use crate::export::fhir_types::StructureDefinition;
+use crate::export::fhir_types::{StructureDefinition, StructureDefinitionKind};
 use crate::semantic::{FhirResource, ResourceType};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -52,7 +52,7 @@ pub struct FishableMetadata {
 /// This represents all FSH definitions parsed from source files.
 /// In SUSHI, this is called the "Tank" and contains the raw FSH definitions
 /// before they're fully exported to FHIR JSON.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FshTank {
     /// Resources indexed by ID
     resources_by_id: HashMap<String, FhirResource>,
@@ -60,12 +60,30 @@ pub struct FshTank {
     resources_by_url: HashMap<String, FhirResource>,
     /// Resources indexed by name (for flexible lookup)
     resources_by_name: HashMap<String, FhirResource>,
+    /// Canonical base URL (from IG config)
+    canonical_base: String,
+}
+
+impl Default for FshTank {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FshTank {
     /// Create a new empty tank
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            resources_by_id: HashMap::new(),
+            resources_by_url: HashMap::new(),
+            resources_by_name: HashMap::new(),
+            canonical_base: "http://example.org/fhir".to_string(),
+        }
+    }
+
+    /// Override the canonical base URL (e.g., from sushi-config)
+    pub fn set_canonical_base(&mut self, base: String) {
+        self.canonical_base = base;
     }
 
     /// Add a resource to the tank
@@ -97,10 +115,9 @@ impl FshTank {
             | ResourceType::Extension
             | ResourceType::ValueSet
             | ResourceType::CodeSystem => {
-                // In a full implementation, this would come from sushi-config.yaml
-                // For now, we'll use a placeholder
                 Some(format!(
-                    "http://example.org/fhir/{}/{}",
+                    "{}/{}/{}",
+                    self.canonical_base,
                     resource.resource_type.as_str(),
                     resource.id
                 ))
@@ -135,6 +152,45 @@ impl FshTank {
         }
 
         false
+    }
+
+    /// Extract lightweight metadata from a FhirResource
+    ///
+    /// Converts a full FhirResource into FishableMetadata using the configured canonical base.
+    fn extract_metadata(&self, resource: &FhirResource) -> FishableMetadata {
+        // Determine the FHIR resource type string
+        let resource_type = match resource.resource_type {
+            ResourceType::Profile | ResourceType::Extension | ResourceType::Logical => {
+                "StructureDefinition".to_string()
+            }
+            ResourceType::ValueSet => "ValueSet".to_string(),
+            ResourceType::CodeSystem => "CodeSystem".to_string(),
+            ResourceType::Instance => "Instance".to_string(),
+            ResourceType::Invariant => "Invariant".to_string(),
+            ResourceType::RuleSet => "RuleSet".to_string(),
+            ResourceType::Mapping => "Mapping".to_string(),
+        };
+
+        // Determine the StructureDefinition type if applicable
+        let sd_type = match resource.resource_type {
+            ResourceType::Profile => Some("Profile".to_string()),
+            ResourceType::Extension => Some("Extension".to_string()),
+            ResourceType::Logical => Some("Logical".to_string()),
+            _ => None,
+        };
+
+        // Construct canonical URL from configured base
+        let url = format!("{}/{}/{}", self.canonical_base, resource_type, resource.id);
+
+        FishableMetadata {
+            id: resource.id.clone(),
+            name: resource.name.clone().unwrap_or_else(|| resource.id.clone()),
+            url,
+            resource_type,
+            sd_type,
+            parent: resource.parent.clone(),
+            instance_usage: None,
+        }
     }
 
     /// Fish for a resource in the tank
@@ -489,6 +545,102 @@ impl FishingContext {
         Ok(None)
     }
 
+    /// Fish for an Extension StructureDefinition by id/name
+    ///
+    /// Unlike `fish_structure_definition`, this method specifically looks for Extensions
+    /// and does NOT skip them. Use this when resolving extension URLs.
+    pub async fn fish_extension(
+        &self,
+        identifier: &str,
+    ) -> CanonicalResult<Option<StructureDefinition>> {
+        trace!("Fishing for Extension: {}", identifier);
+
+        // Resolve alias first
+        let identifier = self
+            .resolve_alias(identifier)
+            .unwrap_or_else(|| identifier.to_string());
+
+        // Generate name variants
+        let name_candidates = vec![
+            identifier.clone(),
+            identifier.to_ascii_lowercase(),
+            camel_to_kebab(&identifier),
+        ];
+
+        // Check package first
+        if let Some(json) = self.fish_in_package(identifier.as_str()).await?
+            && let Ok(sd) = serde_json::from_value::<StructureDefinition>((*json).clone())
+            && sd.type_field == "Extension"
+        {
+            return Ok(Some(sd));
+        }
+
+        // Check tank for Extension type
+        if self.is_in_tank(identifier.as_str(), &[ResourceType::Extension]).await {
+            // Try to get metadata from tank
+            if let Some(metadata) = self.fish_metadata(&identifier, &[ResourceType::Extension]).await {
+                if !metadata.url.is_empty() {
+                    // Build a minimal StructureDefinition with the URL
+                    // We only need url for extension resolution
+                    let sd = StructureDefinition::new(
+                        metadata.url,
+                        metadata.name,
+                        "Extension".to_string(),
+                        StructureDefinitionKind::ComplexType,
+                    );
+                    debug!("Found Extension {} in tank", identifier);
+                    return Ok(Some(sd));
+                }
+            }
+        }
+
+        // Try canonical lookups - this time we WANT Extensions
+        for cand in &name_candidates {
+            // Try by URL
+            if let Ok(Some(sd)) = self
+                .canonical_session
+                .resolve_structure_definition(cand)
+                .await
+            {
+                if sd.type_field == "Extension" {
+                    debug!("Found Extension {} in canonical by URL", cand);
+                    return Ok(Some(sd));
+                }
+            }
+
+            // Try by name
+            if let Ok(Some(resource)) = self
+                .canonical_session
+                .resource_by_type_and_name("StructureDefinition", cand)
+                .await
+            {
+                if let Ok(sd) = serde_json::from_value::<StructureDefinition>((*resource.content).clone()) {
+                    if sd.type_field == "Extension" {
+                        debug!("Found Extension {} in canonical by name", cand);
+                        return Ok(Some(sd));
+                    }
+                }
+            }
+
+            // Try by id
+            if let Ok(Some(resource)) = self
+                .canonical_session
+                .resource_by_type_and_id("StructureDefinition", cand)
+                .await
+            {
+                if let Ok(sd) = serde_json::from_value::<StructureDefinition>((*resource.content).clone()) {
+                    if sd.type_field == "Extension" {
+                        debug!("Found Extension {} in canonical by id", cand);
+                        return Ok(Some(sd));
+                    }
+                }
+            }
+        }
+
+        debug!("Extension {} not found", identifier);
+        Ok(None)
+    }
+
     /// Check if a resource is in the package
     async fn fish_in_package(&self, identifier: &str) -> CanonicalResult<Option<Arc<JsonValue>>> {
         let package = self.package.read().await;
@@ -503,26 +655,14 @@ impl FishingContext {
 
     /// Fish in canonical (external FHIR packages)
     async fn fish_in_canonical(&self, identifier: &str) -> CanonicalResult<Option<Arc<JsonValue>>> {
-        eprintln!("[DEBUG] Fishing in canonical for: {}", identifier);
-        let start = std::time::Instant::now();
-
         let result = self.canonical_session.resolve(identifier).await;
-        let elapsed = start.elapsed();
 
         match result {
             Ok(resource) => {
-                eprintln!(
-                    "[DEBUG] Found {} in canonical after {:?}",
-                    identifier, elapsed
-                );
                 debug!("Found {} in canonical", identifier);
                 Ok(Some(Arc::new((*resource.content).clone())))
             }
-            Err(e) => {
-                eprintln!(
-                    "[DEBUG] Not found {} in canonical after {:?}: {}",
-                    identifier, elapsed, e
-                );
+            Err(_) => {
                 // Not found in canonical
                 Ok(None)
             }
@@ -568,50 +708,10 @@ impl FishingContext {
         // Try to find the resource in the tank
         let resource = tank.fish(identifier, resource_types)?;
 
-        // Extract lightweight metadata
-        Some(Self::extract_metadata(resource))
+        // Extract lightweight metadata using tank's canonical base
+        Some(tank.extract_metadata(resource))
     }
 
-    /// Extract lightweight metadata from a FhirResource
-    ///
-    /// This is an internal helper that converts a full FhirResource into
-    /// lightweight FishableMetadata for fast lookups.
-    fn extract_metadata(resource: &FhirResource) -> FishableMetadata {
-        // Determine the FHIR resource type string
-        let resource_type = match resource.resource_type {
-            ResourceType::Profile | ResourceType::Extension | ResourceType::Logical => {
-                "StructureDefinition".to_string()
-            }
-            ResourceType::ValueSet => "ValueSet".to_string(),
-            ResourceType::CodeSystem => "CodeSystem".to_string(),
-            ResourceType::Instance => "Instance".to_string(),
-            ResourceType::Invariant => "Invariant".to_string(),
-            ResourceType::RuleSet => "RuleSet".to_string(),
-            ResourceType::Mapping => "Mapping".to_string(),
-        };
-
-        // Determine the StructureDefinition type if applicable
-        let sd_type = match resource.resource_type {
-            ResourceType::Profile => Some("Profile".to_string()),
-            ResourceType::Extension => Some("Extension".to_string()),
-            ResourceType::Logical => Some("Logical".to_string()),
-            _ => None,
-        };
-
-        // Construct canonical URL
-        // Note: In a full implementation, this would use the canonical base from sushi-config.yaml
-        let url = format!("http://example.org/fhir/{}/{}", resource_type, resource.id);
-
-        FishableMetadata {
-            id: resource.id.clone(),
-            name: resource.name.clone().unwrap_or_else(|| resource.id.clone()),
-            url,
-            resource_type,
-            sd_type,
-            parent: resource.parent.clone(),
-            instance_usage: None, // TODO: Extract from Instance metadata when available
-        }
-    }
 }
 
 /// Convert CamelCase to kebab-case (simple heuristic)

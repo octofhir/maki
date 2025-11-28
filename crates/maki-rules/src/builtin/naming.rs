@@ -49,11 +49,17 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
             && let Some(id) = id_clause.value()
             && !is_kebab_case(&id)
         {
+            // Use id_clause.syntax() for the location, not profile.syntax()
+            // This ensures the autofix targets the Id line, not the Profile line
             let location = model.source_map.node_to_diagnostic_location(
-                profile.syntax(),
+                id_clause.syntax(),
                 &model.source,
                 &model.source_file,
             );
+
+            // Create a replacement that replaces the entire Id line value
+            let suggested_id = to_kebab_case(&id);
+            let full_replacement = format!("Id: {}", suggested_id);
 
             diagnostics.push(
                 Diagnostic::new(
@@ -64,7 +70,7 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
                 )
                 .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
                     "Convert to kebab-case",
-                    to_kebab_case(&id),
+                    full_replacement,
                     location,
                 )),
             );
@@ -102,10 +108,13 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
             && !is_kebab_case(&id)
         {
             let location = model.source_map.node_to_diagnostic_location(
-                extension.syntax(),
+                id_clause.syntax(),
                 &model.source,
                 &model.source_file,
             );
+
+            let suggested_id = to_kebab_case(&id);
+            let full_replacement = format!("Id: {}", suggested_id);
 
             diagnostics.push(
                 Diagnostic::new(
@@ -116,7 +125,7 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
                 )
                 .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
                     "Convert to kebab-case",
-                    to_kebab_case(&id),
+                    full_replacement,
                     location,
                 )),
             );
@@ -154,10 +163,13 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
             && !is_kebab_case(&id)
         {
             let location = model.source_map.node_to_diagnostic_location(
-                value_set.syntax(),
+                id_clause.syntax(),
                 &model.source,
                 &model.source_file,
             );
+
+            let suggested_id = to_kebab_case(&id);
+            let full_replacement = format!("Id: {}", suggested_id);
 
             diagnostics.push(
                 Diagnostic::new(
@@ -168,7 +180,7 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
                 )
                 .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
                     "Convert to kebab-case",
-                    to_kebab_case(&id),
+                    full_replacement,
                     location,
                 )),
             );
@@ -208,10 +220,13 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
             && !is_kebab_case(&id)
         {
             let location = model.source_map.node_to_diagnostic_location(
-                code_system.syntax(),
+                id_clause.syntax(),
                 &model.source,
                 &model.source_file,
             );
+
+            let suggested_id = to_kebab_case(&id);
+            let full_replacement = format!("Id: {}", suggested_id);
 
             diagnostics.push(
                 Diagnostic::new(
@@ -224,7 +239,7 @@ pub fn check_naming_conventions(model: &SemanticModel) -> Vec<Diagnostic> {
                 )
                 .with_suggestion(maki_core::CodeSuggestion::unsafe_fix(
                     "Convert to kebab-case",
-                    to_kebab_case(&id),
+                    full_replacement,
                     location,
                 )),
             );

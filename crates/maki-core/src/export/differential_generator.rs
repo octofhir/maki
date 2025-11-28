@@ -877,7 +877,8 @@ impl RuleProcessor {
     /// - Searches for existing element by path
     /// - Creates new element if not found
     /// - Sets appropriate id based on path
-    /// - Maintains proper ordering in differential
+    /// - Root element (e.g., "Patient") always placed first (SUSHI parity)
+    /// - Other elements appended in FSH source order
     fn find_or_create_element<'a>(
         &self,
         differential: &'a mut Vec<ElementDefinition>,
@@ -898,16 +899,22 @@ impl RuleProcessor {
 
         trace!("Created new element in differential: {}", path);
 
-        // Insert element in proper order (sorted by path for consistency)
-        let insert_index = differential
-            .iter()
-            .position(|e| e.path.as_str() > path)
-            .unwrap_or(differential.len());
+        // Check if this is a root element (no dots in path, e.g., "Patient", "Observation")
+        // Root elements should always be placed first for SUSHI parity
+        let is_root_element = !path.contains('.');
 
-        differential.insert(insert_index, element);
+        if is_root_element {
+            // Insert root element at the beginning
+            differential.insert(0, element);
+            return &mut differential[0];
+        }
 
-        // Return mutable reference to the inserted element
-        &mut differential[insert_index]
+        // Append non-root elements in FSH source order
+        differential.push(element);
+
+        // Return mutable reference to the last element
+        let last_idx = differential.len() - 1;
+        &mut differential[last_idx]
     }
 
     /// Helper method to find or create extension slice element in differential
@@ -945,20 +952,13 @@ impl RuleProcessor {
             path, id, slice_name
         );
 
-        // Insert element in proper order (sorted by id for extension slices)
-        let insert_index = differential
-            .iter()
-            .position(|e| {
-                e.id.as_ref()
-                    .map(|existing_id| existing_id.as_str() > id)
-                    .unwrap_or(false)
-            })
-            .unwrap_or(differential.len());
+        // Append elements in order they're encountered (FSH source order)
+        // This matches SUSHI behavior better than alphabetical/id sorting
+        differential.push(element);
 
-        differential.insert(insert_index, element);
-
-        // Return mutable reference to the inserted element
-        &mut differential[insert_index]
+        // Return mutable reference to the last element
+        let last_idx = differential.len() - 1;
+        &mut differential[last_idx]
     }
 
     /// Helper method to apply flag to element
@@ -1648,8 +1648,10 @@ mod tests {
     fn test_element_creation_and_ordering() {
         let mut differential = Vec::new();
 
-        // Simulate find_or_create_element logic
-        let paths = ["Patient.name", "Patient.active", "Patient.identifier"];
+        // Simulate find_or_create_element logic with root-first ordering
+        // FSH source order: name, active, Patient (root)
+        // Expected output: Patient (root first), name, active
+        let paths = ["Patient.name", "Patient.active", "Patient"];
 
         for path in paths {
             // Check if element exists
@@ -1660,20 +1662,20 @@ mod tests {
                 let mut element = ElementDefinition::new(path.to_string());
                 element.id = Some(path.to_string());
 
-                // Insert in sorted order
-                let insert_index = differential
-                    .iter()
-                    .position(|e| e.path.as_str() > path)
-                    .unwrap_or(differential.len());
-
-                differential.insert(insert_index, element);
+                // Root element (no dots) goes first, others append
+                let is_root = !path.contains('.');
+                if is_root {
+                    differential.insert(0, element);
+                } else {
+                    differential.push(element);
+                }
             }
         }
 
-        // Should be sorted by path
-        assert_eq!(differential[0].path, "Patient.active");
-        assert_eq!(differential[1].path, "Patient.identifier");
-        assert_eq!(differential[2].path, "Patient.name");
+        // Root element should be first, then FSH source order for others
+        assert_eq!(differential[0].path, "Patient"); // Root first
+        assert_eq!(differential[1].path, "Patient.name");
+        assert_eq!(differential[2].path, "Patient.active");
     }
 
     #[test]

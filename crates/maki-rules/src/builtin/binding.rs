@@ -425,9 +425,9 @@ fn check_profile_binding_consistency(profile: &Profile, model: &SemanticModel) -
             let unique_strengths: std::collections::HashSet<_> = strengths.iter().collect();
 
             if unique_strengths.len() > 1 && element_name != "unknown" {
-                // Found inconsistent strengths
+                // Found inconsistent strengths - point to the first binding with this element name
                 let location = model.source_map.node_to_diagnostic_location(
-                    profile.syntax(),
+                    bindings[0].2.syntax(),
                     &model.source,
                     &model.source_file,
                 );
@@ -464,15 +464,25 @@ fn extract_element_name(path: &str) -> String {
 }
 
 /// Check for bindings that reference non-existent ValueSets
-pub fn check_binding_without_valueset(model: &SemanticModel) -> Vec<Diagnostic> {
+///
+/// # Arguments
+/// * `model` - The semantic model for the current file
+/// * `global_valuesets` - Optional set of all ValueSet names defined across all project files
+///
+/// When `global_valuesets` is provided, the rule checks if a referenced ValueSet
+/// exists in ANY file in the project, not just the current document.
+pub fn check_binding_without_valueset(
+    model: &SemanticModel,
+    global_valuesets: Option<&std::collections::HashSet<String>>,
+) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
     let Some(document) = Document::cast(model.cst.clone()) else {
         return diagnostics;
     };
 
-    // Collect all defined ValueSets in the document
-    let defined_valuesets: std::collections::HashSet<_> =
+    // Collect all defined ValueSets in the current document
+    let local_valuesets: std::collections::HashSet<_> =
         document.value_sets().filter_map(|vs| vs.name()).collect();
 
     // Check profiles for undefined ValueSet references
@@ -482,11 +492,54 @@ pub fn check_binding_without_valueset(model: &SemanticModel) -> Vec<Diagnostic> 
                 && let Some(vs_name) = vs_rule.value_set()
             {
                 // Check if ValueSet is defined locally
-                if !defined_valuesets.contains(&vs_name) {
-                    // ValueSet might be from FHIR spec or external package
-                    // TODO: Check against FHIR definitions when available
-                    // For now, we'll only warn about likely typos (no URL format)
+                let is_defined_locally = local_valuesets.contains(&vs_name);
 
+                // Check if ValueSet is defined in any project file (if global registry provided)
+                let is_defined_globally = global_valuesets
+                    .map(|global| global.contains(&vs_name))
+                    .unwrap_or(false);
+
+                // Only warn if not found in local OR global scope
+                if !is_defined_locally && !is_defined_globally {
+                    // ValueSet might be from FHIR spec or external package
+                    // Skip URLs since those reference external ValueSets
+                    if !vs_name.starts_with("http://") && !vs_name.starts_with("https://") {
+                        let location = model.source_map.node_to_diagnostic_location(
+                            vs_rule.syntax(),
+                            &model.source,
+                            &model.source_file,
+                        );
+
+                        diagnostics.push(
+                            Diagnostic::new(
+                                BINDING_WITHOUT_VALUESET,
+                                Severity::Warning,
+                                format!(
+                                    "Binding references ValueSet '{}' which is not defined in this project",
+                                    vs_name
+                                ),
+                                location,
+                            )
+                            .with_code("undefined-valueset".to_string()),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // Also check extensions for undefined ValueSet references
+    for extension in document.extensions() {
+        for rule in extension.rules() {
+            if let maki_core::cst::ast::Rule::ValueSet(vs_rule) = rule
+                && let Some(vs_name) = vs_rule.value_set()
+            {
+                let is_defined_locally = local_valuesets.contains(&vs_name);
+                let is_defined_globally = global_valuesets
+                    .map(|global| global.contains(&vs_name))
+                    .unwrap_or(false);
+
+                if !is_defined_locally && !is_defined_globally {
                     if !vs_name.starts_with("http://") && !vs_name.starts_with("https://") {
                         let location = model.source_map.node_to_diagnostic_location(
                             vs_rule.syntax(),

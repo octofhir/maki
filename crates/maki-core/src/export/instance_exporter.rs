@@ -131,6 +131,8 @@ pub struct InstanceExporter {
     current_profile_url: Option<String>,
     /// Cached map of extension slice names -> canonical URLs for current profile
     current_extension_urls: HashMap<String, String>,
+    /// Current base resource type (e.g., "Patient", "Observation") for cardinality lookups
+    current_resource_type: Option<String>,
 }
 
 impl InstanceExporter {
@@ -170,6 +172,7 @@ impl InstanceExporter {
             current_profile_name: None,
             current_profile_url: None,
             current_extension_urls: HashMap::new(),
+            current_resource_type: None,
         })
     }
 
@@ -525,6 +528,9 @@ impl InstanceExporter {
                 "id": name,
             });
 
+            // Set resource type for cardinality lookups
+            self.current_resource_type = Some(instance_of.to_string());
+
             for rule in instance.rules() {
                 self.apply_rule(&mut resource, &rule).await?;
             }
@@ -532,6 +538,7 @@ impl InstanceExporter {
             self.current_profile_name = None;
             self.current_profile_url = None;
             self.current_extension_urls.clear();
+            self.current_resource_type = None;
 
             debug!(
                 "Exported base resource instance {} with resourceType {}",
@@ -632,13 +639,14 @@ impl InstanceExporter {
             resource_type = sd.type_field.clone();
         }
 
-        // Cache profile context for this export (used by extension resolution)
+        // Cache profile context for this export (used by extension resolution and cardinality lookups)
         self.current_profile_name = Some(instance_of.to_string());
         self.current_profile_url = canonical_url.clone();
         self.current_extension_urls = sd_opt
             .as_ref()
             .map(Self::build_extension_url_map)
             .unwrap_or_default();
+        self.current_resource_type = Some(resource_type.clone());
 
         // Create base resource with correct resourceType
         let mut resource = if let Some(profile_url) = canonical_url {
@@ -657,15 +665,6 @@ impl InstanceExporter {
                 "id": name,
             })
         };
-
-        // Debug: print base resource
-        if name.contains("genomic-variant-fusion") {
-            eprintln!(
-                "[DEBUG INSTANCE EXPORT] Base resource for {}: {}",
-                name,
-                serde_json::to_string_pretty(&resource).unwrap_or_default()
-            );
-        }
 
         // Apply rules
         for rule in instance.rules() {
@@ -701,19 +700,14 @@ impl InstanceExporter {
             }
         }
 
-        // Debug: print final resource
-        if name.contains("genomic-variant-fusion") {
-            eprintln!(
-                "[DEBUG INSTANCE EXPORT] Final resource for {}: {}",
-                name,
-                serde_json::to_string_pretty(&resource).unwrap_or_default()
-            );
-        }
-
         // Clear per-instance caches
         self.current_profile_name = None;
         self.current_profile_url = None;
         self.current_extension_urls.clear();
+        self.current_resource_type = None;
+
+        // Remove internal slice markers before returning (SUSHI parity)
+        Self::strip_slice_markers(&mut resource);
 
         debug!("Successfully exported instance {}", name);
         Ok(resource)
@@ -758,6 +752,24 @@ impl InstanceExporter {
             }
         }
         Ok(())
+    }
+
+    /// Recursively remove internal `_sliceName` markers from the exported JSON
+    fn strip_slice_markers(value: &mut JsonValue) {
+        match value {
+            JsonValue::Object(map) => {
+                map.remove("_sliceName");
+                for v in map.values_mut() {
+                    Self::strip_slice_markers(v);
+                }
+            }
+            JsonValue::Array(arr) => {
+                for v in arr.iter_mut() {
+                    Self::strip_slice_markers(v);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Apply a fixed value rule (assignment: * path = value)
@@ -933,13 +945,14 @@ impl InstanceExporter {
                         // Set the final value
                         if let JsonValue::Object(obj) = current_value {
                             // Check if this field should be an array
-                            let final_value = if self.is_array_field(field) && !value.is_array() {
-                                // Wrap scalar value in an array
-                                trace!("Wrapping value in array for field '{}'", field);
-                                JsonValue::Array(vec![value.clone()])
-                            } else {
-                                value.clone()
-                            };
+                            let final_value =
+                                if self.is_array_field(field).await && !value.is_array() {
+                                    // Wrap scalar value in an array
+                                    trace!("Wrapping value in array for field '{}'", field);
+                                    JsonValue::Array(vec![value.clone()])
+                                } else {
+                                    value.clone()
+                                };
 
                             // If the field already exists and both are objects, merge them
                             if let Some(existing) = obj.get_mut(field) {
@@ -962,19 +975,16 @@ impl InstanceExporter {
                         // Navigate or create intermediate structure
                         if let JsonValue::Object(obj) = current_value {
                             if !obj.contains_key(field) {
-                                // Determine if we should create an array or object
-                                // If the next segment is a Field (not ArrayAccess), this might be
-                                // FSH shorthand for accessing array element properties without index
-                                let next_is_field = i + 1 < segments.len()
-                                    && matches!(segments[i + 1], PathSegment::Field(_));
-
-                                if next_is_field {
-                                    // Create an array with one empty object - FSH shorthand for identifier.use
-                                    // means identifier[0].use when identifier is an array field
+                                // Only create an array if this is a known FHIR array field
+                                // FSH shorthand like "identifier.use" means identifier[0].use
+                                // when identifier IS an array field
+                                if self.is_array_field(field).await {
+                                    // Create an array with one empty object for known array fields
                                     let arr = vec![JsonValue::Object(Map::new())];
                                     obj.insert(field.clone(), JsonValue::Array(arr));
                                 } else {
-                                    // Create a regular object
+                                    // Create a regular object for backbone elements like
+                                    // timing, repeat, boundsPeriod, numerator, etc.
                                     obj.insert(field.clone(), JsonValue::Object(Map::new()));
                                 }
                             }
@@ -1161,12 +1171,20 @@ impl InstanceExporter {
             }
 
             // Try multiple naming patterns for the extension (id/name variations)
+            // Include common IG prefixes and case variants
+            let pascal = Self::pascal_case(slice_name);
+            let kebab = Self::kebab_case(slice_name);
             let candidates = vec![
                 slice_name.to_string(),
                 format!("us-core-{}", slice_name),
+                format!("us-core-{}", kebab),
                 format!("uscoreext-{}", slice_name),
-                Self::pascal_case(slice_name),
-                Self::kebab_case(slice_name),
+                format!("mcode-{}", slice_name),
+                format!("mcode-{}", kebab),
+                pascal.clone(),
+                kebab.clone(),
+                // Try mapping common slice names to extension names
+                Self::map_slice_to_extension(slice_name),
             ];
 
             for candidate in &candidates {
@@ -1185,7 +1203,8 @@ impl InstanceExporter {
                 }
 
                 // Try to find extension in canonical packages
-                match fishing_ctx.fish_structure_definition(candidate).await {
+                // Use fish_extension which specifically looks for Extension StructureDefinitions
+                match fishing_ctx.fish_extension(candidate).await {
                     Ok(Some(sd)) => {
                         debug!(
                             "Resolved extension '{}' (tried '{}') from canonical -> '{}'",
@@ -1305,6 +1324,24 @@ impl InstanceExporter {
         result
     }
 
+    /// Map common slice names to their corresponding extension names
+    /// This handles cases where the slice name differs from the extension name
+    fn map_slice_to_extension(slice_name: &str) -> String {
+        match slice_name {
+            // mCode Radiotherapy extensions
+            "actualNumberOfSessions" => "RadiotherapySessions".to_string(),
+            "treatmentIntent" => "ProcedureIntent".to_string(),
+            "modalityAndTechnique" => "RadiotherapyModalityAndTechnique".to_string(),
+            "doseDeliveredToVolume" => "RadiotherapyDoseDeliveredToVolume".to_string(),
+            // US Core extensions
+            "birthsex" => "us-core-birthsex".to_string(),
+            "race" => "us-core-race".to_string(),
+            "ethnicity" => "us-core-ethnicity".to_string(),
+            // Default: use PascalCase conversion
+            _ => Self::pascal_case(slice_name),
+        }
+    }
+
     /// Load a StructureDefinition by URL or name using the fishing context
     async fn load_structure_definition(
         &self,
@@ -1384,6 +1421,17 @@ impl InstanceExporter {
     ) -> Result<JsonValue, ExportError> {
         let trimmed = value_str.trim();
 
+        // Check if this is a FHIR `code` type field (should be simple string, not CodeableConcept)
+        // This handles: status, intent, gender, etc.
+        if self.is_code_field_path(path) {
+            let code = self.extract_code_only(trimmed);
+            debug!(
+                "Converting code field '{}' value '{}' -> '{}'",
+                path, trimmed, code
+            );
+            return Ok(JsonValue::String(code));
+        }
+
         // Check if this path should always be a string
         if self.is_string_field_path(path) {
             // If it's a quoted string, remove quotes
@@ -1431,15 +1479,120 @@ impl InstanceExporter {
         }
     }
 
-    /// Check if a field name represents an array field in FHIR
+    /// Check if a path represents a FHIR `code` type field
     ///
-    /// This includes common FHIR array fields like address.line, name.given,
-    /// identifier, telecom, etc.
-    fn is_array_field(&self, field_name: &str) -> bool {
-        // Check for known FHIR array fields
+    /// Code fields are simple string values (not CodeableConcept) that should
+    /// only contain the code value, not a full coding structure.
+    fn is_code_field_path(&self, path: &str) -> bool {
+        // Extract the final field name from the path
+        let field_name = path.rsplit('.').next().unwrap_or(path);
+
+        // Context-sensitive check: some fields are code in some contexts but CodeableConcept in others
+        // identifier.type is a CodeableConcept, not a code
+        if field_name == "type" && path.contains("identifier") {
+            return false;
+        }
+
+        // Common FHIR code fields (not CodeableConcept)
+        // Note: clinicalStatus and verificationStatus are CodeableConcept in Condition, AllergyIntolerance, etc.
+        // Note: Removed 'type' and 'kind' as they are often CodeableConcept in many resources
         matches!(
             field_name,
-            // Common array fields across many resources
+            // Status fields - only simple code-typed status fields
+            "status"  // Most resources have status as code (not CodeableConcept)
+                | "eventStatus"
+                | "publicationStatus"
+                |
+                // Intent/purpose fields
+                "intent"
+                | "priority"
+                |
+                // Gender/sex
+                "gender"
+                | "administrativeGender"
+                |
+                // Timing.repeat unit fields (code type)
+                "periodUnit"
+                | "durationUnit"
+                | "when"
+                | "dayOfWeek"
+                |
+                // Other common code fields
+                "use"
+                | "rank"
+                | "mode"
+                | "resourceType"
+        )
+    }
+
+    /// Extract just the code from a code value with optional display
+    /// Handles: #code, #code "display", system#code, system#code "display"
+    fn extract_code_only(&self, value: &str) -> String {
+        let trimmed = value.trim();
+
+        // Pattern: #code "display" or #code
+        if let Some(code_part) = trimmed.strip_prefix('#') {
+            // Split on space to separate code from display
+            let code = code_part.split_whitespace().next().unwrap_or(code_part);
+            return code.trim_matches('"').to_string();
+        }
+
+        // Pattern: system#code "display" or system#code
+        if trimmed.contains('#') {
+            if let Some(code_part) = trimmed.split('#').nth(1) {
+                // Split on space to separate code from display
+                let code = code_part.split_whitespace().next().unwrap_or(code_part);
+                return code.trim_matches('"').to_string();
+            }
+        }
+
+        // No code pattern, return as-is (remove quotes if present)
+        trimmed
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string()
+    }
+
+    /// Check if a field name represents an array field in FHIR
+    ///
+    /// This method looks up the element's max cardinality from the FHIR StructureDefinition
+    /// using the canonical manager. Returns true if max cardinality != "1".
+    ///
+    /// # Arguments
+    ///
+    /// * `field_name` - The field name (e.g., "identifier", "telecom")
+    ///
+    /// # Returns
+    ///
+    /// `true` if the field is an array based on the current resource type's
+    /// StructureDefinition, `false` otherwise or if resource type is unknown.
+    async fn is_array_field(&self, field_name: &str) -> bool {
+        // First, check common array fields that appear in nested datatypes
+        // (session lookup only works for top-level resource fields)
+        if Self::is_known_array_field(field_name) {
+            return true;
+        }
+
+        if let Some(resource_type) = &self.current_resource_type {
+            let element_path = format!("{}.{}", resource_type, field_name);
+            self.session.is_array_element(&element_path).await
+        } else {
+            // No resource type context - default to non-array
+            trace!(
+                "No current_resource_type set, defaulting '{}' to non-array",
+                field_name
+            );
+            false
+        }
+    }
+
+    /// Known array fields that appear in nested datatypes
+    /// This handles fields where the session lookup can't find them because
+    /// they're in datatypes (like Timing.event) not top-level resources
+    fn is_known_array_field(field_name: &str) -> bool {
+        matches!(
+            field_name,
+            // Common resource array fields
             "identifier" | "telecom" | "address" | "contact" | "communication" |
             "contained" | "extension" | "modifierExtension" |
             // Name fields
@@ -1460,14 +1613,18 @@ impl InstanceExporter {
             "bodySite" | "stage" | "evidence" | "locationQualifier" |
             // Procedure
             "complication" | "followUp" | "focalDevice" | "usedReference" | "usedCode" |
-            // MedicationRequest
-            "dosageInstruction" | "detectedIssue" | "eventHistory" |
+            // MedicationRequest/MedicationAdministration
+            "dosageInstruction" | "doseAndRate" | "detectedIssue" | "eventHistory" |
             // DiagnosticReport
             "result" | "imagingStudy" | "media" |
             // Encounter
             "statusHistory" | "classHistory" | "participant" | "diagnosis" | "account" | "hospitalization" |
+            // Timing datatype array fields
+            "event" | "timeOfDay" |
             // Various
-            "instantiatesCanonical" | "instantiatesUri" | "basedOn" | "partOf" | "reasonCode" | "reasonReference"
+            "instantiatesCanonical" | "instantiatesUri" | "basedOn" | "partOf" | "reasonCode" | "reasonReference" |
+            // Condition stage
+            "assessment"
         )
     }
 
@@ -1619,17 +1776,40 @@ impl InstanceExporter {
     }
 
     /// Parse Quantity from FSH notation
-    /// Format: 70 'kg' or 5.5 'cm'
+    /// Format: 70 'kg' or 5.5 'cm' or 272.01 'mg' "mg" (with display)
     fn parse_quantity(&self, value: &str) -> Result<JsonValue, ExportError> {
-        // Extract value and unit
-        let parts: Vec<&str> = value.splitn(2, '\'').collect();
-        if parts.len() < 2 {
+        // FSH Quantity format: VALUE 'UNIT' or VALUE 'UNIT' "DISPLAY"
+        // Find the opening and closing single quotes for the unit
+        let first_quote = value.find('\'');
+        let last_quote = value.rfind('\'');
+
+        if first_quote.is_none() || last_quote.is_none() || first_quote == last_quote {
             return Ok(JsonValue::String(value.to_string()));
         }
 
-        let value_str = parts[0].trim();
-        let unit_with_quote = parts[1];
-        let unit = unit_with_quote.trim_end_matches('\'').trim();
+        let first_quote_idx = first_quote.unwrap();
+        let last_quote_idx = last_quote.unwrap();
+
+        // Extract value (before first quote)
+        let value_str = value[..first_quote_idx].trim();
+
+        // Extract UCUM code (between single quotes)
+        let ucum_code = value[first_quote_idx + 1..last_quote_idx].trim();
+
+        // Extract optional display text (between double quotes after the unit)
+        let after_unit = &value[last_quote_idx + 1..];
+        let display = if let Some(dq_start) = after_unit.find('"') {
+            if let Some(dq_end) = after_unit[dq_start + 1..].find('"') {
+                Some(after_unit[dq_start + 1..dq_start + 1 + dq_end].trim())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Use display text as unit if provided, otherwise use UCUM code
+        let unit_display = display.unwrap_or(ucum_code);
 
         // Parse numeric value
         let numeric_value = if let Ok(num) = value_str.parse::<i64>() {
@@ -1640,17 +1820,14 @@ impl InstanceExporter {
             return Ok(JsonValue::String(value.to_string()));
         };
 
-        // Build Quantity
-        let mut quantity = serde_json::json!({
+        // Build Quantity with UCUM system and code
+        // UCUM (Unified Code for Units of Measure) is the standard system for units in FHIR
+        let quantity = serde_json::json!({
             "value": numeric_value,
-            "unit": unit
+            "unit": unit_display,
+            "system": "http://unitsofmeasure.org",
+            "code": ucum_code
         });
-
-        // Add system and code for UCUM units
-        if unit == "kg" || unit == "g" || unit == "cm" || unit == "m" || unit == "s" {
-            quantity["system"] = JsonValue::String("http://unitsofmeasure.org".to_string());
-            quantity["code"] = JsonValue::String(unit.to_string());
-        }
 
         Ok(quantity)
     }
@@ -1669,11 +1846,36 @@ impl InstanceExporter {
             .unwrap_or(value)
             .to_string();
 
-        // Try to infer the expected reference type from the path context (e.g., patient -> Patient)
+        // Try to infer the expected reference type from the path context
+        // Map common FHIR reference field names to their expected resource types
         let expected_type = path
             .and_then(|p| p.rsplit('.').next())
             .and_then(|field| match field {
-                "patient" => Some("Patient"),
+                // Patient references
+                "patient" | "subject" => Some("Patient"),
+                // Practitioner references
+                "performer" | "asserter" | "recorder" | "requester" | "sender" | "receiver"
+                | "author" | "collector" | "interpreter" | "informant" | "enterer" => {
+                    Some("Practitioner")
+                }
+                // Organization references
+                "organization" | "managingOrganization" | "custodian" => Some("Organization"),
+                // Encounter references
+                "encounter" | "context" => Some("Encounter"),
+                // Location references
+                "location" => Some("Location"),
+                // Specimen references
+                "specimen" => Some("Specimen"),
+                // Device references
+                "device" => Some("Device"),
+                // Condition references
+                "condition" | "reasonReference" => Some("Condition"),
+                // Observation references
+                "derivedFrom" | "hasMember" => Some("Observation"),
+                // Procedure references
+                "partOf" => Some("Procedure"),
+                // MedicationRequest references
+                "priorPrescription" => Some("MedicationRequest"),
                 _ => None,
             })
             .map(|s| s.to_string());
@@ -1681,6 +1883,7 @@ impl InstanceExporter {
         // If this looks like a local instance id (no slash) and we know its resourceType,
         // construct a proper typed reference (e.g., Patient/{id}) for parity with SUSHI.
         if !ref_value.contains('/') {
+            // First, try local instance registry
             if let Some(instance_json) = self.instance_registry.get(&ref_value) {
                 if let Some(rt) = instance_json
                     .get("resourceType")
@@ -1688,7 +1891,22 @@ impl InstanceExporter {
                 {
                     ref_value = format!("{}/{}", rt, ref_value);
                 }
-            } else if let Some(rt) = expected_type {
+            }
+            // Second, try fishing context to find the instance in FSH tank
+            else if let Some(fishing_ctx) = &self.fishing_context {
+                if let Some(metadata) = fishing_ctx.fish_metadata(&ref_value, &[]).await {
+                    // resource_type is a String, not Option
+                    if !metadata.resource_type.is_empty() {
+                        ref_value = format!("{}/{}", metadata.resource_type, ref_value);
+                    } else if let Some(rt) = &expected_type {
+                        ref_value = format!("{}/{}", rt, ref_value);
+                    }
+                } else if let Some(rt) = &expected_type {
+                    ref_value = format!("{}/{}", rt, ref_value);
+                }
+            }
+            // Third, fall back to path context
+            else if let Some(rt) = expected_type {
                 ref_value = format!("{}/{}", rt, ref_value);
             }
         }
@@ -1806,6 +2024,7 @@ mod tests {
             current_profile_name: None,
             current_profile_url: None,
             current_extension_urls: HashMap::new(),
+            current_resource_type: None,
         }
     }
 

@@ -393,7 +393,6 @@ mod tests {
     #[test]
     fn test_parse_and_expression() {
         let pattern = parse_pattern("Profile where missing(parent) and missing(id)").unwrap();
-        eprintln!("AND pattern predicates: {:?}", pattern.predicates);
 
         match &pattern.predicates[0] {
             Predicate::And(preds) => {

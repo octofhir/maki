@@ -598,6 +598,30 @@ fn collect_instance_assignments(
     paths
 }
 
+/// Creates a location that only covers the first line of a multi-line node.
+/// This provides better visual highlighting for diagnostics on definition headers.
+fn first_line_location(location: Location, source: &str) -> Location {
+    // If it's already a single line, return as-is
+    if location.end_line == Some(location.line) || location.end_line.is_none() {
+        return location;
+    }
+
+    // Find the end of the first line
+    let lines: Vec<&str> = source.lines().collect();
+    let first_line_len = if location.line > 0 && location.line <= lines.len() {
+        lines[location.line - 1].len()
+    } else {
+        0
+    };
+
+    Location {
+        end_line: Some(location.line),
+        end_column: Some(first_line_len + 1), // 1-indexed, after last char
+        length: first_line_len.saturating_sub(location.column.saturating_sub(1)),
+        ..location
+    }
+}
+
 /// Check that profiles have example instances
 ///
 /// This is a documentation/best practice rule that warns when profiles
@@ -621,11 +645,13 @@ pub fn check_profile_without_examples(model: &SemanticModel) -> Vec<Diagnostic> 
         if let Some(profile_name) = profile.name() {
             // Check if any instance uses this profile
             if !instance_profiles.contains(&profile_name) {
-                let location = model.source_map.node_to_diagnostic_location(
+                // Get full location then trim to first line for better visual highlighting
+                let full_location = model.source_map.node_to_diagnostic_location(
                     profile.syntax(),
                     &model.source,
                     &model.source_file,
                 );
+                let location = first_line_location(full_location, &model.source);
 
                 let message = format!(
                     "Profile '{}' has no example instances\n  Note: Profiles should have at least one example instance\n  Help: Create an example instance with 'Instance: {}Example' and 'InstanceOf: {}'",

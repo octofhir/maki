@@ -216,10 +216,7 @@ impl Language for FshLanguage {
             999 => FshSyntaxKind::Tombstone,
 
             // Unknown value - return ERROR for unknown kinds
-            _ => {
-                eprintln!("Warning: Unknown syntax kind: {}", raw.0);
-                FshSyntaxKind::Unknown
-            }
+            _ => FshSyntaxKind::Unknown,
         }
     }
 

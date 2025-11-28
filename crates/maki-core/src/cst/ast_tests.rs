@@ -133,10 +133,7 @@ Description: "A custom value set""#;
         assert_eq!(valueset.name().as_deref(), Some("MyValueSet"));
 
         let id_clause = valueset.id();
-        if id_clause.is_none() {
-            eprintln!("ValueSet CST: {:#?}", valueset.syntax());
-        }
-
+        assert!(id_clause.is_some(), "ValueSet should have id clause");
         assert_eq!(id_clause.unwrap().value().as_deref(), Some("my-valueset"));
         assert_eq!(
             valueset.title().unwrap().value().as_deref(),

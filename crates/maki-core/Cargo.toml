@@ -56,7 +56,3 @@ tempfile = "3.8"
 wiremock = "0.6"
 flate2 = "1.0"
 tar = "0.4"
-
-[[bench]]
-name = "formatter_token_optimization"
-harness = false

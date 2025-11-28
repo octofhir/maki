@@ -35,6 +35,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+use tracing::warn;
 use walkdir::WalkDir;
 
 /// Name for the virtual package containing predefined resources
@@ -247,8 +248,8 @@ impl PredefinedResourcesLoader {
                     }
                     Err(e) => {
                         // Log warning but continue processing
-                        eprintln!(
-                            "Warning: Failed to load predefined resource from {}: {}",
+                        warn!(
+                            "Failed to load predefined resource from {}: {}",
                             path.display(),
                             e
                         );

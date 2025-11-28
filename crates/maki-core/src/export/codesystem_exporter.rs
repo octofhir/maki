@@ -93,6 +93,7 @@ use tracing::{debug, trace, warn};
 ///     session,
 ///     "http://example.org/fhir".to_string(),
 ///     None,
+///     Some("active".to_string()),
 /// ).await?;
 /// # Ok(())
 /// # }
@@ -105,6 +106,8 @@ pub struct CodeSystemExporter {
     base_url: String,
     /// Version from config
     version: Option<String>,
+    /// Status from config (draft | active | retired | unknown)
+    status: Option<String>,
 }
 
 impl CodeSystemExporter {
@@ -127,6 +130,7 @@ impl CodeSystemExporter {
     ///     session,
     ///     "http://example.org/fhir".to_string(),
     ///     None,
+    ///     Some("active".to_string()),
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -135,11 +139,13 @@ impl CodeSystemExporter {
         session: Arc<DefinitionSession>,
         base_url: String,
         version: Option<String>,
+        status: Option<String>,
     ) -> Result<Self, ExportError> {
         Ok(Self {
             session,
             base_url,
             version,
+            status,
         })
     }
 
@@ -183,8 +189,11 @@ impl CodeSystemExporter {
         // Generate canonical URL
         let url = format!("{}/CodeSystem/{}", self.base_url, name);
 
-        // Create base resource with default status
-        let mut resource = CodeSystemResource::new(url, name.clone(), "draft");
+        // Create base resource with status from config (defaults to "draft")
+        let status = self.status.as_deref().unwrap_or("draft");
+        let mut resource = CodeSystemResource::new(url, name.clone(), status);
+        // Set experimental to false by default (SUSHI parity)
+        resource.experimental = Some(false);
 
         // Set id from Id clause if present
         if let Some(id_clause) = codesystem.id()
@@ -461,6 +470,7 @@ mod tests {
             session: Arc::new(crate::canonical::DefinitionSession::for_testing()),
             base_url: "http://example.org/fhir".to_string(),
             version: None,
+            status: None,
         }
     }
 

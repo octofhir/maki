@@ -6,7 +6,7 @@ use maki_core::{
     RuleEngine as RuleEngineTrait, RuleEngineConfig, SemanticModel,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -98,6 +98,9 @@ pub struct DefaultRuleEngine {
     gritql_loader: Option<crate::gritql::GritQLRuleLoader>,
     gritql_compiler: Arc<GritQLCompiler>,
     session: Option<Arc<maki_core::canonical::DefinitionSession>>,
+    /// Global registry of all ValueSet names defined across all project files.
+    /// Used by `binding-without-valueset` rule to check cross-file references.
+    global_valueset_registry: HashSet<String>,
 }
 
 impl RuleRegistry {
@@ -309,6 +312,7 @@ impl DefaultRuleEngine {
             gritql_loader: None,
             gritql_compiler: Arc::new(compiler),
             session: None,
+            global_valueset_registry: HashSet::new(),
         }
     }
 
@@ -324,6 +328,7 @@ impl DefaultRuleEngine {
             gritql_loader: None,
             gritql_compiler: Arc::new(compiler),
             session: None,
+            global_valueset_registry: HashSet::new(),
         }
     }
 
@@ -352,6 +357,7 @@ impl DefaultRuleEngine {
             gritql_loader: Some(gritql_loader),
             gritql_compiler: Arc::new(compiler),
             session: None,
+            global_valueset_registry: HashSet::new(),
         })
     }
 
@@ -715,8 +721,14 @@ impl DefaultRuleEngine {
                     );
                 }
                 crate::builtin::binding::BINDING_WITHOUT_VALUESET => {
+                    // Pass the global ValueSet registry for cross-file reference checking
+                    let global_vs = if self.global_valueset_registry.is_empty() {
+                        None
+                    } else {
+                        Some(&self.global_valueset_registry)
+                    };
                     diagnostics.extend(crate::builtin::binding::check_binding_without_valueset(
-                        model,
+                        model, global_vs,
                     ));
                 }
                 crate::builtin::metadata::MISSING_METADATA => {
@@ -769,6 +781,10 @@ impl DefaultRuleEngine {
                     diagnostics.extend(crate::builtin::profile::check_must_support_propagation(
                         model,
                     ));
+                }
+                crate::builtin::caret_path::INVALID_CARET_PATH => {
+                    diagnostics
+                        .extend(crate::builtin::caret_path::check_invalid_caret_paths(model));
                 }
                 _ => {
                     tracing::warn!(
@@ -1008,6 +1024,23 @@ impl DefaultRuleEngine {
     /// Set the canonical manager session for FHIR resource resolution
     pub fn set_session(&mut self, session: Arc<maki_core::canonical::DefinitionSession>) {
         self.session = Some(session);
+    }
+
+    /// Set the global ValueSet registry for cross-file reference checking
+    ///
+    /// This registry should contain all ValueSet names defined across all project files.
+    /// It is used by the `binding-without-valueset` rule to check if a referenced ValueSet
+    /// exists anywhere in the project, not just the current file.
+    ///
+    /// # Arguments
+    /// * `valuesets` - Set of all ValueSet names defined in the project
+    pub fn set_global_valuesets(&mut self, valuesets: HashSet<String>) {
+        self.global_valueset_registry = valuesets;
+    }
+
+    /// Get the global ValueSet registry
+    pub fn global_valuesets(&self) -> &HashSet<String> {
+        &self.global_valueset_registry
     }
 
     /// Get statistics about loaded rules and packs
