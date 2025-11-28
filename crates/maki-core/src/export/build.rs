@@ -1623,9 +1623,20 @@ impl BuildOrchestrator {
             // Wrap exporter in Arc<Mutex<>> because it needs mutable access for registration
             let instance_exporter = StdArc::new(Mutex::new(instance_exporter));
 
-            // Create async tasks for each instance (PASS 1)
-            let instance_tasks: Vec<_> = resources
-                .instances
+            // Partition instances into non-Bundles and Bundles
+            // Bundles must be processed AFTER other instances so they can reference registered instances
+            // Note: We check for both "Bundle" and profiles ending with "Bundle" (e.g., MCODEPatientBundle)
+            let (bundle_instances, non_bundle_instances): (Vec<_>, Vec<_>) =
+                resources.instances.iter().partition(|tracked| {
+                    tracked
+                        .resource
+                        .instance_of()
+                        .and_then(|iof| iof.value())
+                        .is_some_and(|t| t == "Bundle" || t.ends_with("Bundle"))
+                });
+
+            // PASS 1a: Create async tasks for non-Bundle instances first
+            let instance_tasks: Vec<_> = non_bundle_instances
                 .iter()
                 .map(|tracked| {
                     let instance = tracked.resource.clone();
@@ -1706,9 +1717,90 @@ impl BuildOrchestrator {
             let concurrency = 4; // Parallel with proper tokio runtime
             let mut results_stream = stream::iter(instance_tasks).buffer_unordered(concurrency);
 
-            // Wait for all tasks to complete
+            // Wait for all non-Bundle tasks to complete
             while let Some(()) = results_stream.next().await {
                 // Task completed
+            }
+
+            // PASS 1b: Now export Bundle instances (they can reference registered instances)
+            let bundle_tasks: Vec<_> = bundle_instances
+                .iter()
+                .map(|tracked| {
+                    let instance = tracked.resource.clone();
+                    let instance_exporter = instance_exporter.clone();
+                    let exported_instances_shared = exported_instances_shared.clone();
+                    let error_count = error_count.clone();
+                    let source_file = tracked.source_file.clone();
+                    let start_line = tracked.start_line;
+                    let end_line = tracked.end_line;
+
+                    async move {
+                        let instance_name =
+                            instance.name().unwrap_or_else(|| "Unknown".to_string());
+                        let instance_type = instance
+                            .instance_of()
+                            .map(|iof| iof.value().unwrap_or_else(|| "Resource".to_string()))
+                            .unwrap_or_else(|| "Resource".to_string());
+                        debug!(
+                            "Pass 1b - Exporting Bundle instance: {} ({})",
+                            instance_name, instance_type
+                        );
+
+                        // Lock the exporter for this export operation
+                        let export_result = {
+                            let mut exporter = instance_exporter.lock().await;
+                            exporter.export(&instance).await
+                        };
+
+                        match export_result {
+                            Ok(resource_json) => {
+                                let instance_id = instance
+                                    .id()
+                                    .and_then(|id_clause| id_clause.value())
+                                    .unwrap_or_else(|| instance_name.clone());
+
+                                let actual_resource_type = resource_json
+                                    .get("resourceType")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_else(|| instance_type.clone());
+
+                                // Register the instance for reference resolution (requires lock)
+                                {
+                                    let mut exporter = instance_exporter.lock().await;
+                                    exporter.register_instance(
+                                        instance_name.clone(),
+                                        resource_json.clone(),
+                                    );
+                                }
+
+                                exported_instances_shared.lock().await.push((
+                                    instance_name,
+                                    actual_resource_type,
+                                    instance_id,
+                                    resource_json,
+                                    source_file,
+                                    start_line,
+                                    end_line,
+                                ));
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to export Bundle instance {} (pass 1b): {}",
+                                    instance_name, e
+                                );
+                                eprintln!("Bundle instance export failed: {} -> {}", instance_name, e);
+                                error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            }
+                        }
+                    }
+                })
+                .collect();
+
+            // Execute Bundle exports (after all other instances are registered)
+            let mut bundle_stream = stream::iter(bundle_tasks).buffer_unordered(concurrency);
+            while let Some(()) = bundle_stream.next().await {
+                // Bundle task completed
             }
 
             // Extract results

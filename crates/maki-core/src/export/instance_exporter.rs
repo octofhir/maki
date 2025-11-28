@@ -136,6 +136,12 @@ pub struct InstanceExporter {
     ruleset_expander: Option<Arc<RuleSetExpander>>,
 }
 
+#[derive(Debug)]
+struct DeferredConstraint {
+    segments: Vec<PathSegment>,
+    value: JsonValue,
+}
+
 impl InstanceExporter {
     /// Create a new instance exporter
     ///
@@ -545,6 +551,7 @@ impl InstanceExporter {
         };
 
         // Pre-populate fixed/pattern values from the profile chain (SUSHI parity)
+        let mut deferred_constraints = Vec::new();
         if let Some(sd) = sd_opt.as_ref() {
             let profile_chain = if let Some(fishing_ctx) = &self.fishing_context {
                 self.collect_profile_chain(fishing_ctx, sd).await
@@ -552,7 +559,8 @@ impl InstanceExporter {
                 vec![sd.clone()]
             };
 
-            self.apply_profile_constraints(&mut resource, &profile_chain)
+            deferred_constraints = self
+                .apply_profile_constraints(&mut resource, &profile_chain)
                 .await?;
         }
 
@@ -577,6 +585,11 @@ impl InstanceExporter {
         // Inline referenced instances inside Bundle entries (SUSHI parity)
         if resource["resourceType"] == "Bundle" {
             self.inline_bundle_resources(&mut resource);
+        }
+
+        if !deferred_constraints.is_empty() {
+            self.apply_deferred_constraints(&mut resource, deferred_constraints)
+                .await?;
         }
 
         // Safety net: ensure BodyStructure instances retain patient reference (parity with SUSHI)
@@ -618,6 +631,9 @@ impl InstanceExporter {
 
         // Remove internal slice markers before returning (SUSHI parity)
         Self::strip_slice_markers(&mut resource);
+
+        // Reorder fields to match FHIR specification order (SUSHI parity)
+        Self::order_fhir_fields(&mut resource);
 
         debug!("Successfully exported instance {}", name);
         Ok(resource)
@@ -710,6 +726,42 @@ impl InstanceExporter {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Minimal field ordering - just ensures resourceType, id, meta are first
+    /// JSON key order doesn't affect FHIR validity
+    fn order_fhir_fields(value: &mut JsonValue) {
+        if let JsonValue::Object(map) = value {
+            const FIRST_FIELDS: &[&str] = &["resourceType", "id", "meta"];
+
+            let mut ordered = serde_json::Map::new();
+
+            // Put resourceType, id, meta first
+            for &key in FIRST_FIELDS {
+                if let Some(v) = map.remove(key) {
+                    ordered.insert(key.to_string(), v);
+                }
+            }
+
+            // Keep remaining fields in their current order
+            let remaining_keys: Vec<String> = map.keys().cloned().collect();
+            for key in remaining_keys {
+                if let Some(v) = map.remove(&key) {
+                    ordered.insert(key, v);
+                }
+            }
+
+            *map = ordered;
+
+            // Recursively process nested objects
+            for v in map.values_mut() {
+                Self::order_fhir_fields(v);
+            }
+        } else if let JsonValue::Array(arr) = value {
+            for v in arr.iter_mut() {
+                Self::order_fhir_fields(v);
+            }
         }
     }
 
@@ -1060,15 +1112,15 @@ impl InstanceExporter {
                             let field_value = obj.get_mut(field).unwrap();
 
                             // If it's an array and next is a field, navigate into first element
+                            // Note: Without explicit array index, always use index 0 per SUSHI behavior
+                            // The current_indices is only for [=] operator to reference same index as previous
                             if field_value.is_array() {
                                 let arr = field_value.as_array_mut().unwrap();
                                 if arr.is_empty() {
                                     arr.push(JsonValue::Object(Map::new()));
                                 }
-                                // Get current index for this field, default to 0
-                                let idx = *self.current_indices.get(field).unwrap_or(&0);
-                                let arr_len = arr.len();
-                                &mut arr[idx.min(arr_len - 1)]
+                                // Always use index 0 when no explicit index is given
+                                &mut arr[0]
                             } else {
                                 field_value
                             }
@@ -1488,7 +1540,8 @@ impl InstanceExporter {
         &mut self,
         resource: &mut JsonValue,
         profile_chain: &[StructureDefinition],
-    ) -> Result<(), ExportError> {
+    ) -> Result<Vec<DeferredConstraint>, ExportError> {
+        let mut deferred = Vec::new();
         // Apply ancestors first so child profiles can override
         for sd in profile_chain.iter().rev() {
             if sd.derivation.as_deref() != Some("constraint") {
@@ -1528,15 +1581,12 @@ impl InstanceExporter {
                     continue;
                 }
 
-                if element.path.contains("component") {
-                    eprintln!(
-                        "[constraint-trace] applying {} (slice={:?}, min={:?}) -> key={} value={}",
-                        element.path,
-                        element.slice_name,
-                        element.min,
-                        constraint_key,
-                        constraint_value
-                    );
+                if element.path.contains(".component") {
+                    deferred.push(DeferredConstraint {
+                        segments,
+                        value: constraint_value.clone(),
+                    });
+                    continue;
                 }
 
                 self.set_value_at_path(resource, &segments, constraint_value.clone())
@@ -1544,7 +1594,96 @@ impl InstanceExporter {
             }
         }
 
+        Ok(deferred)
+    }
+
+    async fn apply_deferred_constraints(
+        &mut self,
+        resource: &mut JsonValue,
+        deferred: Vec<DeferredConstraint>,
+    ) -> Result<(), ExportError> {
+        for constraint in deferred {
+            if Self::path_has_value(resource, &constraint.segments) {
+                continue;
+            }
+            if !self.path_slice_exists(resource, &constraint.segments).await {
+                continue;
+            }
+
+            self.set_value_at_path(resource, &constraint.segments, constraint.value)
+                .await?;
+        }
         Ok(())
+    }
+
+    async fn path_slice_exists(&self, resource: &JsonValue, segments: &[PathSegment]) -> bool {
+        let mut current = resource;
+        for (idx, segment) in segments.iter().enumerate() {
+            let is_last = idx == segments.len() - 1;
+            match segment {
+                PathSegment::Field(field) => {
+                    let Some(obj) = current.as_object() else {
+                        return false;
+                    };
+                    if is_last {
+                        return true;
+                    }
+                    let Some(next) = obj.get(field) else {
+                        return false;
+                    };
+                    current = next;
+                }
+                PathSegment::ArrayAccess {
+                    field,
+                    index,
+                    slice_name,
+                } => {
+                    let Some(obj) = current.as_object() else {
+                        return false;
+                    };
+                    let Some(arr) = obj.get(field).and_then(|v| v.as_array()) else {
+                        return false;
+                    };
+
+                    if let Some(slice) = slice_name {
+                        let idx = if field == "extension" || field == "modifierExtension" {
+                            let target_url = self.resolve_extension_url(slice).await;
+                            arr.iter().position(|elem| {
+                                elem.get("url").and_then(|u| u.as_str())
+                                    == Some(target_url.as_str())
+                            })
+                        } else {
+                            arr.iter().position(|elem| {
+                                elem.get("_sliceName").and_then(|n| n.as_str())
+                                    == Some(slice.as_str())
+                            })
+                        };
+
+                        let Some(idx) = idx else {
+                            return false;
+                        };
+                        current = &arr[idx];
+                    } else {
+                        let actual_index = match index {
+                            ArrayIndex::Numeric(n) => *n,
+                            ArrayIndex::Append | ArrayIndex::Current => {
+                                if arr.is_empty() {
+                                    return false;
+                                }
+                                arr.len() - 1
+                            }
+                        };
+
+                        let Some(next) = arr.get(actual_index) else {
+                            return false;
+                        };
+                        current = next;
+                    }
+                }
+            }
+        }
+
+        true
     }
 
     /// Extract the fixed or pattern constraint value from an element
@@ -1583,9 +1722,23 @@ impl InstanceExporter {
             return None;
         }
 
+        let mut slice_overrides: HashMap<usize, (String, String)> = HashMap::new();
+        if let Some(id) = &element.id {
+            let id_parts: Vec<&str> = id.split('.').collect();
+            for (idx, part) in id_parts.iter().enumerate() {
+                if let Some((field, slice)) = part.split_once(':') {
+                    slice_overrides.insert(idx, (field.to_string(), slice.to_string()));
+                }
+            }
+        }
+
         let mut path_segments = Vec::new();
-        for raw in parts {
+        for (idx, raw) in parts.into_iter().enumerate() {
+            let original_idx = idx + 1;
             if let Some((field, slice)) = raw.split_once(':') {
+                path_segments.push(format!("{}[{}]", field, slice));
+                continue;
+            } else if let Some((field, slice)) = slice_overrides.get(&original_idx) {
                 path_segments.push(format!("{}[{}]", field, slice));
                 continue;
             }
@@ -1680,13 +1833,18 @@ impl InstanceExporter {
                     if existing.is_object() && value.is_object() {
                         Self::merge_objects(existing, value);
                     } else if existing.is_array() && value.is_array() {
-                        // Merge arrays by appending unique elements
-                        if let (Some(existing_arr), Some(source_arr)) =
-                            (existing.as_array_mut(), value.as_array())
-                        {
-                            for item in source_arr {
-                                if !existing_arr.contains(item) {
-                                    existing_arr.push(item.clone());
+                        // Special handling for "coding" arrays - merge by code+system
+                        if key == "coding" {
+                            Self::merge_coding_arrays(existing, value);
+                        } else {
+                            // For other arrays, append unique elements
+                            if let (Some(existing_arr), Some(source_arr)) =
+                                (existing.as_array_mut(), value.as_array())
+                            {
+                                for item in source_arr {
+                                    if !existing_arr.contains(item) {
+                                        existing_arr.push(item.clone());
+                                    }
                                 }
                             }
                         }
@@ -1697,6 +1855,41 @@ impl InstanceExporter {
                 } else {
                     target_obj.insert(key.clone(), value.clone());
                 }
+            }
+        }
+    }
+
+    /// Merge coding arrays by matching on code+system
+    /// When a coding with the same code+system exists, merge the fields (e.g., add display)
+    fn merge_coding_arrays(target: &mut JsonValue, source: &JsonValue) {
+        let Some(target_arr) = target.as_array_mut() else {
+            return;
+        };
+        let Some(source_arr) = source.as_array() else {
+            return;
+        };
+
+        for src_item in source_arr {
+            let src_code = src_item.get("code").and_then(|v| v.as_str());
+            let src_system = src_item.get("system").and_then(|v| v.as_str());
+
+            // Try to find a matching coding in target
+            let mut found = false;
+            for target_item in target_arr.iter_mut() {
+                let tgt_code = target_item.get("code").and_then(|v| v.as_str());
+                let tgt_system = target_item.get("system").and_then(|v| v.as_str());
+
+                if src_code == tgt_code && src_system == tgt_system {
+                    // Merge the source coding into the target (e.g., add display)
+                    Self::merge_objects(target_item, src_item);
+                    found = true;
+                    break;
+                }
+            }
+
+            // If no matching coding found, append it
+            if !found {
+                target_arr.push(src_item.clone());
             }
         }
     }
@@ -1745,8 +1938,75 @@ impl InstanceExporter {
             return self.parse_reference_with_context(trimmed, Some(path)).await;
         }
 
+        // Check if this is a Coding field (not CodeableConcept)
+        // Coding fields should output {code, system, display} not {coding: [...]}
+        if self.is_coding_field_path(path) && trimmed.contains('#') && !trimmed.starts_with('#') {
+            return self.parse_coding(trimmed).await;
+        }
+
         // Use standard conversion for other fields
         self.convert_value(value_str).await
+    }
+
+    /// Check if a path represents a FHIR Coding field (not CodeableConcept)
+    /// Coding fields output {code, system, display} directly
+    fn is_coding_field_path(&self, path: &str) -> bool {
+        let field_name = path.rsplit('.').next().unwrap_or(path);
+        // Strip array index from field name (e.g., "coding[0]" -> "coding")
+        let base_field = field_name.split('[').next().unwrap_or(field_name);
+        // Fields that end with "Coding" are Coding type, not CodeableConcept
+        // Also check for "coding" which is an array of Coding inside CodeableConcept
+        base_field.ends_with("Coding") || base_field == "coding"
+    }
+
+    /// Parse Coding from FSH notation (for Coding type fields, not CodeableConcept)
+    /// Format: system#code "display"
+    /// Output: {code, system, display} - NOT wrapped in coding array
+    async fn parse_coding(&self, value: &str) -> Result<JsonValue, ExportError> {
+        let parts: Vec<&str> = value.splitn(2, '#').collect();
+        if parts.len() != 2 {
+            return Ok(JsonValue::String(value.to_string()));
+        }
+
+        let system_or_alias = parts[0].trim();
+        let code_and_display = parts[1];
+
+        // Resolve system alias to canonical URL
+        let system = if let Some(fishing_ctx) = &self.fishing_context {
+            if let Some(canonical_url) = fishing_ctx.resolve_alias(system_or_alias) {
+                canonical_url
+            } else {
+                system_or_alias.to_string()
+            }
+        } else {
+            system_or_alias.to_string()
+        };
+
+        // Extract code and display
+        let (code, display) = if let Some(space_idx) = code_and_display.find(' ') {
+            let code = code_and_display[..space_idx].trim();
+            let display_part = code_and_display[space_idx..].trim();
+            let display = if display_part.starts_with('"') && display_part.ends_with('"') {
+                &display_part[1..display_part.len() - 1]
+            } else {
+                display_part
+            };
+            (code, Some(display))
+        } else {
+            (code_and_display.trim(), None)
+        };
+
+        // Build Coding (NOT CodeableConcept - no wrapping in coding array)
+        let mut coding = serde_json::json!({
+            "code": code,
+            "system": system
+        });
+
+        if let Some(display_text) = display {
+            coding["display"] = JsonValue::String(display_text.to_string());
+        }
+
+        Ok(coding)
     }
 
     /// Check if a path represents a field that should always be a string in FHIR
@@ -1888,8 +2148,8 @@ impl InstanceExporter {
             // Common resource array fields
             "identifier" | "telecom" | "address" | "contact" | "communication" |
             "contained" | "extension" | "modifierExtension" |
-            // Name fields
-            "name" | "given" | "prefix" | "suffix" |
+            // Name fields (note: 'name' is context-dependent - use session lookup)
+            "given" | "prefix" | "suffix" |
             // Address fields
             "line" |
             // Coding/CodeableConcept
@@ -1902,8 +2162,8 @@ impl InstanceExporter {
             "qualification" |
             // Organization
             "alias" | "endpoint" |
-            // Condition
-            "bodySite" | "stage" | "evidence" | "locationQualifier" |
+            // Condition (note: bodySite is context-dependent - use session lookup)
+            "stage" | "evidence" | "locationQualifier" |
             // Procedure
             "complication" | "followUp" | "focalDevice" | "usedReference" | "usedCode" |
             // MedicationRequest/MedicationAdministration
@@ -2105,24 +2365,81 @@ impl InstanceExporter {
         let unit_display = display.unwrap_or(ucum_code);
 
         // Parse numeric value
+        // If the value can be represented as an integer, serialize as integer (SUSHI parity)
         let numeric_value = if let Ok(num) = value_str.parse::<i64>() {
             serde_json::json!(num)
         } else if let Ok(num) = value_str.parse::<f64>() {
-            serde_json::json!(num)
+            // If the float is actually a whole number (e.g., 155.0), serialize as integer
+            if num.fract() == 0.0 && num >= i64::MIN as f64 && num <= i64::MAX as f64 {
+                serde_json::json!(num as i64)
+            } else {
+                serde_json::json!(num)
+            }
         } else {
             return Ok(JsonValue::String(value.to_string()));
         };
 
         // Build Quantity with UCUM system and code
         // UCUM (Unified Code for Units of Measure) is the standard system for units in FHIR
+        // Field order matches SUSHI: value, code, system, unit
         let quantity = serde_json::json!({
             "value": numeric_value,
-            "unit": unit_display,
+            "code": ucum_code,
             "system": "http://unitsofmeasure.org",
-            "code": ucum_code
+            "unit": unit_display
         });
 
         Ok(quantity)
+    }
+
+    /// Fallback reference type lookup using field name patterns
+    /// Used when canonical manager lookup fails (e.g., for profiles without base definitions)
+    fn fallback_reference_type(&self, path: &str) -> Option<String> {
+        // Extract the last field name from the path
+        let field_name = path.rsplit('.').next()?;
+
+        // Common FHIR reference field patterns
+        // This is a fallback for when canonical manager doesn't have the info
+        match field_name {
+            // Patient references
+            "patient" | "subject" => Some("Patient".to_string()),
+            // Practitioner references
+            "performer" | "actor" | "recorder" | "asserter" | "informant" | "attester"
+            | "author" | "sender" | "receiver" | "requester" | "collector" | "interpreter"
+            | "practitioner" | "responsibleParty" | "enterer" | "provider" => {
+                Some("Practitioner".to_string())
+            }
+            // Organization references
+            "organization" | "managingOrganization" | "custodian" | "owner" | "manufacturer"
+            | "supplier" => Some("Organization".to_string()),
+            // Encounter references
+            "encounter" | "context" => Some("Encounter".to_string()),
+            // Location references
+            "location" | "destination" | "origin" => Some("Location".to_string()),
+            // Device references
+            "device" => Some("Device".to_string()),
+            // Specimen references
+            "specimen" => Some("Specimen".to_string()),
+            // Condition references
+            "condition" | "reasonReference" => Some("Condition".to_string()),
+            // Observation references
+            "hasMember" | "derivedFrom" => Some("Observation".to_string()),
+            // ServiceRequest references
+            "basedOn" => Some("ServiceRequest".to_string()),
+            // MedicationRequest references
+            "medicationReference" => Some("Medication".to_string()),
+            // Coverage references
+            "coverage" | "insurer" => Some("Coverage".to_string()),
+            // CareTeam references
+            "careTeam" => Some("CareTeam".to_string()),
+            // CarePlan references
+            "carePlan" => Some("CarePlan".to_string()),
+            // Goal references
+            "goal" => Some("Goal".to_string()),
+            // Other common references
+            "focus" | "entity" => None, // Too generic, needs context
+            _ => None,
+        }
     }
 
     /// Parse Reference from FSH notation with optional path context
@@ -2140,40 +2457,25 @@ impl InstanceExporter {
             .to_string();
 
         // Try to infer the expected reference type from the path context
-        // Map common FHIR reference field names to their expected resource types
-        let expected_type = path
-            .and_then(|p| p.rsplit('.').next())
-            .and_then(|field| match field {
-                // Patient references
-                "patient" | "subject" => Some("Patient"),
-                // Practitioner references
-                "performer" | "asserter" | "recorder" | "requester" | "sender" | "receiver"
-                | "author" | "collector" | "interpreter" | "informant" | "enterer" => {
-                    Some("Practitioner")
-                }
-                // Focus commonly points to a Condition in mCODE staging examples
-                "focus" => Some("Condition"),
-                // Organization references
-                "organization" | "managingOrganization" | "custodian" => Some("Organization"),
-                // Encounter references
-                "encounter" | "context" => Some("Encounter"),
-                // Location references
-                "location" => Some("Location"),
-                // Specimen references
-                "specimen" => Some("Specimen"),
-                // Device references
-                "device" => Some("Device"),
-                // Condition references
-                "condition" | "reasonReference" => Some("Condition"),
-                // Observation references
-                "derivedFrom" | "hasMember" => Some("Observation"),
-                // Procedure references
-                "partOf" => Some("Procedure"),
-                // MedicationRequest references
-                "priorPrescription" => Some("MedicationRequest"),
-                _ => None,
-            })
-            .map(|s| s.to_string());
+        // First, try dynamic lookup from canonical manager (preferred - uses FHIR spec)
+        let expected_type = if let Some(p) = path {
+            // Get reference target types from canonical manager
+            let target_types = self.session.get_reference_target_types(p).await;
+            if !target_types.is_empty() {
+                // Use the first target type (most common/primary target)
+                trace!(
+                    "Dynamic lookup for path '{}' found targets: {:?}",
+                    p,
+                    target_types
+                );
+                Some(target_types.into_iter().next().unwrap())
+            } else {
+                // Fall back to hardcoded map for cases where canonical lookup fails
+                self.fallback_reference_type(p)
+            }
+        } else {
+            None
+        };
 
         // If this looks like a local instance id (no slash) and we know its resourceType,
         // construct a proper typed reference (e.g., Patient/{id}) for parity with SUSHI.

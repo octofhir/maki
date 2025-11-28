@@ -1321,6 +1321,49 @@ impl RuleProcessor {
                 "patternCode".to_string(),
                 JsonValue::String(code.to_string()),
             ))
+        } else if value.contains('#') && !value.starts_with('"') {
+            // System#code pattern (SYSTEM#code or URL#code) -> patternCodeableConcept
+            // Examples: LNC#97509-4, http://loinc.org#31206-6 "Display"
+            if let Some((system_or_alias, rest)) = value.split_once('#') {
+                // Extract code and optional display
+                let (code, display) = if let Some(space_pos) = rest.find(' ') {
+                    let code = rest[..space_pos].trim();
+                    let display_part = rest[space_pos..].trim();
+                    let display = if display_part.starts_with('"') && display_part.ends_with('"') {
+                        Some(display_part[1..display_part.len() - 1].to_string())
+                    } else {
+                        None
+                    };
+                    (code, display)
+                } else {
+                    (rest.trim(), None)
+                };
+
+                // Resolve system alias to canonical URL
+                let system = crate::export::profile_exporter::resolve_code_system_alias(system_or_alias)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| system_or_alias.to_string());
+
+                // Build coding object
+                let mut coding = serde_json::Map::new();
+                coding.insert("code".to_string(), JsonValue::String(code.to_string()));
+                coding.insert("system".to_string(), JsonValue::String(system.clone()));
+                if let Some(d) = display {
+                    coding.insert("display".to_string(), JsonValue::String(d));
+                }
+
+                let codeable_concept = serde_json::json!({
+                    "coding": [JsonValue::Object(coding)]
+                });
+
+                Ok(("patternCodeableConcept".to_string(), codeable_concept))
+            } else {
+                // Fallback if split fails
+                Ok((
+                    "patternCode".to_string(),
+                    JsonValue::String(value.to_string()),
+                ))
+            }
         } else if value.starts_with('"') && value.ends_with('"') {
             // String value: "Smith" -> patternString
             let string_val = &value[1..value.len() - 1]; // Remove quotes

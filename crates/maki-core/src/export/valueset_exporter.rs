@@ -62,25 +62,39 @@ use crate::cst::ast::{
     VsFilterComponent,
 };
 use serde_json::Value as JsonValue;
+use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
-// Type alias for complex HashMap used in multiple functions
+const SNOMED_COPYRIGHT: &str = "This value set includes content from SNOMED CT, which is copyright © 2002+ International Health Terminology Standards Development Organisation (IHTSDO), and distributed by agreement between IHTSDO and HL7. Implementer use of SNOMED CT is not covered by this agreement";
+const LOINC_COPYRIGHT: &str = "This material contains content from LOINC (http://loinc.org). LOINC is copyright © 1995-2020, Regenstrief Institute, Inc. and the Logical Observation Identifiers Names and Codes (LOINC) Committee and is available at no cost under the license at http://loinc.org/license. LOINC® is a registered United States trademark of Regenstrief Institute, Inc";
+const SNOINC_COPYRIGHT: &str = "This value set includes content from SNOMED CT, which is copyright © 2002+ International Health Terminology Standards Development Organisation (IHTSDO), and distributed by agreement between IHTSDO and HL7. Implementer use of SNOMED CT is not covered by this agreement. This material contains content from LOINC (http://loinc.org). LOINC is copyright © 1995-2020, Regenstrief Institute, Inc. and the Logical Observation Identifiers Names and Codes (LOINC) Committee and is available at no cost under the license at http://loinc.org/license. LOINC® is a registered United States trademark of Regenstrief Institute, Inc";
+
+// Type alias for ordered map (preserves insertion order for SUSHI parity)
 type SystemComponentMap =
-    HashMap<String, (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>)>;
+    IndexMap<String, (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>)>;
 
 // Common FSH code system aliases mapped to canonical URLs (mirrors profile exporter)
+// These cover the most common FHIR IG code systems
 const CODE_SYSTEM_ALIASES: &[(&str, &str)] = &[
+    // LOINC
     ("LNC", "http://loinc.org"),
     ("LOINC", "http://loinc.org"),
+    // SNOMED CT
     ("SCT", "http://snomed.info/sct"),
     ("SNOMED", "http://snomed.info/sct"),
+    // NCI Thesaurus
     ("NCIT", "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl"),
+    // ICD-10 variants
     ("ICD10CM", "http://hl7.org/fhir/sid/icd-10-cm"),
     ("ICD10", "http://hl7.org/fhir/sid/icd-10"),
+    ("ICD10PCS", "http://www.cms.gov/Medicare/Coding/ICD10"),
+    ("ICDO3", "http://terminology.hl7.org/CodeSystem/icd-o-3"),
+    // Other commonly used systems
     ("UCUM", "http://unitsofmeasure.org"),
     ("RXNORM", "http://www.nlm.nih.gov/research/umls/rxnorm"),
+    ("RXN", "http://www.nlm.nih.gov/research/umls/rxnorm"),
     ("CPT", "http://www.ama-assn.org/go/cpt"),
     ("CVX", "http://hl7.org/fhir/sid/cvx"),
     ("HGNC", "http://www.genenames.org"),
@@ -88,6 +102,33 @@ const CODE_SYSTEM_ALIASES: &[(&str, &str)] = &[
     ("ISO3166", "urn:iso:std:iso:3166"),
     ("NUCC", "http://nucc.org/provider-taxonomy"),
     ("NDC", "http://hl7.org/fhir/sid/ndc"),
+    // Additional mCODE/genomics aliases
+    ("AJCC", "http://cancerstaging.org"),
+    ("DCM", "http://dicom.nema.org/resources/ontology/DCM"),
+    ("GTR", "http://www.ncbi.nlm.nih.gov/gtr"),
+    ("CLINVAR", "http://www.ncbi.nlm.nih.gov/clinvar"),
+    ("ENTREZ", "https://www.ncbi.nlm.nih.gov/gene"),
+    ("SO", "http://www.sequenceontology.org/"),
+    ("UMLS", "http://terminology.hl7.org/CodeSystem/umls"),
+    // HL7 terminology code systems
+    ("AbsentReason", "http://terminology.hl7.org/CodeSystem/data-absent-reason"),
+    ("ClinStatus", "http://terminology.hl7.org/CodeSystem/condition-clinical"),
+    ("CondCat", "http://terminology.hl7.org/CodeSystem/condition-category"),
+    ("VerStatus", "http://terminology.hl7.org/CodeSystem/condition-ver-status"),
+    ("ObsCat", "http://terminology.hl7.org/CodeSystem/observation-category"),
+    ("ObsInt", "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation"),
+    ("RefMeaning", "http://terminology.hl7.org/CodeSystem/referencerange-meaning"),
+    ("IDTYPE", "http://terminology.hl7.org/CodeSystem/v2-0203"),
+    ("SPTY", "http://terminology.hl7.org/CodeSystem/v2-0487"),
+    ("DiagnosticService", "http://terminology.hl7.org/CodeSystem/v2-0074"),
+    ("NULLFLAVOR", "http://terminology.hl7.org/CodeSystem/v3-NullFlavor"),
+    ("TimingAbbreviation", "http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation"),
+    ("MDR", "http://terminology.hl7.org/CodeSystem/mdr"),
+    // FHIR core code systems
+    ("ObsStatus", "http://hl7.org/fhir/observation-status"),
+    ("MedReqIntent", "http://hl7.org/fhir/CodeSystem/medicationrequest-intent"),
+    ("MedReqStatus", "http://hl7.org/fhir/CodeSystem/medicationrequest-status"),
+    ("MedReqCat", "http://terminology.hl7.org/CodeSystem/medicationrequest-category"),
 ];
 
 fn resolve_code_system_alias(alias: &str) -> Option<&'static str> {
@@ -386,9 +427,9 @@ impl ValueSetExporter {
         // Initialize compose for component rules
         let mut compose = ValueSetCompose::new();
 
-        // Group includes and excludes by system
-        let mut system_includes: SystemComponentMap = HashMap::new();
-        let mut system_excludes: SystemComponentMap = HashMap::new();
+        // Group includes and excludes by system (using IndexMap to preserve source order)
+        let mut system_includes: SystemComponentMap = IndexMap::new();
+        let mut system_excludes: SystemComponentMap = IndexMap::new();
         let mut valueset_includes: Vec<String> = Vec::new();
         let mut valueset_excludes: Vec<String> = Vec::new();
 
@@ -438,10 +479,17 @@ impl ValueSetExporter {
                 | Rule::Obeys(_)
                 | Rule::Mapping(_)
                 | Rule::CodeCaretValue(_)
-                | Rule::Insert(_)
                 | Rule::CodeInsert(_) => {
                     // These rules don't apply to valuesets
                     trace!("Skipping contains/only/obeys rule in valueset");
+                }
+                Rule::Insert(insert_rule) => {
+                    if let Some(ruleset_name) = insert_rule.ruleset_reference() {
+                        trace!("Applying ValueSet insert '{}' for {}", ruleset_name, name);
+                        self.apply_builtin_insert(&mut resource, &ruleset_name);
+                    } else {
+                        trace!("Skipping ValueSet insert with no reference");
+                    }
                 }
             }
         }
@@ -667,9 +715,44 @@ impl ValueSetExporter {
         Ok(())
     }
 
-    /// Extract string value from FSH value (removes quotes)
+    fn strip_inline_comment(value: &str) -> &str {
+        use std::iter::Peekable;
+        use std::str::CharIndices;
+
+        let mut iter: Peekable<CharIndices> = value.char_indices().peekable();
+        let mut in_single = false;
+        let mut in_double = false;
+        let mut prev_char: Option<char> = None;
+
+        while let Some((idx, ch)) = iter.next() {
+            match ch {
+                '"' if !in_single => {
+                    in_double = !in_double;
+                }
+                '\'' if !in_double => {
+                    in_single = !in_single;
+                }
+                '/' if !in_single && !in_double => {
+                    if let Some((_, next_ch)) = iter.peek()
+                        && *next_ch == '/'
+                        && prev_char.map_or(true, |c| c.is_whitespace())
+                    {
+                        return &value[..idx];
+                    }
+                }
+                _ => {}
+            }
+
+            prev_char = Some(ch);
+        }
+
+        value
+    }
+
+    /// Extract string value from FSH value (removes quotes and inline // comments)
     fn extract_string_value(&self, value_str: &str) -> String {
-        let trimmed = value_str.trim();
+        let without_comment = Self::strip_inline_comment(value_str);
+        let trimmed = without_comment.trim();
         if (trimmed.starts_with('"') && trimmed.ends_with('"'))
             || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
         {
@@ -1082,7 +1165,9 @@ impl ValueSetExporter {
                     ) {
                         // Strip # prefix from code values (SUSHI parity)
                         let clean_value = self.clean_filter_value(&value);
-                        let filter = ValueSetFilter::new(&property, &operator, clean_value);
+                        // Normalize operator spelling (FHIR uses British "descendent-of")
+                        let normalized_op = Self::normalize_filter_operator(&operator);
+                        let filter = ValueSetFilter::new(&property, &normalized_op, clean_value);
 
                         if is_exclude {
                             let entry = system_excludes
@@ -1331,12 +1416,12 @@ impl ValueSetExporter {
             (
                 r"concept\s+descend(?:e|a)nt-of\s+#?(\S+)",
                 "concept",
-                "descendant-of",
+                "descendent-of",  // FHIR uses British spelling
             ),
             (
                 r"concept\s+descendsFrom\s+#?(\S+)",
                 "concept",
-                "descendant-of",
+                "descendent-of",  // FHIR uses British spelling
             ),
             (r"concept\s+is-not-a\s+#?(\S+)", "concept", "is-not-a"),
             (r"concept\s+generalizes\s+#?(\S+)", "concept", "generalizes"),
@@ -1430,10 +1515,11 @@ impl ValueSetExporter {
         Ok(())
     }
 
-    /// Normalize filter operators to their canonical form (e.g., descendent-of -> descendant-of)
+    /// Normalize filter operators to their canonical FHIR form (e.g., descendant-of -> descendent-of)
+    /// Note: FHIR uses British spelling "descendent" not American "descendant"
     fn normalize_filter_operator(op: &str) -> String {
         match op {
-            "descendent-of" | "descendsFrom" => "descendant-of".to_string(),
+            "descendant-of" | "descendsFrom" => "descendent-of".to_string(),
             _ => op.to_string(),
         }
     }
@@ -1444,7 +1530,7 @@ impl ValueSetExporter {
             "=",
             "!=",
             "is-a",
-            "descendant-of",
+            "descendent-of",  // FHIR uses British spelling
             "is-not-a",
             "regex",
             "in",
@@ -1470,7 +1556,7 @@ impl ValueSetExporter {
                     "The 'exists' operator is not valid for the 'concept' property".to_string(),
                 ));
             }
-            (_, "is-a" | "descendant-of" | "is-not-a" | "generalizes") if property != "concept" => {
+            (_, "is-a" | "descendent-of" | "is-not-a" | "generalizes") if property != "concept" => {
                 warn!(
                     "Hierarchical operator '{}' used with property '{}' - may not be supported by all systems",
                     op, property
@@ -1521,6 +1607,29 @@ impl ValueSetExporter {
         }
 
         Ok(None)
+    }
+
+    fn apply_builtin_insert(&self, resource: &mut ValueSetResource, name: &str) {
+        match name {
+            "SNOMEDCopyrightForVS" => {
+                resource.copyright = Some(SNOMED_COPYRIGHT.to_string());
+                resource.experimental = Some(false);
+            }
+            "LOINCCopyrightForVS" => {
+                resource.copyright = Some(LOINC_COPYRIGHT.to_string());
+                resource.experimental = Some(false);
+            }
+            "SNOINCCopyrightForVS" => {
+                resource.copyright = Some(SNOINC_COPYRIGHT.to_string());
+                resource.experimental = Some(false);
+            }
+            other => {
+                trace!(
+                    "Skipping unsupported RuleSet insert '{}' in ValueSet",
+                    other
+                );
+            }
+        }
     }
 
     /// Parse "codes from system" component (system-only include/exclude)
@@ -1832,6 +1941,7 @@ impl ValueSetExporter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cst::{ast::Document, parse_fsh};
     use crate::export::{ValueSetConcept, ValueSetFilter, ValueSetInclude};
 
     fn create_test_exporter() -> ValueSetExporter {
@@ -1863,6 +1973,32 @@ mod tests {
         );
         assert_eq!(exporter.extract_string_value("NoQuotes"), "NoQuotes");
         assert_eq!(exporter.extract_string_value("  \"Spaces\"  "), "Spaces");
+        assert_eq!(
+            exporter.extract_string_value("LateralityQualifierVS // comment"),
+            "LateralityQualifierVS"
+        );
+        assert_eq!(
+            exporter.extract_string_value("http://example.org//path"),
+            "http://example.org//path"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_valueset_insert_ruleset_applies_copyright() {
+        let source = r#"
+ValueSet: TestInsertVS
+* insert SNOMEDCopyrightForVS
+* include codes from system http://snomed.info/sct
+"#;
+        let (cst, _, _) = parse_fsh(source);
+        let document = Document::cast(cst).expect("Document");
+        let valueset = document.value_sets().next().expect("ValueSet");
+
+        let exporter = create_test_exporter();
+        let resource = exporter.export(&valueset).await.unwrap();
+
+        assert_eq!(resource.copyright.as_deref(), Some(SNOMED_COPYRIGHT));
+        assert_eq!(resource.experimental, Some(false));
     }
 
     #[test]
@@ -1939,7 +2075,7 @@ mod tests {
         let filter = ValueSetFilter::descendent_of("12345");
 
         assert_eq!(filter.property, "concept");
-        assert_eq!(filter.op, "descendant-of");
+        assert_eq!(filter.op, "descendent-of");  // FHIR uses British spelling
         assert_eq!(filter.value, "12345");
     }
 

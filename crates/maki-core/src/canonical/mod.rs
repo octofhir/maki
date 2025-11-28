@@ -909,6 +909,82 @@ impl DefinitionSession {
         is_array
     }
 
+    /// Get the reference target resource types for a given element path
+    ///
+    /// For elements with Reference types, this returns the valid target resource types
+    /// extracted from the targetProfile URLs. This is used to construct proper typed
+    /// references (e.g., `Practitioner/id` instead of just `id`).
+    ///
+    /// # Arguments
+    ///
+    /// * `element_path` - The full path to the element (e.g., "Procedure.performer.actor")
+    ///
+    /// # Returns
+    ///
+    /// A vector of valid resource type names, or empty if not a Reference type
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Procedure.performer.actor typically targets PractitionerRole, Practitioner, etc.
+    /// let targets = session.get_reference_target_types("Procedure.performer.actor").await;
+    /// // targets might be ["Practitioner", "PractitionerRole", "Organization", ...]
+    /// ```
+    pub async fn get_reference_target_types(&self, element_path: &str) -> Vec<String> {
+        // Extract resource type from path (first segment)
+        let resource_type = match element_path.split('.').next() {
+            Some(rt) => rt,
+            None => {
+                debug!("Invalid element path (no resource type): {}", element_path);
+                return Vec::new();
+            }
+        };
+
+        // Resolve StructureDefinition for the resource type
+        let sd_url = format!("http://hl7.org/fhir/StructureDefinition/{}", resource_type);
+        let sd = match self.resolve_structure_definition(&sd_url).await {
+            Ok(Some(sd)) => sd,
+            Ok(None) => {
+                debug!(
+                    "StructureDefinition not found for {}, cannot resolve reference targets",
+                    resource_type
+                );
+                return Vec::new();
+            }
+            Err(e) => {
+                debug!(
+                    "Failed to resolve StructureDefinition for {}: {}, cannot resolve reference targets",
+                    resource_type, e
+                );
+                return Vec::new();
+            }
+        };
+
+        // Find element in snapshot and extract reference target types
+        sd.snapshot
+            .as_ref()
+            .and_then(|s| {
+                s.element
+                    .iter()
+                    .find(|e| e.path == element_path)
+                    .and_then(|e| e.type_.as_ref())
+            })
+            .map(|types| {
+                types
+                    .iter()
+                    .filter(|t| t.code == "Reference" || t.code == "CodeableReference")
+                    .filter_map(|t| t.target_profile.as_ref())
+                    .flatten()
+                    .filter_map(|url| {
+                        // Extract resource type name from canonical URL
+                        // e.g., "http://hl7.org/fhir/StructureDefinition/Practitioner" -> "Practitioner"
+                        url.rsplit('/').next().map(|s| s.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Set package priorities from dependencies list
     ///
     /// First dependency gets highest priority (100), decreasing by 10 for each subsequent.

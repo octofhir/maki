@@ -992,9 +992,9 @@ impl ValueSetFilter {
         Self::new("concept", "is-a", parent_code)
     }
 
-    /// Create a "descendant-of" filter
+    /// Create a "descendent-of" filter (FHIR uses British spelling)
     pub fn descendent_of(parent_code: impl Into<String>) -> Self {
-        Self::new("concept", "descendant-of", parent_code)
+        Self::new("concept", "descendent-of", parent_code)
     }
 
     /// Create a "regex" filter

@@ -123,7 +123,7 @@ const CODE_SYSTEM_ALIASES: &[(&str, &str)] = &[
 ];
 
 /// Resolve a code system alias to its canonical URL
-fn resolve_code_system_alias(alias: &str) -> Option<&'static str> {
+pub fn resolve_code_system_alias(alias: &str) -> Option<&'static str> {
     for (name, url) in CODE_SYSTEM_ALIASES {
         if *name == alias {
             return Some(url);
@@ -202,11 +202,50 @@ fn parse_fsh_code_value(value: &str) -> Option<FshCodeValue> {
 }
 
 /// Determine the element type from an ElementDefinition
-fn get_element_type(element: &ElementDefinition) -> Option<String> {
-    element
+/// Falls back to inferring from path for common fields when type is not in differential
+fn get_element_type(element: &ElementDefinition, full_path: &str) -> Option<String> {
+    // First try to get type from element definition
+    if let Some(type_code) = element
         .type_
         .as_ref()
         .and_then(|types| types.first().map(|t| t.code.clone()))
+    {
+        return Some(type_code);
+    }
+
+    // Fallback: infer type from path for common FHIR elements
+    // This is needed because differential elements often don't include type info
+    // Use full_path which includes resource type (e.g., "Observation.code")
+    let field_name = full_path.rsplit('.').next().unwrap_or(full_path);
+
+    // Common CodeableConcept fields across resources
+    match field_name {
+        // Observation
+        "code" if full_path.starts_with("Observation") => Some("CodeableConcept".to_string()),
+        "category" => Some("CodeableConcept".to_string()),
+        "interpretation" => Some("CodeableConcept".to_string()),
+        "bodySite" => Some("CodeableConcept".to_string()),
+        "method" => Some("CodeableConcept".to_string()),
+        "dataAbsentReason" => Some("CodeableConcept".to_string()),
+        // Condition
+        "code" if full_path.starts_with("Condition") => Some("CodeableConcept".to_string()),
+        "clinicalStatus" => Some("CodeableConcept".to_string()),
+        "verificationStatus" => Some("CodeableConcept".to_string()),
+        "severity" => Some("CodeableConcept".to_string()),
+        // Procedure
+        "code" if full_path.starts_with("Procedure") => Some("CodeableConcept".to_string()),
+        "statusReason" => Some("CodeableConcept".to_string()),
+        "reasonCode" => Some("CodeableConcept".to_string()),
+        "outcome" => Some("CodeableConcept".to_string()),
+        // MedicationRequest/Administration
+        "medicationCodeableConcept" => Some("CodeableConcept".to_string()),
+        // DiagnosticReport
+        "code" if full_path.starts_with("DiagnosticReport") => Some("CodeableConcept".to_string()),
+        "conclusionCode" => Some("CodeableConcept".to_string()),
+        // Common Coding fields (not CodeableConcept)
+        "valueCoding" => Some("Coding".to_string()),
+        _ => None,
+    }
 }
 
 fn is_fhir_primitive_or_complex_type(type_name: &str) -> bool {
@@ -1571,7 +1610,8 @@ impl ProfileExporter {
         })?;
 
         // Get the element type to determine correct pattern type
-        let element_type = get_element_type(element);
+        // Pass full_path as it includes the resource type (e.g., "Observation.code")
+        let element_type = get_element_type(element, &full_path);
 
         // Parse value and generate appropriate pattern
         let mut pattern_map = std::collections::HashMap::new();

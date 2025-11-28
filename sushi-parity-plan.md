@@ -2,23 +2,24 @@
 
 ## Current Status
 
-| Metric | Before Session | After Session |
-|--------|----------------|---------------|
-| Identical files | 49 | **90** |
-| Different files | 301 | **260** |
+| Metric | Before Session | Current Snapshot |
+|--------|----------------|------------------|
+| Identical files | 49 | **72** |
+| Different files | 301 | **278** |
 
 ### Resource Type Breakdown
 
 | Type | Identical | Different | Parity % | Priority |
 |------|-----------|-----------|----------|----------|
-| MedicationRequest | 11 | 0 | **100%** | Done |
-| BodyStructure | 4 | 0 | **100%** | Done |
-| Group | 1 | 0 | **100%** | Done |
-| Observation | 15 | 84 | 15% | HIGH |
-| ValueSet | 42 | 61 | 41% | HIGH |
-| StructureDefinition | ~0 | 53 | 0% | MEDIUM |
-| Condition | 9 | 4 | 69% | LOW |
-| Bundle | ~0 | 2 | 0% | HIGH |
+| MedicationRequest | -- | 11 | 0% | Regressed |
+| BodyStructure | -- | 1 | 0% | Regressed |
+| Group | -- | 0 | **100%** | Done |
+| Observation | -- | 61 | — | **HIGH** |
+| ValueSet | -- | 88 | — | **HIGH** |
+| StructureDefinition | -- | 53 | — | MEDIUM |
+| Condition | -- | 6 | — | LOW |
+| Bundle | -- | 2 | — | HIGH |
+| CapabilityStatement/Other | -- | 29 | — | LOW |
 
 ---
 
@@ -26,7 +27,7 @@
 
 ### Issue 1: Profile Constraint Resolution for Observations (84 files)
 
-**Status**: Implemented in `instance_exporter.rs` (profile chain fixed/pattern pre-seeded before rules). Needs parity diff rerun.
+**Status**: Partial. Fixed and pattern constraints are now gathered from the profile chain, non-slice fields (code/category/status) are injected up front, and slice-specific constraints (Observation.component slices, staging components) are deferred until the instance rules create the slice entries. This restored required `code`/`category` data across Observations, but we still have 61 Observation diffs and must address remaining rule gaps and ordering regressions.
 
 **Problem**: Observation instances are missing `code` and `category` fields that should be inherited from parent profiles.
 
