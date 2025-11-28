@@ -213,10 +213,20 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
                             }
                         }
                         if !terminated {
-                            errors.push(LexerError::new(
-                                "Unterminated block comment",
-                                span(start, len),
+                            // SUSHI tolerates stray '/*' used as a line comment (common in mCODE).
+                            // Fall back to a line-style comment instead of swallowing the rest of the file.
+                            if let Some(rel_nl) = input[start..].find('\n') {
+                                end = start + rel_nl;
+                            } else {
+                                end = len;
+                            }
+                            tokens.push(CstToken::new(
+                                FshSyntaxKind::CommentLine,
+                                &input[start..end],
+                                span(start, end),
                             ));
+                            i = end;
+                            continue;
                         }
                         tokens.push(CstToken::new(
                             FshSyntaxKind::CommentBlock,
@@ -370,12 +380,22 @@ pub fn lex_with_trivia(input: &str) -> CstLexResult {
                 i += size;
             }
             '?' => {
-                tokens.push(CstToken::new(
-                    FshSyntaxKind::Question,
-                    "?",
-                    span(start, i + size),
-                ));
-                i += size;
+                // Either modifier flag '?!' or standalone '?'
+                if let Some((next, next_size)) = next_char(input, i + size) && next == '!' {
+                    tokens.push(CstToken::new(
+                        FshSyntaxKind::ModifierFlag,
+                        "?!",
+                        span(start, i + size + next_size),
+                    ));
+                    i += size + next_size;
+                } else {
+                    tokens.push(CstToken::new(
+                        FshSyntaxKind::Question,
+                        "?",
+                        span(start, i + size),
+                    ));
+                    i += size;
+                }
             }
             '!' => {
                 tokens.push(CstToken::new(

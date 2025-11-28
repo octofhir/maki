@@ -53,6 +53,8 @@ use super::ExportError;
 use super::fhir_types::{ElementDefinition, StructureDefinition};
 use crate::canonical::DefinitionSession;
 use crate::cst::ast::{FixedValueRule, Instance, Rule};
+#[cfg(test)]
+use crate::cst::ast::AstNode;
 use crate::semantic::FishingContext;
 use serde_json::{Map, Value as JsonValue};
 use std::collections::HashMap;
@@ -668,6 +670,35 @@ impl InstanceExporter {
         // Apply rules
         for rule in instance.rules() {
             self.apply_rule(&mut resource, &rule).await?;
+        }
+
+        // Safety net: ensure BodyStructure instances retain patient reference (parity with SUSHI)
+        if resource["resourceType"] == "BodyStructure" && resource.get("patient").is_none() {
+            if let Some(patient_value) = instance.rules().find_map(|rule| match rule {
+                Rule::FixedValue(fv)
+                    if fv
+                        .path()
+                        .map(|p| p.as_string() == "patient")
+                        .unwrap_or(false) =>
+                {
+                    fv.value()
+                }
+                _ => None,
+            }) {
+                debug!(
+                    "Restoring missing BodyStructure.patient for instance '{}'",
+                    name
+                );
+                let segments = self.parse_path("patient")?;
+                let json_value = self.convert_value_with_path(&patient_value, "patient").await?;
+                self.set_value_at_path(&mut resource, &segments, json_value)
+                    .await?;
+            } else {
+                debug!(
+                    "BodyStructure '{}' missing patient and no patient rule found",
+                    name
+                );
+            }
         }
 
         // Debug: print final resource
@@ -1351,9 +1382,10 @@ impl InstanceExporter {
         value_str: &str,
         path: &str,
     ) -> Result<JsonValue, ExportError> {
+        let trimmed = value_str.trim();
+
         // Check if this path should always be a string
         if self.is_string_field_path(path) {
-            let trimmed = value_str.trim();
             // If it's a quoted string, remove quotes
             if (trimmed.starts_with('"') && trimmed.ends_with('"'))
                 || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
@@ -1362,6 +1394,11 @@ impl InstanceExporter {
             }
             // Otherwise, keep as-is (even if it looks like a number)
             return Ok(JsonValue::String(trimmed.to_string()));
+        }
+
+        // If this is a reference, use path context to help typing
+        if trimmed.starts_with("Reference(") && trimmed.ends_with(')') {
+            return self.parse_reference_with_context(trimmed, Some(path)).await;
         }
 
         // Use standard conversion for other fields
@@ -1420,7 +1457,7 @@ impl InstanceExporter {
             // Organization
             "alias" | "endpoint" |
             // Condition
-            "bodySite" | "stage" | "evidence" |
+            "bodySite" | "stage" | "evidence" | "locationQualifier" |
             // Procedure
             "complication" | "followUp" | "focalDevice" | "usedReference" | "usedCode" |
             // MedicationRequest
@@ -1428,7 +1465,7 @@ impl InstanceExporter {
             // DiagnosticReport
             "result" | "imagingStudy" | "media" |
             // Encounter
-            "statusHistory" | "classHistory" | "participant" | "diagnosis" | "account" | "hospitalization" | "location" |
+            "statusHistory" | "classHistory" | "participant" | "diagnosis" | "account" | "hospitalization" |
             // Various
             "instantiatesCanonical" | "instantiatesUri" | "basedOn" | "partOf" | "reasonCode" | "reasonReference"
         )
@@ -1476,7 +1513,7 @@ impl InstanceExporter {
 
         // Reference pattern: Reference(Patient/example)
         if trimmed.starts_with("Reference(") && trimmed.ends_with(')') {
-            return self.parse_reference(trimmed).await;
+            return self.parse_reference_with_context(trimmed, None).await;
         }
 
         // Number (integer)
@@ -1569,8 +1606,8 @@ impl InstanceExporter {
         // Build CodeableConcept
         let mut codeable_concept = serde_json::json!({
             "coding": [{
-                "system": system,
-                "code": code
+                "code": code,
+                "system": system
             }]
         });
 
@@ -1618,17 +1655,46 @@ impl InstanceExporter {
         Ok(quantity)
     }
 
-    /// Parse Reference from FSH notation
+    /// Parse Reference from FSH notation with optional path context
     /// Format: Reference(Patient/example) or Reference(resourceId)
-    async fn parse_reference(&self, value: &str) -> Result<JsonValue, ExportError> {
+    async fn parse_reference_with_context(
+        &self,
+        value: &str,
+        path: Option<&str>,
+    ) -> Result<JsonValue, ExportError> {
         // Extract reference from Reference(...)
-        let ref_value = value
+        let mut ref_value: String = value
             .strip_prefix("Reference(")
             .and_then(|s| s.strip_suffix(')'))
-            .unwrap_or(value);
+            .unwrap_or(value)
+            .to_string();
+
+        // Try to infer the expected reference type from the path context (e.g., patient -> Patient)
+        let expected_type = path
+            .and_then(|p| p.rsplit('.').next())
+            .and_then(|field| match field {
+                "patient" => Some("Patient"),
+                _ => None,
+            })
+            .map(|s| s.to_string());
+
+        // If this looks like a local instance id (no slash) and we know its resourceType,
+        // construct a proper typed reference (e.g., Patient/{id}) for parity with SUSHI.
+        if !ref_value.contains('/') {
+            if let Some(instance_json) = self.instance_registry.get(&ref_value) {
+                if let Some(rt) = instance_json
+                    .get("resourceType")
+                    .and_then(|v| v.as_str())
+                {
+                    ref_value = format!("{}/{}", rt, ref_value);
+                }
+            } else if let Some(rt) = expected_type {
+                ref_value = format!("{}/{}", rt, ref_value);
+            }
+        }
 
         // Validate the reference if fishing context is available
-        if let Err(e) = self.validate_reference(ref_value).await {
+        if let Err(e) = self.validate_reference(&ref_value).await {
             warn!("Reference validation failed for '{}': {}", ref_value, e);
             // Note: We don't fail export on invalid references, just warn
             // This matches SUSHI behavior for better user experience
@@ -1641,6 +1707,7 @@ impl InstanceExporter {
 
         Ok(reference)
     }
+
 
     /// Validate that a reference target exists
     ///
@@ -1860,6 +1927,112 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_export_sets_bodystructure_patient() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../mcode-ig/input/fsh/EX_Basic.fsh");
+        let content = std::fs::read_to_string(&path).expect("read mcode file");
+        let (cst, lex, parse) = crate::cst::parse_fsh(&content);
+        assert!(
+            lex.is_empty() && parse.is_empty(),
+            "lexer_errors: {}, parse_errors: {}",
+            lex.len(),
+            parse.len()
+        );
+
+        let instance = cst
+            .descendants()
+            .filter_map(Instance::cast)
+            .find(|inst| inst.name().as_deref() == Some("john-anyperson-treatment-volume"))
+            .expect("instance present");
+
+        let patient_rule_value = instance.rules().find_map(|rule| match rule {
+            Rule::FixedValue(fv)
+                if fv
+                    .path()
+                    .map(|p| p.as_string() == "patient")
+                    .unwrap_or(false) =>
+            {
+                fv.value()
+            }
+            _ => None,
+        });
+        assert!(
+            patient_rule_value.is_some(),
+            "patient assignment should be parsed"
+        );
+
+        let session = Arc::new(crate::canonical::DefinitionSession::for_testing());
+        let mut exporter = InstanceExporter::new(session, "http://example.org/fhir".to_string())
+            .await
+            .unwrap();
+
+        let resource = exporter.export(&instance).await.unwrap();
+        assert!(
+            resource.get("patient").is_some(),
+            "export should set BodyStructure.patient"
+        );
+    }
+
+    #[test]
+    fn test_mcode_bodystructure_has_patient_rule() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../mcode-ig/input/fsh/EX_Basic.fsh");
+        let content = std::fs::read_to_string(&path).expect("read mcode file");
+        let (cst, lex, parse) = crate::cst::parse_fsh(&content);
+        assert!(
+            lex.is_empty() && parse.is_empty(),
+            "lexer_errors: {}, parse_errors: {}",
+            lex.len(),
+            parse.len()
+        );
+
+        let instance = cst
+            .descendants()
+            .filter_map(Instance::cast)
+            .find(|inst| inst.name().as_deref() == Some("john-anyperson-treatment-volume"))
+            .expect("instance present");
+
+        let has_patient_rule = instance.rules().any(|rule| match rule {
+            Rule::FixedValue(fv) => fv
+                .path()
+                .map(|p| p.as_string() == "patient")
+                .unwrap_or(false),
+            _ => false,
+        });
+
+        assert!(has_patient_rule, "patient rule should be parsed");
+    }
+
+    #[test]
+    fn test_patient_assignment_rule_is_parsed() {
+        let fsh = r#"Instance: test-volume
+InstanceOf: RadiotherapyVolume
+* patient = Reference(cancer-patient-john-anyperson)
+"#;
+
+        let (cst, lex, parse) = crate::cst::parse_fsh(fsh);
+        assert!(lex.is_empty() && parse.is_empty());
+
+        let instance = cst.descendants().find_map(Instance::cast).unwrap();
+        let patient_value = instance.rules().find_map(|rule| match rule {
+            Rule::FixedValue(fv)
+                if fv
+                    .path()
+                    .map(|p| p.as_string() == "patient")
+                    .unwrap_or(false) =>
+            {
+                fv.value()
+            }
+            _ => None,
+        });
+
+        assert_eq!(
+            patient_value,
+            Some("Reference(cancer-patient-john-anyperson)".to_string())
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_set_simple_value() {
         let mut exporter = create_test_exporter();
         let mut resource = serde_json::json!({ "resourceType": "Patient" });
@@ -2042,17 +2215,21 @@ mod tests {
             }),
         );
 
-        let result = exporter.parse_reference("Reference(my-patient)").await;
+        let result = exporter
+            .parse_reference_with_context("Reference(my-patient)", None)
+            .await;
         assert!(result.is_ok());
         let reference = result.unwrap();
-        assert_eq!(reference["reference"], "my-patient");
+        assert_eq!(reference["reference"], "Patient/my-patient");
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_parse_reference_warns_on_invalid() {
         let exporter = create_test_exporter();
 
-        let result = exporter.parse_reference("Reference(nonexistent)").await;
+        let result = exporter
+            .parse_reference_with_context("Reference(nonexistent)", None)
+            .await;
         assert!(result.is_ok());
         let reference = result.unwrap();
         assert_eq!(reference["reference"], "nonexistent");

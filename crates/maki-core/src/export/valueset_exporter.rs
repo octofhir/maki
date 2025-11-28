@@ -70,6 +70,31 @@ use tracing::{debug, trace, warn};
 type SystemComponentMap =
     HashMap<String, (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>)>;
 
+// Common FSH code system aliases mapped to canonical URLs (mirrors profile exporter)
+const CODE_SYSTEM_ALIASES: &[(&str, &str)] = &[
+    ("LNC", "http://loinc.org"),
+    ("LOINC", "http://loinc.org"),
+    ("SCT", "http://snomed.info/sct"),
+    ("SNOMED", "http://snomed.info/sct"),
+    ("ICD10CM", "http://hl7.org/fhir/sid/icd-10-cm"),
+    ("ICD10", "http://hl7.org/fhir/sid/icd-10"),
+    ("UCUM", "http://unitsofmeasure.org"),
+    ("RXNORM", "http://www.nlm.nih.gov/research/umls/rxnorm"),
+    ("CPT", "http://www.ama-assn.org/go/cpt"),
+    ("CVX", "http://hl7.org/fhir/sid/cvx"),
+    ("HGNC", "http://www.genenames.org"),
+    ("HGVS", "http://varnomen.hgvs.org"),
+    ("ISO3166", "urn:iso:std:iso:3166"),
+    ("NUCC", "http://nucc.org/provider-taxonomy"),
+    ("NDC", "http://hl7.org/fhir/sid/ndc"),
+];
+
+fn resolve_code_system_alias(alias: &str) -> Option<&'static str> {
+    CODE_SYSTEM_ALIASES
+        .iter()
+        .find_map(|(name, url)| (*name == alias).then(|| *url))
+}
+
 // ============================================================================
 // Component Rule Types
 // ============================================================================
@@ -151,6 +176,7 @@ pub struct ValueSetExporter {
     /// Base URL for valueset canonical URLs
     base_url: String,
     /// Version from config
+    #[allow(dead_code)]
     version: Option<String>,
 }
 
@@ -264,8 +290,8 @@ impl ValueSetExporter {
             resource.description = Some(desc_value);
         }
 
-        // Set version from config if available (SUSHI parity)
-        resource.version = self.version.clone();
+        // Do not set version unless explicitly provided in FSH (SUSHI parity)
+        resource.version = None;
 
         // Build alias map from parent document
         let alias_map = self.build_alias_map(valueset);
@@ -612,7 +638,11 @@ impl ValueSetExporter {
     /// Traverses up to the parent Document node and extracts all aliases
     /// into a HashMap for quick lookup during component rule parsing.
     fn build_alias_map(&self, valueset: &ValueSet) -> HashMap<String, String> {
-        let mut alias_map = HashMap::new();
+        // Seed with built-in code system aliases so short system names resolve to canonical URLs
+        let mut alias_map: HashMap<String, String> = CODE_SYSTEM_ALIASES
+            .iter()
+            .map(|(name, url)| (name.to_string(), url.to_string()))
+            .collect();
 
         // Get parent document by traversing up the tree
         if let Some(parent) = valueset.syntax().parent()
@@ -998,16 +1028,18 @@ impl ValueSetExporter {
             return Ok(None);
         };
 
-        // Resolve alias to full URL
+        // Resolve alias to full URL (document alias, built-ins, or fallback)
         let system_url = match alias_map.get(system_prefix) {
             Some(url) => url.clone(),
-            None => {
-                warn!(
-                    "Unresolved alias '{}' in ValueSet {}. Using as-is.",
-                    system_prefix, valueset_name
-                );
-                system_prefix.to_string()
-            }
+            None => resolve_code_system_alias(system_prefix)
+                .map(|u| u.to_string())
+                .unwrap_or_else(|| {
+                    warn!(
+                        "Unresolved alias '{}' in ValueSet {}. Using as-is.",
+                        system_prefix, valueset_name
+                    );
+                    system_prefix.to_string()
+                }),
         };
 
         // Try to get display text from following String token

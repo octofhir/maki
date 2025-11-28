@@ -190,8 +190,9 @@ impl FileStructureGenerator {
         content: &T,
     ) -> Result<(), FileStructureError> {
         let path_buf = path.to_path_buf();
-        let json = serde_json::to_string_pretty(content)
+        let mut json = serde_json::to_string_pretty(content)
             .map_err(|e| FileStructureError::SerializeJson(path_buf.clone(), e))?;
+        json.push('\n');
 
         let result = run_blocking_io(|| fs::write(&path_buf, &json));
         if let Err(e) = result {

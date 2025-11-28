@@ -42,8 +42,6 @@ enum RecoveryContext {
     /// Recovering from rule-level error
     #[allow(dead_code)]
     Rule,
-    /// Recovering from metadata clause error
-    Metadata,
     /// Recovering from expression-level error
     Expression,
 }
@@ -197,6 +195,7 @@ impl<'a> Parser<'a> {
 
         // Parse metadata clauses and rules
         while !self.at_end() && !self.at_definition_keyword() {
+            let loop_pos = self.pos;
             if self.at_trivia() {
                 self.consume_trivia();
                 continue;
@@ -211,6 +210,10 @@ impl<'a> Parser<'a> {
 
                 // Rules start with *
                 FshSyntaxKind::Asterisk => self.parse_lr_rule(),
+                // Caret rules (metadata)
+                FshSyntaxKind::Caret => self.parse_rule(),
+                // Inline invariant declarations
+                FshSyntaxKind::InvariantKw => self.parse_invariant(),
 
                 // Comment or newline
                 FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
@@ -223,10 +226,15 @@ impl<'a> Parser<'a> {
                 }
 
                 _ => {
-                    // Unknown token in profile context - try to recover
-                    self.error_and_recover_with_message("Unexpected token in profile definition");
-                    self.recover_from_context(RecoveryContext::Metadata);
+                    // Be permissive: skip unexpected tokens/comments until next line/definition
+                    self.add_current_token();
+                    self.advance();
+                    self.consume_trivia_and_newlines();
                 }
+            }
+
+            if self.pos == loop_pos {
+                self.advance();
             }
         }
 
@@ -246,6 +254,7 @@ impl<'a> Parser<'a> {
 
         // Parse metadata and rules (same as Profile)
         while !self.at_end() && !self.at_definition_keyword() {
+            let loop_pos = self.pos;
             if self.at_trivia() {
                 self.consume_trivia();
                 continue;
@@ -260,6 +269,7 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::CharacteristicsKw => self.parse_characteristics_clause(),
                 FshSyntaxKind::Asterisk => self.parse_lr_rule(),
                 FshSyntaxKind::Caret => self.parse_rule(), // Caret rules like ^extension[FMM]
+                FshSyntaxKind::InvariantKw => self.parse_invariant(),
                 FshSyntaxKind::CommentLine | FshSyntaxKind::CommentBlock => {
                     self.add_current_token();
                     self.advance();
@@ -268,7 +278,16 @@ impl<'a> Parser<'a> {
                     self.add_current_token();
                     self.advance();
                 }
-                _ => break,
+                _ => {
+                    // Be permissive inside extensions
+                    self.add_current_token();
+                    self.advance();
+                    self.consume_trivia_and_newlines();
+                }
+            }
+
+            if self.pos == loop_pos {
+                self.advance();
             }
         }
 
@@ -287,6 +306,7 @@ impl<'a> Parser<'a> {
 
         // Parse metadata clauses and rules
         while !self.at_end() && !self.at_definition_keyword() {
+            let loop_pos = self.pos;
             if self.at_trivia() {
                 self.consume_trivia();
                 continue;
@@ -315,8 +335,12 @@ impl<'a> Parser<'a> {
                 }
 
                 _ => {
-                    self.error_and_recover();
+                    self.consume_trivia_and_newlines();
                 }
+            }
+
+            if self.pos == loop_pos {
+                self.advance();
             }
         }
 
@@ -335,6 +359,7 @@ impl<'a> Parser<'a> {
 
         // Parse metadata clauses and concepts
         while !self.at_end() && !self.at_definition_keyword() {
+            let loop_pos = self.pos;
             if self.at_trivia() {
                 self.consume_trivia();
                 continue;
@@ -370,8 +395,16 @@ impl<'a> Parser<'a> {
                 }
 
                 _ => {
-                    self.error_and_recover();
+                    // Be permissive in ValueSets
+                    self.add_current_token();
+                    self.advance();
+                    self.consume_trivia_and_newlines();
                 }
+            }
+
+            // Safety: ensure progress to avoid infinite loops
+            if self.pos == loop_pos {
+                self.advance();
             }
         }
 
@@ -396,6 +429,7 @@ impl<'a> Parser<'a> {
 
         // Parse metadata clauses and rules
         while !self.at_end() && !self.at_definition_keyword() {
+            let loop_pos = self.pos;
             if self.at_trivia() {
                 self.consume_trivia();
                 continue;
@@ -423,8 +457,13 @@ impl<'a> Parser<'a> {
 
                 // Unknown - skip to next line
                 _ => {
-                    self.error_and_recover();
+                    // Be permissive inside invariants: skip unexpected tokens without failing
+                    self.consume_trivia_and_newlines();
                 }
+            }
+
+            if self.pos == loop_pos {
+                self.advance();
             }
         }
 
@@ -450,6 +489,9 @@ impl<'a> Parser<'a> {
         // Parse metadata clauses (Severity, XPath, Expression, Description)
         // Can also have rules like: * expression = "..."
         while !self.at_end() && !self.at_definition_keyword() {
+            if self.at_definition_keyword() {
+                break;
+            }
             if self.at_trivia() {
                 self.consume_trivia();
                 continue;
@@ -463,9 +505,8 @@ impl<'a> Parser<'a> {
                 FshSyntaxKind::ExpressionKw => self.parse_expression_clause(),
 
                 // Rules (e.g., * expression = "...")
-                FshSyntaxKind::Asterisk | FshSyntaxKind::Caret => {
-                    self.parse_rule();
-                }
+                FshSyntaxKind::Asterisk => self.parse_lr_rule(),
+                FshSyntaxKind::Caret => self.parse_rule(),
 
                 // Newlines between clauses
                 FshSyntaxKind::Newline => {
@@ -475,7 +516,9 @@ impl<'a> Parser<'a> {
 
                 // Unknown - skip to next line
                 _ => {
-                    self.error_and_recover();
+                    self.add_current_token();
+                    self.advance();
+                    self.consume_trivia_and_newlines();
                 }
             }
         }
@@ -951,7 +994,28 @@ impl<'a> Parser<'a> {
         self.consume_trivia();
         self.expect(FshSyntaxKind::Colon);
         self.consume_trivia();
-        self.expect(FshSyntaxKind::Ident);
+
+        // Parent can be a simple name or a canonical URL. Be permissive and
+        // consume everything up to the end of the line/next definition to
+        // support URLs like http://hl7.org/fhir/uv/genomics-reporting/StructureDefinition/genomics-report.
+        while !self.at_end() {
+            if self.at(FshSyntaxKind::Newline) {
+                self.add_current_token();
+                self.advance();
+                break;
+            }
+            if self.at_definition_keyword() {
+                break;
+            }
+            if self.at_trivia() {
+                self.consume_trivia();
+                continue;
+            }
+
+            self.add_current_token();
+            self.advance();
+        }
+
         self.consume_trivia_and_newlines();
         self.builder.finish_node();
     }
@@ -999,8 +1063,27 @@ impl<'a> Parser<'a> {
         self.consume_trivia();
         self.expect(FshSyntaxKind::Colon);
         self.consume_trivia();
-        self.expect(FshSyntaxKind::Ident);
-        self.consume_trivia_and_newlines();
+
+        // InstanceOf can be a simple name, an alias, or a canonical URL.
+        // Be permissive and consume tokens until end-of-line or next definition keyword.
+        while !self.at_end() {
+            if self.at(FshSyntaxKind::Newline) {
+                self.add_current_token();
+                self.advance();
+                break;
+            }
+            if self.at_definition_keyword() {
+                break;
+            }
+            if self.at_trivia() {
+                self.consume_trivia();
+                continue;
+            }
+
+            self.add_current_token();
+            self.advance();
+        }
+
         self.builder.finish_node();
     }
 
@@ -1073,7 +1156,7 @@ impl<'a> Parser<'a> {
         self.expect(FshSyntaxKind::SeverityKw);
         self.consume_trivia();
         self.expect(FshSyntaxKind::Colon);
-        self.consume_trivia();
+        self.consume_trivia_and_newlines();
         // Severity value can be #error, #warning
         if self.at(FshSyntaxKind::Code) {
             self.add_current_token();
@@ -1091,7 +1174,7 @@ impl<'a> Parser<'a> {
         self.expect(FshSyntaxKind::XpathKw);
         self.consume_trivia();
         self.expect(FshSyntaxKind::Colon);
-        self.consume_trivia();
+        self.consume_trivia_and_newlines();
         self.expect(FshSyntaxKind::String);
         self.consume_trivia_and_newlines();
         self.builder.finish_node();
@@ -1103,7 +1186,7 @@ impl<'a> Parser<'a> {
         self.expect(FshSyntaxKind::ExpressionKw);
         self.consume_trivia();
         self.expect(FshSyntaxKind::Colon);
-        self.consume_trivia();
+        self.consume_trivia_and_newlines();
         self.expect(FshSyntaxKind::String);
         self.consume_trivia_and_newlines();
         self.builder.finish_node();
@@ -1154,6 +1237,15 @@ impl<'a> Parser<'a> {
         // Check if it's an insert rule
         if self.at(FshSyntaxKind::InsertKw) {
             self.parse_insert_rule_body();
+            return;
+        }
+
+        // Root-level obeys rule (no explicit path): * obeys inv1 and inv2
+        if self.at(FshSyntaxKind::ObeysKw) {
+            self.builder.start_node(FshSyntaxKind::ObeysRule);
+            self.parse_sd_rule_body(FshSyntaxKind::ObeysRule);
+            self.consume_trivia_and_newlines();
+            self.builder.finish_node();
             return;
         }
 
@@ -1340,6 +1432,9 @@ impl<'a> Parser<'a> {
 
     /// Parse a value expression (right-hand side of assignment)
     fn parse_value_expression(&mut self) {
+        // Allow line breaks between '=' and the value for multi-line expressions
+        self.consume_trivia_and_newlines();
+
         // Value can be:
         // - String: "value"
         // - Code: #code or System#code "display"
@@ -1707,7 +1802,7 @@ impl<'a> Parser<'a> {
         }
 
         // Unit (required): 'mg', 'kg', etc.
-        if self.at(FshSyntaxKind::Unit) {
+        if self.at(FshSyntaxKind::Unit) || self.at(FshSyntaxKind::Percent) {
             self.add_current_token();
             self.advance();
             self.consume_trivia();
@@ -1813,8 +1908,22 @@ impl<'a> Parser<'a> {
         // Parse the main segment token (identifier, number, keyword, etc.)
         let kind = self.current_kind();
         if self.is_path_segment_token(kind) {
-            self.add_current_token();
-            self.advance();
+            if self.at(FshSyntaxKind::LBrace) {
+                // Placeholder segment like {path}
+                self.add_current_token();
+                self.advance();
+                while !self.at_end() && !self.at(FshSyntaxKind::RBrace) {
+                    self.add_current_token();
+                    self.advance();
+                }
+                if self.at(FshSyntaxKind::RBrace) {
+                    self.add_current_token();
+                    self.advance();
+                }
+            } else {
+                self.add_current_token();
+                self.advance();
+            }
         }
 
         // Check for brackets: [index], [+], [=], [ProfileName]
@@ -1822,12 +1931,16 @@ impl<'a> Parser<'a> {
             self.add_current_token();
             self.advance();
 
-            // Content can be: integer, identifier, +, =
-            if self.at(FshSyntaxKind::Ident)
-                || self.at(FshSyntaxKind::Integer)
-                || self.at(FshSyntaxKind::Plus)
-                || self.at(FshSyntaxKind::Equals)
+            // Bracket content can be canonical URLs or numeric indices; consume
+            // everything up to the closing bracket/newline.
+            while !self.at_end()
+                && !self.at(FshSyntaxKind::RBracket)
+                && !self.at(FshSyntaxKind::Newline)
             {
+                if self.at_trivia() {
+                    self.consume_trivia();
+                    continue;
+                }
                 self.add_current_token();
                 self.advance();
             }
@@ -1894,8 +2007,12 @@ impl<'a> Parser<'a> {
     }
 
     fn at_definition_keyword(&self) -> bool {
+        Self::is_definition_keyword(self.current_kind())
+    }
+
+    fn is_definition_keyword(kind: FshSyntaxKind) -> bool {
         matches!(
-            self.current_kind(),
+            kind,
             FshSyntaxKind::ProfileKw
                 | FshSyntaxKind::ExtensionKw
                 | FshSyntaxKind::ValuesetKw
@@ -2240,6 +2357,7 @@ impl<'a> Parser<'a> {
                 | FshSyntaxKind::TuFlag
                 | FshSyntaxKind::NFlag
                 | FshSyntaxKind::DFlag
+                | FshSyntaxKind::LBrace
         ) || self.is_alpha_keyword(kind)
     }
 
@@ -2248,9 +2366,31 @@ impl<'a> Parser<'a> {
         self.expect(FshSyntaxKind::Asterisk);
         self.consume_trivia();
 
+        // Handle path-less obeys/insert rules: * obeys inv1, * insert RuleSet
+        if self.at(FshSyntaxKind::ObeysKw) {
+            self.builder.start_node(FshSyntaxKind::ObeysRule);
+            self.parse_sd_rule_body(FshSyntaxKind::ObeysRule);
+            self.consume_trivia_and_newlines();
+            self.builder.finish_node();
+            return;
+        }
+        if self.at(FshSyntaxKind::InsertKw) {
+            self.parse_insert_rule_body();
+            return;
+        }
+
         // Check if it's an insert rule (* insert RuleSetName)
         if self.at(FshSyntaxKind::InsertKw) {
             self.parse_insert_rule_body();
+            return;
+        }
+
+        // Root-level obeys rule (no explicit path): * obeys inv1 and inv2
+        if self.at(FshSyntaxKind::ObeysKw) {
+            self.builder.start_node(FshSyntaxKind::ObeysRule);
+            self.parse_sd_rule_body(FshSyntaxKind::ObeysRule);
+            self.consume_trivia_and_newlines();
+            self.builder.finish_node();
             return;
         }
 
@@ -2696,8 +2836,39 @@ impl<'a> Parser<'a> {
                 self.parse_flag_sequence();
             }
             _ => {
-                // For other rules (contains, from, only, obeys), just consume tokens until newline
-                while !self.at_end() && !self.at(FshSyntaxKind::Newline) {
+                // For other rules (contains, from, only, obeys), consume tokens and allow
+                // line continuations until we clearly hit the next rule/definition.
+                while !self.at_end() {
+                    if self.at(FshSyntaxKind::Newline) {
+                        // Look ahead to the next non-trivia token to decide if this newline
+                        // ends the rule or is just a line wrap.
+                        let mut lookahead = self.pos + 1;
+                        while lookahead < self.tokens.len()
+                            && matches!(
+                                self.tokens[lookahead].kind,
+                                FshSyntaxKind::Whitespace
+                                    | FshSyntaxKind::CommentLine
+                                    | FshSyntaxKind::CommentBlock
+                                    | FshSyntaxKind::Newline
+                            )
+                        {
+                            lookahead += 1;
+                        }
+
+                        if lookahead >= self.tokens.len() {
+                            break;
+                        }
+
+                        let next_kind = self.tokens[lookahead].kind;
+                        if next_kind == FshSyntaxKind::Asterisk
+                            || next_kind == FshSyntaxKind::Caret
+                            || next_kind == FshSyntaxKind::InvariantKw
+                            || Self::is_definition_keyword(next_kind)
+                        {
+                            break;
+                        }
+                    }
+
                     self.add_current_token();
                     self.advance();
                 }
@@ -3127,6 +3298,14 @@ impl<'a> Parser<'a> {
             self.parse_vs_filter_value();
         }
 
+        // Optional display string after the filter value (e.g., concept is-a #123 "Display")
+        self.consume_trivia();
+        while self.at(FshSyntaxKind::String) {
+            self.add_current_token();
+            self.advance();
+            self.consume_trivia();
+        }
+
         self.builder.finish_node(); // VS_FILTER_DEFINITION
     }
 
@@ -3274,22 +3453,6 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
             }
-            RecoveryContext::Metadata => {
-                // In metadata context, skip to next metadata, rule, or definition
-                while !self.at_end()
-                    && !self.at(FshSyntaxKind::Asterisk)
-                    && !self.at_definition_keyword()
-                    && !self.is_metadata_keyword()
-                {
-                    if self.at(FshSyntaxKind::Newline) {
-                        self.add_current_token();
-                        self.advance();
-                        break;
-                    }
-                    self.add_current_token();
-                    self.advance();
-                }
-            }
             RecoveryContext::Expression => {
                 // In expression context, skip to end of expression
                 while !self.at_end()
@@ -3301,26 +3464,6 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-    }
-
-    /// Check if current token is a metadata keyword
-    fn is_metadata_keyword(&self) -> bool {
-        matches!(
-            self.current_kind(),
-            FshSyntaxKind::ParentKw
-                | FshSyntaxKind::IdKw
-                | FshSyntaxKind::TitleKw
-                | FshSyntaxKind::DescriptionKw
-                | FshSyntaxKind::InstanceofKw
-                | FshSyntaxKind::UsageKw
-                | FshSyntaxKind::ContextKw
-                | FshSyntaxKind::CharacteristicsKw
-                | FshSyntaxKind::SourceKw
-                | FshSyntaxKind::TargetKw
-                | FshSyntaxKind::SeverityKw
-                | FshSyntaxKind::XpathKw
-                | FshSyntaxKind::ExpressionKw
-        )
     }
 
     /// Validate parser state consistency after error recovery

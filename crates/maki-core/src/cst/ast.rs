@@ -120,6 +120,38 @@ fn get_ident_text(node: &FshSyntaxNode) -> Option<String> {
     token_of_kind(node, FshSyntaxKind::Ident).map(|t| t.text().trim().to_string())
 }
 
+/// Helper to get the full clause text after the first ':' (trimmed)
+fn get_clause_text_after_colon(node: &FshSyntaxNode) -> Option<String> {
+    let text = node.text().to_string();
+    let value = text
+        .find(':')
+        .map(|idx| text[idx + 1..].trim().to_string())?;
+
+    // Strip inline // comments if present (but preserve schemes like http://)
+    let cleaned = value
+        .find("//")
+        .and_then(|idx| {
+            if idx == 0 {
+                None
+            } else if let Some(prev) = value[..idx].chars().last() {
+                if prev.is_whitespace() {
+                    Some(value[..idx].trim_end().to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| value);
+
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
 /// Helper function to get string literal text (without quotes)
 fn get_string_text(node: &FshSyntaxNode) -> Option<String> {
     token_of_kind(node, FshSyntaxKind::String).map(|t| {
@@ -1441,7 +1473,8 @@ impl AstNode for ParentClause {
 
 impl ParentClause {
     pub fn value(&self) -> Option<String> {
-        get_ident_text(&self.syntax)
+        // Parent can be canonical URL; capture everything after the colon.
+        get_clause_text_after_colon(&self.syntax)
     }
 }
 
@@ -1561,8 +1594,8 @@ impl AstNode for InstanceOfClause {
 
 impl InstanceOfClause {
     pub fn value(&self) -> Option<String> {
-        // Get the identifier after "InstanceOf:"
-        get_ident_text(&self.syntax)
+        // InstanceOf may be a canonical URL; capture everything after the colon.
+        get_clause_text_after_colon(&self.syntax)
     }
 }
 
@@ -2103,6 +2136,10 @@ impl FixedValueRule {
         for child in self.syntax.children() {
             if child.kind() == FshSyntaxKind::NameValue {
                 // Extract text from NameValue node
+                let text = child.text().to_string();
+                return Some(text.trim().to_string());
+            }
+            if child.kind() == FshSyntaxKind::ReferenceValue {
                 let text = child.text().to_string();
                 return Some(text.trim().to_string());
             }
