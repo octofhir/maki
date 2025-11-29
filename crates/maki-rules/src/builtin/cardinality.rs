@@ -224,10 +224,7 @@ async fn check_profile_cardinality_conflicts(
         // Check if parent is external (not defined locally) - only then init session
         // FHIR base types start with uppercase and don't have dots
         let is_external_parent = !parent_name.contains('.')
-            && parent_name
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_uppercase());
+            && parent_name.chars().next().is_some_and(|c| c.is_uppercase());
 
         if is_external_parent {
             // Now initialize the session lazily
@@ -248,7 +245,8 @@ async fn check_profile_cardinality_conflicts(
                                 .unwrap_or_else(|| "unknown".to_string());
 
                             // Find parent element cardinality
-                            if let Some(parent_card) = find_element_cardinality(&parent_sd, &path_str)
+                            if let Some(parent_card) =
+                                find_element_cardinality(&parent_sd, &path_str)
                             {
                                 tracing::debug!(
                                     "Found parent cardinality for '{}': {}",

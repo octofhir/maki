@@ -202,8 +202,7 @@ pub async fn check_binding_strength_weakening(
 
     // Check profiles for weakening
     for profile in profiles {
-        diagnostics
-            .extend(check_profile_binding_weakening(&profile, model, lazy_session).await);
+        diagnostics.extend(check_profile_binding_weakening(&profile, model, lazy_session).await);
     }
 
     // Check extensions for weakening
@@ -238,11 +237,8 @@ async fn check_profile_binding_weakening(
     };
 
     // Check if parent is external (not defined locally) - only then init session
-    let is_external_parent = !parent_name.contains('.')
-        && parent_name
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_uppercase());
+    let is_external_parent =
+        !parent_name.contains('.') && parent_name.chars().next().is_some_and(|c| c.is_uppercase());
 
     if !is_external_parent {
         return diagnostics;

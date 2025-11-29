@@ -65,7 +65,9 @@ impl MenuGenerator {
         match value {
             // Simple link: "Home": "index.html"
             JsonValue::String(url) => {
-                format!("{spaces}<li>\n{spaces}  <a href=\"{url}\">{encoded_name}</a>\n{spaces}</li>\n")
+                format!(
+                    "{spaces}<li>\n{spaces}  <a href=\"{url}\">{encoded_name}</a>\n{spaces}</li>\n"
+                )
             }
             // Dropdown submenu: "Content": { "Page1": "url1", "Page2": "url2" }
             JsonValue::Object(submenu) => Self::build_submenu(&encoded_name, submenu, indent),
@@ -134,10 +136,7 @@ impl MenuGenerator {
                     // Check if this looks like an entity (e.g., &amp;, &lt;, etc.)
                     let remaining: String = chars.clone().take(10).collect();
                     if remaining.contains(';')
-                        && remaining
-                            .split(';')
-                            .next()
-                            .map_or(false, |entity| is_valid_entity(entity))
+                        && remaining.split(';').next().is_some_and(is_valid_entity)
                     {
                         result.push('&');
                     } else {
@@ -229,7 +228,10 @@ mod tests {
         assert_eq!(MenuGenerator::encode_menu_name("A & B"), "A &amp; B");
         assert_eq!(MenuGenerator::encode_menu_name("1 < 2"), "1 &lt; 2");
         assert_eq!(MenuGenerator::encode_menu_name("2 > 1"), "2 &gt; 1");
-        assert_eq!(MenuGenerator::encode_menu_name("Say \"Hi\""), "Say &quot;Hi&quot;");
+        assert_eq!(
+            MenuGenerator::encode_menu_name("Say \"Hi\""),
+            "Say &quot;Hi&quot;"
+        );
         assert_eq!(MenuGenerator::encode_menu_name("It's"), "It&apos;s");
     }
 
@@ -237,7 +239,10 @@ mod tests {
     fn test_preserve_existing_entities() {
         // Already escaped entities should not be double-escaped
         assert_eq!(MenuGenerator::encode_menu_name("A &amp; B"), "A &amp; B");
-        assert_eq!(MenuGenerator::encode_menu_name("&lt;tag&gt;"), "&lt;tag&gt;");
+        assert_eq!(
+            MenuGenerator::encode_menu_name("&lt;tag&gt;"),
+            "&lt;tag&gt;"
+        );
     }
 
     #[test]

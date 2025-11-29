@@ -222,47 +222,8 @@ impl ImplementationGuideGenerator {
 
         pages_map
             .iter()
-            .filter_map(|(filename, config)| self.parse_single_page(filename, config))
+            .filter_map(|(filename, config)| parse_single_page(filename, config))
             .collect()
-    }
-
-    /// Parse a single page entry
-    fn parse_single_page(&self, filename: &str, config: &JsonValue) -> Option<Page> {
-        // Determine generation type from file extension
-        let generation = if filename.ends_with(".md") {
-            "markdown"
-        } else {
-            "html"
-        };
-
-        // Convert filename to nameUrl (.md → .html, etc.)
-        let name_url = filename_to_html(filename);
-
-        // Get title from config or auto-generate from filename
-        let title = config
-            .get("title")
-            .and_then(|t| t.as_str())
-            .map(String::from)
-            .unwrap_or_else(|| generate_title_from_filename(filename));
-
-        // Parse nested pages if present
-        let subpages = config
-            .get("page")
-            .and_then(|p| p.as_object())
-            .map(|nested| {
-                nested
-                    .iter()
-                    .filter_map(|(name, cfg)| self.parse_single_page(name, cfg))
-                    .collect()
-            });
-
-        Some(Page {
-            name_url: Some(name_url),
-            name_reference: None,
-            title,
-            generation: generation.to_string(),
-            page: subpages,
-        })
     }
 
     /// Build parameters array
@@ -515,6 +476,45 @@ fn filename_to_html(filename: &str) -> String {
     }
 }
 
+/// Parse a single page entry from pages configuration
+fn parse_single_page(filename: &str, config: &JsonValue) -> Option<Page> {
+    // Determine generation type from file extension
+    let generation = if filename.ends_with(".md") {
+        "markdown"
+    } else {
+        "html"
+    };
+
+    // Convert filename to nameUrl (.md → .html, etc.)
+    let name_url = filename_to_html(filename);
+
+    // Get title from config or auto-generate from filename
+    let title = config
+        .get("title")
+        .and_then(|t| t.as_str())
+        .map(String::from)
+        .unwrap_or_else(|| generate_title_from_filename(filename));
+
+    // Parse nested pages if present
+    let subpages = config
+        .get("page")
+        .and_then(|p| p.as_object())
+        .map(|nested| {
+            nested
+                .iter()
+                .filter_map(|(name, cfg)| parse_single_page(name, cfg))
+                .collect()
+        });
+
+    Some(Page {
+        name_url: Some(name_url),
+        name_reference: None,
+        title,
+        generation: generation.to_string(),
+        page: subpages,
+    })
+}
+
 /// Generate a title from a filename using title case
 ///
 /// Examples:
@@ -530,7 +530,7 @@ fn generate_title_from_filename(filename: &str) -> String {
         .unwrap_or(filename);
 
     // Split by common separators and title-case each word
-    base.split(|c| c == '-' || c == '_')
+    base.split(['-', '_'])
         .filter(|s| !s.is_empty())
         .map(|word| {
             let mut chars = word.chars();
@@ -720,7 +720,9 @@ mod tests {
         assert_eq!(pages.len(), 3);
 
         // Find the index page
-        let index_page = pages.iter().find(|p| p.name_url == Some("index.html".to_string()));
+        let index_page = pages
+            .iter()
+            .find(|p| p.name_url == Some("index.html".to_string()));
         assert!(index_page.is_some());
         let index_page = index_page.unwrap();
         assert_eq!(index_page.title, "Home");

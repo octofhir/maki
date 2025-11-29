@@ -721,11 +721,8 @@ async fn check_profile_required_field_override(
     };
 
     // Check if parent is external (not defined locally) - only then init session
-    let is_external_parent = !parent_name.contains('.')
-        && parent_name
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_uppercase());
+    let is_external_parent =
+        !parent_name.contains('.') && parent_name.chars().next().is_some_and(|c| c.is_uppercase());
 
     if !is_external_parent {
         return diagnostics;

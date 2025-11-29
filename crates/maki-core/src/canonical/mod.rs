@@ -1339,7 +1339,9 @@ impl LazySession {
         self.session
             .get_or_try_init(|| async {
                 let config = self.config.as_ref().ok_or_else(|| {
-                    CanonicalLoaderError::Config("No config available for lazy initialization".to_string())
+                    CanonicalLoaderError::Config(
+                        "No config available for lazy initialization".to_string(),
+                    )
                 })?;
 
                 info!("Lazily initializing canonical manager session...");
@@ -1355,8 +1357,7 @@ impl LazySession {
                 let facade = CanonicalFacade::new(canonical_options).await?;
 
                 // Get FHIR versions from build config
-                let fhir_releases: Vec<FhirRelease> = if let Some(build_config) = &config.build
-                {
+                let fhir_releases: Vec<FhirRelease> = if let Some(build_config) = &config.build {
                     build_config
                         .fhir_version
                         .iter()

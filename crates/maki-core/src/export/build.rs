@@ -2367,9 +2367,9 @@ impl BuildOrchestrator {
         // Generate menu from config if available
         if let Some(ref menu_config) = self.build_config().menu {
             if let Some(menu_xml) = MenuGenerator::generate(menu_config) {
-                file_structure
-                    .write_menu_xml(&menu_xml)
-                    .map_err(|e| BuildError::ExportError(format!("Failed to write menu.xml: {}", e)))?;
+                file_structure.write_menu_xml(&menu_xml).map_err(|e| {
+                    BuildError::ExportError(format!("Failed to write menu.xml: {}", e))
+                })?;
 
                 debug!("Generated menu.xml");
             } else {
