@@ -57,10 +57,11 @@ use std::path::Path;
 /// Organization strategies for FSH files
 ///
 /// Defines how FSH files should be organized in the output directory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OrganizationStrategy {
     /// Each definition gets its own file in the root output directory
     /// Example: output/MyPatient.fsh, output/MyValueSet.fsh
+    #[default]
     FilePerDefinition,
 
     /// Group files by FSH type in subdirectories
@@ -74,12 +75,6 @@ pub enum OrganizationStrategy {
     /// All definitions in a single file
     /// Example: output/definitions.fsh (contains all exportables)
     SingleFile,
-}
-
-impl Default for OrganizationStrategy {
-    fn default() -> Self {
-        Self::FilePerDefinition
-    }
 }
 
 /// File Organizer for FSH exports
