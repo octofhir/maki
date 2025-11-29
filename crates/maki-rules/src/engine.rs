@@ -97,7 +97,8 @@ pub struct DefaultRuleEngine {
     registry: RuleRegistry,
     gritql_loader: Option<crate::gritql::GritQLRuleLoader>,
     gritql_compiler: Arc<GritQLCompiler>,
-    session: Option<Arc<maki_core::canonical::DefinitionSession>>,
+    /// Session for FHIR resource resolution - supports both lazy and eager initialization
+    lazy_session: Option<Arc<maki_core::LazySession>>,
     /// Global registry of all ValueSet names defined across all project files.
     /// Used by `binding-without-valueset` rule to check cross-file references.
     global_valueset_registry: HashSet<String>,
@@ -311,7 +312,7 @@ impl DefaultRuleEngine {
             registry: RuleRegistry::new(),
             gritql_loader: None,
             gritql_compiler: Arc::new(compiler),
-            session: None,
+            lazy_session: None,
             global_valueset_registry: HashSet::new(),
         }
     }
@@ -327,7 +328,7 @@ impl DefaultRuleEngine {
             registry: RuleRegistry::with_config(config),
             gritql_loader: None,
             gritql_compiler: Arc::new(compiler),
-            session: None,
+            lazy_session: None,
             global_valueset_registry: HashSet::new(),
         }
     }
@@ -356,7 +357,7 @@ impl DefaultRuleEngine {
             registry: RuleRegistry::new(),
             gritql_loader: Some(gritql_loader),
             gritql_compiler: Arc::new(compiler),
-            session: None,
+            lazy_session: None,
             global_valueset_registry: HashSet::new(),
         })
     }
@@ -686,7 +687,7 @@ impl DefaultRuleEngine {
                     diagnostics.extend(
                         crate::builtin::cardinality::check_cardinality_conflicts(
                             model,
-                            self.session.as_ref().map(|s| s.as_ref()),
+                            self.get_lazy_session(),
                         )
                         .await,
                     );
@@ -710,7 +711,7 @@ impl DefaultRuleEngine {
                     diagnostics.extend(
                         crate::builtin::binding::check_binding_strength_weakening(
                             model,
-                            self.session.as_ref().map(|s| s.as_ref()),
+                            self.get_lazy_session(),
                         )
                         .await,
                     );
@@ -761,7 +762,7 @@ impl DefaultRuleEngine {
                     diagnostics.extend(
                         crate::builtin::required_fields::check_required_field_override(
                             model,
-                            self.session.as_ref().map(|s| s.as_ref()),
+                            self.get_lazy_session(),
                         )
                         .await,
                     );
@@ -1021,9 +1022,30 @@ impl DefaultRuleEngine {
         self.registry.discovery_config.precedence = precedence;
     }
 
-    /// Set the canonical manager session for FHIR resource resolution
+    /// Set the canonical manager session for FHIR resource resolution.
+    ///
+    /// This accepts an already-initialized session (for build command) and wraps
+    /// it in a LazySession for consistent access.
     pub fn set_session(&mut self, session: Arc<maki_core::canonical::DefinitionSession>) {
-        self.session = Some(session);
+        self.lazy_session = Some(Arc::new(maki_core::LazySession::from_session(session)));
+    }
+
+    /// Set a lazy session for deferred canonical manager initialization.
+    ///
+    /// This is the preferred method for lint commands where session creation is expensive
+    /// (~2s) and may not be needed by all rules. The session will only be initialized
+    /// when a rule actually needs parent profile resolution.
+    pub fn set_lazy_session(&mut self, lazy_session: Arc<maki_core::LazySession>) {
+        self.lazy_session = Some(lazy_session);
+    }
+
+    /// Get the lazy session without triggering initialization.
+    ///
+    /// This allows rules to decide when to actually initialize the session.
+    /// Rules should call `lazy_session.get().await` only when they actually
+    /// need parent resolution.
+    fn get_lazy_session(&self) -> Option<&Arc<maki_core::LazySession>> {
+        self.lazy_session.as_ref()
     }
 
     /// Set the global ValueSet registry for cross-file reference checking

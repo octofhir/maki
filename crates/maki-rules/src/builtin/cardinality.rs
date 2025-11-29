@@ -171,11 +171,12 @@ pub fn check_cardinality(model: &SemanticModel) -> Vec<Diagnostic> {
 /// Check cardinality conflicts against parent (Phase 2: Semantic validation)
 /// This function validates cardinality patterns that often indicate conflicts.
 ///
-/// When a DefinitionSession is provided (via the rule engine), it will validate
+/// When a LazySession is provided (via the rule engine), it will validate
 /// against actual FHIR parent definitions. Otherwise, it performs pattern-based validation.
+/// The session is only initialized when a profile with external parent is encountered.
 pub async fn check_cardinality_conflicts(
     model: &SemanticModel,
-    session: Option<&maki_core::canonical::DefinitionSession>,
+    lazy_session: Option<&std::sync::Arc<maki_core::LazySession>>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -187,7 +188,8 @@ pub async fn check_cardinality_conflicts(
     let profiles: Vec<_> = document.profiles().collect();
 
     for profile in profiles {
-        diagnostics.extend(check_profile_cardinality_conflicts(&profile, model, session).await);
+        diagnostics
+            .extend(check_profile_cardinality_conflicts(&profile, model, lazy_session).await);
     }
 
     diagnostics
@@ -197,7 +199,7 @@ pub async fn check_cardinality_conflicts(
 async fn check_profile_cardinality_conflicts(
     profile: &maki_core::cst::ast::Profile,
     model: &SemanticModel,
-    session: Option<&maki_core::canonical::DefinitionSession>,
+    lazy_session: Option<&std::sync::Arc<maki_core::LazySession>>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -214,62 +216,85 @@ async fn check_profile_cardinality_conflicts(
         })
         .collect();
 
-    // If we have a session and parent, try to resolve parent cardinality
-    if let Some(session) = session
+    // Only initialize session if we have a parent to resolve
+    if let Some(lazy_session) = lazy_session
         && let Some(parent) = profile.parent()
         && let Some(parent_name) = parent.value()
     {
-        // Resolve parent StructureDefinition asynchronously
-        if let Ok(Some(parent_sd)) = session.resolve_structure_definition(&parent_name).await {
-            // Check each cardinality rule against parent
-            for (rule, cardinality_text, text_range) in card_rules {
-                if let Some(child_card) = Cardinality::from_str(&cardinality_text) {
-                    // Get element path
-                    let path_str = rule
-                        .path()
-                        .map(|p| p.syntax().text().to_string())
-                        .unwrap_or_else(|| "unknown".to_string());
+        // Check if parent is external (not defined locally) - only then init session
+        // FHIR base types start with uppercase and don't have dots
+        let is_external_parent = !parent_name.contains('.')
+            && parent_name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_uppercase());
 
-                    // Find parent element cardinality
-                    if let Some(parent_card) = find_element_cardinality(&parent_sd, &path_str) {
-                        // Check if child violates parent constraints
-                        if !child_card.is_valid_refinement(&parent_card) {
-                            let span = text_range.start().into()..text_range.end().into();
-                            let location = model.source_map.span_to_diagnostic_location(
-                                &span,
-                                &model.source,
-                                &model.source_file,
-                            );
+        if is_external_parent {
+            // Now initialize the session lazily
+            if let Ok(session) = lazy_session.get().await {
+                // Construct canonical URL for FHIR base types
+                let canonical_url =
+                    format!("http://hl7.org/fhir/StructureDefinition/{}", parent_name);
+                if let Ok(Some(parent_sd)) =
+                    session.resolve_structure_definition(&canonical_url).await
+                {
+                    // Check each cardinality rule against parent
+                    for (rule, cardinality_text, text_range) in card_rules {
+                        if let Some(child_card) = Cardinality::from_str(&cardinality_text) {
+                            // Get element path
+                            let path_str = rule
+                                .path()
+                                .map(|p| p.syntax().text().to_string())
+                                .unwrap_or_else(|| "unknown".to_string());
 
-                            diagnostics.push(
-                                Diagnostic::new(
-                                    CARDINALITY_CONFLICTS,
-                                    Severity::Error,
-                                    format!(
-                                        "Cardinality {} for element '{}' conflicts with parent '{}' cardinality {}",
-                                        child_card.as_string(),
-                                        path_str,
-                                        parent_name,
-                                        parent_card.as_string()
-                                    ),
-                                    location,
-                                )
-                                .with_code("cardinality-conflict".to_string()),
-                            );
+                            // Find parent element cardinality
+                            if let Some(parent_card) = find_element_cardinality(&parent_sd, &path_str)
+                            {
+                                tracing::debug!(
+                                    "Found parent cardinality for '{}': {}",
+                                    path_str,
+                                    parent_card.as_string()
+                                );
+                                // Check if child violates parent constraints
+                                if !child_card.is_valid_refinement(&parent_card) {
+                                    let span = text_range.start().into()..text_range.end().into();
+                                    let location = model.source_map.span_to_diagnostic_location(
+                                        &span,
+                                        &model.source,
+                                        &model.source_file,
+                                    );
+
+                                    diagnostics.push(
+                                        Diagnostic::new(
+                                            CARDINALITY_CONFLICTS,
+                                            Severity::Error,
+                                            format!(
+                                                "Cardinality {} for element '{}' conflicts with parent '{}' cardinality {}",
+                                                child_card.as_string(),
+                                                path_str,
+                                                parent_name,
+                                                parent_card.as_string()
+                                            ),
+                                            location,
+                                        )
+                                        .with_code("cardinality-conflict".to_string()),
+                                    );
+                                }
+                            } else {
+                                // No parent cardinality found - use heuristic pattern detection
+                                let span = text_range.start().into()..text_range.end().into();
+                                let location = model.source_map.span_to_diagnostic_location(
+                                    &span,
+                                    &model.source,
+                                    &model.source_file,
+                                );
+                                diagnostics.extend(detect_conflict_patterns(&child_card, location));
+                            }
                         }
-                    } else {
-                        // No parent cardinality found - use heuristic pattern detection
-                        let span = text_range.start().into()..text_range.end().into();
-                        let location = model.source_map.span_to_diagnostic_location(
-                            &span,
-                            &model.source,
-                            &model.source_file,
-                        );
-                        diagnostics.extend(detect_conflict_patterns(&child_card, location));
                     }
+                    return diagnostics;
                 }
             }
-            return diagnostics;
         }
     }
 

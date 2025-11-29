@@ -714,6 +714,12 @@ impl BuildOrchestrator {
                 info!("  ✓ ImplementationGuide resource");
             }
 
+            // Generate menu.xml (if configured and not user-provided)
+            self.generate_menu(&file_structure)?;
+            if self.options.show_progress && self.build_config().menu.is_some() {
+                info!("  ✓ menu.xml");
+            }
+
             // Write package.json
             self.write_package_json(&file_structure)?;
             if self.options.show_progress {
@@ -2322,6 +2328,55 @@ impl BuildOrchestrator {
             .map_err(|e| BuildError::ExportError(format!("Failed to write IG: {}", e)))?;
 
         debug!("Generated ImplementationGuide: {}", filename);
+        Ok(())
+    }
+
+    /// Generate menu.xml from configuration
+    ///
+    /// Follows SUSHI's behavior:
+    /// 1. If user provides input/includes/menu.xml, use that (skip generation)
+    /// 2. If config.menu is defined, generate menu.xml to fsh-generated/includes/
+    /// 3. If neither, do nothing (no menu)
+    fn generate_menu(
+        &self,
+        file_structure: &FileStructureGenerator,
+    ) -> std::result::Result<(), BuildError> {
+        // Check for user-provided menu.xml
+        let input_parent = self
+            .options
+            .input_dir
+            .parent()
+            .unwrap_or(&self.options.input_dir);
+        let user_menu_path = input_parent.join("includes").join("menu.xml");
+
+        if user_menu_path.exists() {
+            debug!("Using user-provided menu.xml from {:?}", user_menu_path);
+
+            // Warn if config.menu is also defined
+            if self.build_config().menu.is_some() {
+                warn!(
+                    "Config has 'menu' defined, but user-provided menu.xml found at {:?}. \
+                     Using user-provided file; ignoring config.menu.",
+                    user_menu_path
+                );
+            }
+
+            return Ok(());
+        }
+
+        // Generate menu from config if available
+        if let Some(ref menu_config) = self.build_config().menu {
+            if let Some(menu_xml) = MenuGenerator::generate(menu_config) {
+                file_structure
+                    .write_menu_xml(&menu_xml)
+                    .map_err(|e| BuildError::ExportError(format!("Failed to write menu.xml: {}", e)))?;
+
+                debug!("Generated menu.xml");
+            } else {
+                debug!("Menu config present but empty or invalid, skipping menu.xml generation");
+            }
+        }
+
         Ok(())
     }
 

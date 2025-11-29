@@ -189,26 +189,80 @@ impl ImplementationGuideGenerator {
 
     /// Build pages structure
     fn build_pages(&self) -> Page {
-        if let Some(ref _pages) = self.config.pages {
-            // Custom pages configuration (simplified - just use default for now)
-            // TODO: Parse pages tree structure properly
-            Page {
-                name_url: Some("toc.html".to_string()),
-                name_reference: None,
-                title: "Table of Contents".to_string(),
-                generation: "html".to_string(),
-                page: Some(vec![]),
-            }
-        } else {
-            // Default page structure
-            Page {
-                name_url: Some("toc.html".to_string()),
-                name_reference: None,
-                title: "Table of Contents".to_string(),
-                generation: "html".to_string(),
-                page: Some(vec![]), // Will be populated with index page
-            }
+        // Root page is always toc.html
+        let mut root = Page {
+            name_url: Some("toc.html".to_string()),
+            name_reference: None,
+            title: "Table of Contents".to_string(),
+            generation: "html".to_string(),
+            page: Some(vec![]),
+        };
+
+        if let Some(ref pages_config) = self.config.pages {
+            root.page = Some(self.parse_pages_config(pages_config));
         }
+
+        root
+    }
+
+    /// Parse pages configuration from sushi-config.yaml
+    ///
+    /// Handles the map format used by SUSHI:
+    /// ```yaml
+    /// pages:
+    ///   index.md:
+    ///     title: Home
+    ///   group-patient.md:
+    ///     title: Patient Information
+    /// ```
+    fn parse_pages_config(&self, pages: &JsonValue) -> Vec<Page> {
+        let Some(pages_map) = pages.as_object() else {
+            return vec![];
+        };
+
+        pages_map
+            .iter()
+            .filter_map(|(filename, config)| self.parse_single_page(filename, config))
+            .collect()
+    }
+
+    /// Parse a single page entry
+    fn parse_single_page(&self, filename: &str, config: &JsonValue) -> Option<Page> {
+        // Determine generation type from file extension
+        let generation = if filename.ends_with(".md") {
+            "markdown"
+        } else {
+            "html"
+        };
+
+        // Convert filename to nameUrl (.md → .html, etc.)
+        let name_url = filename_to_html(filename);
+
+        // Get title from config or auto-generate from filename
+        let title = config
+            .get("title")
+            .and_then(|t| t.as_str())
+            .map(String::from)
+            .unwrap_or_else(|| generate_title_from_filename(filename));
+
+        // Parse nested pages if present
+        let subpages = config
+            .get("page")
+            .and_then(|p| p.as_object())
+            .map(|nested| {
+                nested
+                    .iter()
+                    .filter_map(|(name, cfg)| self.parse_single_page(name, cfg))
+                    .collect()
+            });
+
+        Some(Page {
+            name_url: Some(name_url),
+            name_reference: None,
+            title,
+            generation: generation.to_string(),
+            page: subpages,
+        })
     }
 
     /// Build parameters array
@@ -427,7 +481,7 @@ pub struct Reference {
     pub display: Option<String>,
 }
 
-/// Page definition
+/// Page definition for IG output
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Page {
@@ -442,7 +496,51 @@ pub struct Page {
     pub generation: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub page: Option<Vec<crate::config::PageDefinition>>,
+    pub page: Option<Vec<Page>>,
+}
+
+/// Convert a page filename to HTML URL
+///
+/// Examples:
+/// - `index.md` → `index.html`
+/// - `group-patient.md` → `group-patient.html`
+/// - `artifacts.html` → `artifacts.html`
+fn filename_to_html(filename: &str) -> String {
+    if let Some(base) = filename.strip_suffix(".md") {
+        format!("{base}.html")
+    } else if let Some(base) = filename.strip_suffix(".xml") {
+        format!("{base}.html")
+    } else {
+        filename.to_string()
+    }
+}
+
+/// Generate a title from a filename using title case
+///
+/// Examples:
+/// - `group-patient.md` → `Group Patient`
+/// - `conformance-general.md` → `Conformance General`
+/// - `index.md` → `Index`
+fn generate_title_from_filename(filename: &str) -> String {
+    // Remove extension
+    let base = filename
+        .strip_suffix(".md")
+        .or_else(|| filename.strip_suffix(".xml"))
+        .or_else(|| filename.strip_suffix(".html"))
+        .unwrap_or(filename);
+
+    // Split by common separators and title-case each word
+    base.split(|c| c == '-' || c == '_')
+        .filter(|s| !s.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
@@ -573,5 +671,83 @@ mod tests {
         assert_eq!(grouping.len(), 1);
         assert_eq!(grouping[0].id, "profiles");
         assert_eq!(grouping[0].name, "Profiles");
+    }
+
+    #[test]
+    fn test_filename_to_html() {
+        assert_eq!(filename_to_html("index.md"), "index.html");
+        assert_eq!(filename_to_html("group-patient.md"), "group-patient.html");
+        assert_eq!(filename_to_html("artifacts.html"), "artifacts.html");
+        assert_eq!(filename_to_html("page.xml"), "page.html");
+    }
+
+    #[test]
+    fn test_generate_title_from_filename() {
+        assert_eq!(generate_title_from_filename("index.md"), "Index");
+        assert_eq!(
+            generate_title_from_filename("group-patient.md"),
+            "Group Patient"
+        );
+        assert_eq!(
+            generate_title_from_filename("conformance-general.md"),
+            "Conformance General"
+        );
+        assert_eq!(
+            generate_title_from_filename("some_file_name.html"),
+            "Some File Name"
+        );
+    }
+
+    #[test]
+    fn test_pages_parsing() {
+        let mut config = minimal_config();
+        config.pages = Some(serde_json::json!({
+            "index.md": {
+                "title": "Home"
+            },
+            "group-patient.md": {
+                "title": "Patient Information"
+            },
+            "artifacts.html": {
+                "title": "Artifacts Summary"
+            }
+        }));
+
+        let generator = ImplementationGuideGenerator::new(config);
+        let ig = generator.generate();
+
+        let pages = ig.definition.page.page.unwrap();
+        assert_eq!(pages.len(), 3);
+
+        // Find the index page
+        let index_page = pages.iter().find(|p| p.name_url == Some("index.html".to_string()));
+        assert!(index_page.is_some());
+        let index_page = index_page.unwrap();
+        assert_eq!(index_page.title, "Home");
+        assert_eq!(index_page.generation, "markdown");
+
+        // Find the artifacts page (already .html)
+        let artifacts_page = pages
+            .iter()
+            .find(|p| p.name_url == Some("artifacts.html".to_string()));
+        assert!(artifacts_page.is_some());
+        let artifacts_page = artifacts_page.unwrap();
+        assert_eq!(artifacts_page.title, "Artifacts Summary");
+        assert_eq!(artifacts_page.generation, "html");
+    }
+
+    #[test]
+    fn test_pages_auto_title() {
+        let mut config = minimal_config();
+        config.pages = Some(serde_json::json!({
+            "group-patient.md": {}
+        }));
+
+        let generator = ImplementationGuideGenerator::new(config);
+        let ig = generator.generate();
+
+        let pages = ig.definition.page.page.unwrap();
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].title, "Group Patient");
     }
 }

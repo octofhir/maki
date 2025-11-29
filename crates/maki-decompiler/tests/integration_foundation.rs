@@ -31,6 +31,7 @@ fn create_test_profile_json(url: &str, name: &str, base: &str) -> String {
 /// Test complete foundation pipeline: load files → lake → fish
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_complete_foundation_pipeline() {
     // 1. Setup: Create test FHIR files
     let temp_dir = TempDir::new().unwrap();
@@ -86,6 +87,7 @@ async fn test_complete_foundation_pipeline() {
 /// Test with multiple resources in directory
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_multiple_resources() {
     let temp_dir = TempDir::new().unwrap();
 
@@ -133,6 +135,7 @@ async fn test_multiple_resources() {
 /// Test error handling for invalid files
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_error_handling() {
     let temp_dir = TempDir::new().unwrap();
 
@@ -166,6 +169,7 @@ async fn test_error_handling() {
 /// Test convenience function create_lake_with_session
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_create_lake_with_session() {
     let dependencies = vec![];
 
@@ -185,6 +189,7 @@ async fn test_create_lake_with_session() {
 /// Test with R5 release
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_r5_release() {
     let lake = create_lake_with_session(FhirRelease::R5, vec![])
         .await

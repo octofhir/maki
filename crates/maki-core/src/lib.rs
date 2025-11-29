@@ -34,7 +34,7 @@ pub use cache::{
 };
 pub use canonical::{
     CanonicalFacade, CanonicalLoaderError, CanonicalOptions, CanonicalResult, DefinitionResource,
-    DefinitionSession, FhirRelease, PackageCoordinate, create_default_maki_config,
+    DefinitionSession, FhirRelease, LazySession, PackageCoordinate, create_default_maki_config,
 };
 // Re-export fishable types for convenience
 pub use canonical::fishable::{FhirMetadata, FhirType, Fishable};

@@ -675,10 +675,11 @@ pub fn check_profile_without_examples(model: &SemanticModel) -> Vec<Diagnostic> 
 }
 
 /// Check for required field overrides (child making required fields optional)
-/// This requires FHIR definitions to be loaded via DefinitionSession
+/// This requires FHIR definitions to be loaded via LazySession.
+/// The session is only initialized when profiles with external parents are found.
 pub async fn check_required_field_override(
     model: &SemanticModel,
-    session: Option<&maki_core::canonical::DefinitionSession>,
+    lazy_session: Option<&std::sync::Arc<maki_core::LazySession>>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -686,8 +687,8 @@ pub async fn check_required_field_override(
         return diagnostics;
     };
 
-    // If no session, we can't look up FHIR definitions - skip this rule
-    let Some(session) = session else {
+    // If no lazy session, we can't look up FHIR definitions - skip this rule
+    let Some(lazy_session) = lazy_session else {
         return diagnostics;
     };
 
@@ -695,7 +696,8 @@ pub async fn check_required_field_override(
     let profiles: Vec<_> = document.profiles().collect();
 
     for profile in profiles {
-        diagnostics.extend(check_profile_required_field_override(&profile, model, session).await);
+        diagnostics
+            .extend(check_profile_required_field_override(&profile, model, lazy_session).await);
     }
 
     diagnostics
@@ -705,7 +707,7 @@ pub async fn check_required_field_override(
 async fn check_profile_required_field_override(
     profile: &maki_core::cst::ast::Profile,
     model: &SemanticModel,
-    session: &maki_core::canonical::DefinitionSession,
+    lazy_session: &std::sync::Arc<maki_core::LazySession>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -717,6 +719,17 @@ async fn check_profile_required_field_override(
     let Some(parent_name) = parent.value() else {
         return diagnostics;
     };
+
+    // Check if parent is external (not defined locally) - only then init session
+    let is_external_parent = !parent_name.contains('.')
+        && parent_name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_uppercase());
+
+    if !is_external_parent {
+        return diagnostics;
+    }
 
     // Collect all cardinality rules and their data before any async operations
     let card_rules: Vec<_> = profile
@@ -732,8 +745,17 @@ async fn check_profile_required_field_override(
         })
         .collect();
 
+    // Initialize session lazily only when we actually need to resolve parent
+    let session = match lazy_session.get().await {
+        Ok(s) => s,
+        Err(_) => return diagnostics,
+    };
+
+    // Construct canonical URL for FHIR base types
+    let canonical_url = format!("http://hl7.org/fhir/StructureDefinition/{}", parent_name);
+
     // Resolve parent StructureDefinition asynchronously
-    let Ok(Some(parent_sd)) = session.resolve_structure_definition(&parent_name).await else {
+    let Ok(Some(parent_sd)) = session.resolve_structure_definition(&canonical_url).await else {
         return diagnostics;
     };
 

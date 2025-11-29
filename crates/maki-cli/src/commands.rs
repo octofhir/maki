@@ -15,13 +15,12 @@ pub mod config;
 pub mod gofsh;
 pub mod init;
 
-use maki_core::config::{DependencyVersion, UnifiedConfig};
+use maki_core::config::UnifiedConfig;
 use maki_core::{
-    AstFormatter, AutofixEngine, CachedFshParser, CanonicalFacade, CanonicalOptions, ConfigLoader,
-    DefaultAutofixEngine, DefaultExecutor, DefaultFileDiscovery, DefaultSemanticAnalyzer,
-    DefinitionSession, ExecutionContext, Executor, FhirRelease, FileDiscovery, FixConfig,
-    FormatterConfiguration, PackageCoordinate, Result, Rule, RuleCategory, RuleEngine,
-    RuleMetadata, create_default_maki_config,
+    AstFormatter, AutofixEngine, CachedFshParser, ConfigLoader, DefaultAutofixEngine,
+    DefaultExecutor, DefaultFileDiscovery, DefaultSemanticAnalyzer, ExecutionContext, Executor,
+    FileDiscovery, FixConfig, FormatterConfiguration, Result, Rule, RuleCategory, RuleEngine,
+    RuleMetadata,
 };
 use maki_rules::gritql::GritQLRuleLoader;
 use maki_rules::{BuiltinRules, DefaultRuleEngine};
@@ -51,29 +50,49 @@ pub async fn lint_command(
 ) -> Result<()> {
     debug!("Running lint command on paths: {:?}", paths);
 
-    // Load configuration
-    let mut config = if let Some(path) = config_path {
-        ConfigLoader::load_from_file(&path)?
+    // Determine the starting path for config discovery
+    let start_path = if let Some(ref path) = config_path {
+        path.parent().unwrap_or(Path::new("."))
+    } else if !paths.is_empty() && paths[0].is_file() {
+        match paths[0].parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent,
+            _ => Path::new("."),
+        }
+    } else if !paths.is_empty() {
+        &paths[0]
     } else {
-        // Auto-discover config or use default
-        let start_path = if !paths.is_empty() && paths[0].is_file() {
-            // Get parent directory of the file, or current directory if no parent
-            match paths[0].parent() {
-                Some(parent) if !parent.as_os_str().is_empty() => parent,
-                _ => std::path::Path::new("."),
-            }
-        } else if !paths.is_empty() {
-            &paths[0]
-        } else {
-            std::path::Path::new(".")
-        };
+        Path::new(".")
+    };
 
+    // Load configuration and track what was found
+    let (mut config, config_source) = if let Some(path) = config_path.clone() {
+        let cfg = ConfigLoader::load_from_file(&path)?;
+        (cfg, Some(path))
+    } else {
+        // Auto-discover config
         if let Some(discovered_path) = ConfigLoader::auto_discover(start_path)? {
-            ConfigLoader::load_from_file(&discovered_path)?
+            let cfg = ConfigLoader::load_from_file(&discovered_path)?;
+            (cfg, Some(discovered_path))
         } else {
-            UnifiedConfig::default()
+            // No config found - check if we should suggest migration or init
+            let sushi_config_exists = start_path.join("sushi-config.yaml").exists()
+                || start_path.join("sushi-config.yml").exists();
+
+            if sushi_config_exists {
+                println!(
+                    "\x1b[33m⚠\x1b[0m  Found sushi-config.yaml but no maki config. Run \x1b[36mmaki config migrate\x1b[0m to migrate."
+                );
+            } else {
+                debug!("No config found. Using defaults. Run `maki config init` to create one.");
+            }
+            (UnifiedConfig::default(), None)
         }
     };
+
+    // Show which config is being used
+    if let Some(ref path) = config_source {
+        info!("Using config: {}", path.display());
+    }
 
     // Apply CLI overrides to configuration
     if !include.is_empty() {
@@ -87,90 +106,14 @@ pub async fn lint_command(
 
     let start_time = Instant::now();
 
-    // Step 1: Set up canonical manager if dependencies exist (top-level or build config)
-    // Note: session is prepared but not yet passed to rules - future enhancement
-    let _session: Option<Arc<DefinitionSession>> = if config.dependencies.is_some()
+    // Create lazy session for rules that need parent resolution
+    // Session will only be initialized if a rule actually needs it
+    let config_arc = Arc::new(config.clone());
+    let lazy_session = if config.dependencies.is_some()
         || (config.build.is_some() && config.build.as_ref().unwrap().dependencies.is_some())
     {
-        info!("Setting up FHIR package dependencies from configuration...");
-
-        // Create canonical facade with standard MAKI config (uses ~/.maki storage)
-        let canonical_options = CanonicalOptions {
-            config: Some(create_default_maki_config(false)), // Metrics disabled for lint
-            quick_init: true,
-            ..Default::default()
-        };
-
-        let facade = CanonicalFacade::new(canonical_options).await.map_err(|e| {
-            maki_core::MakiError::ConfigError {
-                message: format!("Failed to create CanonicalFacade: {}", e),
-            }
-        })?;
-
-        // Get FHIR versions from build config
-        let fhir_releases: Vec<FhirRelease> = if let Some(build_config) = &config.build {
-            build_config
-                .fhir_version
-                .iter()
-                .filter_map(|v| match v.as_str() {
-                    "4.0.1" => Some(FhirRelease::R4),
-                    "4.3.0" => Some(FhirRelease::R4B),
-                    "5.0.0" => Some(FhirRelease::R5),
-                    _ => {
-                        error!("Unsupported FHIR version: {}", v);
-                        None
-                    }
-                })
-                .collect()
-        } else {
-            // Default to R4 if no build config
-            vec![FhirRelease::R4]
-        };
-
-        if fhir_releases.is_empty() {
-            error!("No valid FHIR versions found in configuration, using R4 as default");
-        }
-
-        let fhir_releases = if fhir_releases.is_empty() {
-            vec![FhirRelease::R4]
-        } else {
-            fhir_releases
-        };
-
-        // Create session
-        let session = Arc::new(facade.session(fhir_releases.clone()).await.map_err(|e| {
-            maki_core::MakiError::ConfigError {
-                message: format!("Failed to create DefinitionSession: {}", e),
-            }
-        })?);
-
-        // Get all dependencies (top-level takes precedence over build section)
-        let all_deps = config.all_dependencies();
-
-        if !all_deps.is_empty() {
-            let coords: Vec<PackageCoordinate> = all_deps
-                .iter()
-                .map(|(name, dep_version)| {
-                    let version = match dep_version {
-                        DependencyVersion::Simple(v) => v.clone(),
-                        DependencyVersion::Complex { version, .. } => version.clone(),
-                    };
-                    PackageCoordinate::new(name, version)
-                })
-                .collect();
-
-            info!("Installing {} FHIR package dependencies...", coords.len());
-            session.ensure_packages(coords).await.map_err(|e| {
-                maki_core::MakiError::ConfigError {
-                    message: format!("Failed to install FHIR packages: {}", e),
-                }
-            })?;
-            info!("✓ Dependencies installed successfully");
-        }
-
-        Some(session)
+        Some(Arc::new(maki_core::LazySession::new(config_arc.clone())))
     } else {
-        debug!("No dependencies found in configuration, skipping FHIR package setup");
         None
     };
 
@@ -245,10 +188,10 @@ pub async fn lint_command(
     // Create rule engine
     let mut rule_engine = DefaultRuleEngine::new();
 
-    // Set the canonical manager session if available
-    if let Some(session) = &_session {
-        rule_engine.set_session(session.clone());
-        info!("Canonical manager session configured for rule engine");
+    // Set lazy session for rules that need parent resolution
+    if let Some(lazy) = lazy_session {
+        rule_engine.set_lazy_session(lazy);
+        debug!("Lazy session configured - will initialize on first use");
     }
 
     // Collect and compile all built-in rules

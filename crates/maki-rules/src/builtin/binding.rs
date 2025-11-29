@@ -184,10 +184,11 @@ fn check_value_set_bindings_required(
 }
 
 /// Check for binding strength weakening (child using weaker strength than parent)
-/// This requires FHIR definitions to be loaded via DefinitionSession
+/// This requires FHIR definitions to be loaded via LazySession.
+/// The session is only initialized when profiles with external parents are found.
 pub async fn check_binding_strength_weakening(
     model: &SemanticModel,
-    session: Option<&maki_core::canonical::DefinitionSession>,
+    lazy_session: Option<&std::sync::Arc<maki_core::LazySession>>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -201,12 +202,14 @@ pub async fn check_binding_strength_weakening(
 
     // Check profiles for weakening
     for profile in profiles {
-        diagnostics.extend(check_profile_binding_weakening(&profile, model, session).await);
+        diagnostics
+            .extend(check_profile_binding_weakening(&profile, model, lazy_session).await);
     }
 
     // Check extensions for weakening
     for extension in extensions {
-        diagnostics.extend(check_extension_binding_weakening(&extension, model, session).await);
+        diagnostics
+            .extend(check_extension_binding_weakening(&extension, model, lazy_session).await);
     }
 
     diagnostics
@@ -216,7 +219,7 @@ pub async fn check_binding_strength_weakening(
 async fn check_profile_binding_weakening(
     profile: &Profile,
     model: &SemanticModel,
-    session: Option<&maki_core::canonical::DefinitionSession>,
+    lazy_session: Option<&std::sync::Arc<maki_core::LazySession>>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -229,10 +232,21 @@ async fn check_profile_binding_weakening(
         return diagnostics;
     };
 
-    // If no session, we can't look up FHIR definitions - skip this rule
-    let Some(session) = session else {
+    // If no lazy session, we can't look up FHIR definitions - skip this rule
+    let Some(lazy_session) = lazy_session else {
         return diagnostics;
     };
+
+    // Check if parent is external (not defined locally) - only then init session
+    let is_external_parent = !parent_name.contains('.')
+        && parent_name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_uppercase());
+
+    if !is_external_parent {
+        return diagnostics;
+    }
 
     // Collect all binding information first to avoid holding CST iterators across await
     let mut bindings = Vec::new();
@@ -259,8 +273,17 @@ async fn check_profile_binding_weakening(
         }
     }
 
+    // Initialize session lazily only when we actually need to resolve parent
+    let session = match lazy_session.get().await {
+        Ok(s) => s,
+        Err(_) => return diagnostics,
+    };
+
+    // Construct canonical URL for FHIR base types
+    let canonical_url = format!("http://hl7.org/fhir/StructureDefinition/{}", parent_name);
+
     // Now do async lookup - no CST references held
-    if let Ok(Some(parent_sd)) = session.resolve_structure_definition(&parent_name).await {
+    if let Ok(Some(parent_sd)) = session.resolve_structure_definition(&canonical_url).await {
         for (child_strength, path_str, text_range) in bindings {
             // Find the element in parent that matches this path
             if let Some(parent_binding_strength) =
@@ -302,7 +325,7 @@ async fn check_profile_binding_weakening(
 async fn check_extension_binding_weakening(
     _extension: &Extension,
     _model: &SemanticModel,
-    _session: Option<&maki_core::canonical::DefinitionSession>,
+    _lazy_session: Option<&std::sync::Arc<maki_core::LazySession>>,
 ) -> Vec<Diagnostic> {
     // Extensions typically define their own bindings, so weakening is less relevant
     // However, if an extension extends another extension, this should be checked
