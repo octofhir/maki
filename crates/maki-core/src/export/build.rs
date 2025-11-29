@@ -603,10 +603,27 @@ impl BuildOrchestrator {
             tank.write().await.add_resource(fhir_resource);
         }
 
+        // Add instances to tank - CRITICAL for reference resolution
+        // Without this, fishing context cannot find instance definitions,
+        // and reference type lookup falls back to potentially wrong canonical types
+        for tracked in &resources.instances {
+            let source_text = parsed_files
+                .iter()
+                .find(|(path, _)| path == &tracked.source_file)
+                .map(|(_, root)| root.text().to_string())
+                .unwrap_or_default();
+
+            let fhir_resource = analyzer.build_instance_resource(
+                &tracked.resource,
+                &source_text,
+                &tracked.source_file,
+            );
+            tank.write().await.add_resource(fhir_resource);
+        }
+
         let tank_count = tank.read().await.all_resources().len();
         info!("  ✓ Added {} resources to Tank", tank_count);
 
-        // === PHASE 1: Expand RuleSets ===
         if self.options.show_progress {
             info!("🔄 Phase 1: Expanding RuleSets...");
         }
@@ -635,7 +652,6 @@ impl BuildOrchestrator {
 
         let ruleset_expander: Arc<RuleSetExpander> = Arc::new(ruleset_processor.into_expander());
 
-        // === PHASE 2: Export Resources ===
         if self.options.show_progress {
             info!("📦 Phase 2: Exporting resources...");
         }
@@ -676,7 +692,6 @@ impl BuildOrchestrator {
         )
         .await?;
 
-        // === PHASE 3: Apply Deferred Rules ===
         if !self.deferred_rules.is_empty() {
             if self.options.show_progress {
                 info!("🔗 Phase 3: Resolving circular dependencies...");
@@ -1789,7 +1804,10 @@ impl BuildOrchestrator {
                                     "Failed to export Bundle instance {} (pass 1b): {}",
                                     instance_name, e
                                 );
-                                eprintln!("Bundle instance export failed: {} -> {}", instance_name, e);
+                                eprintln!(
+                                    "Bundle instance export failed: {} -> {}",
+                                    instance_name, e
+                                );
                                 error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                             }
                         }

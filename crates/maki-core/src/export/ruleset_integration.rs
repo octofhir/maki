@@ -73,7 +73,7 @@ impl RuleSetProcessor {
     fn extract_rulesets_from_document(
         &mut self,
         document: &Document,
-        file_path: &PathBuf,
+        file_path: &std::path::Path,
     ) -> Result<(), RuleSetIntegrationError> {
         for rs in document.rule_sets() {
             let Some(name) = rs.name() else {
@@ -88,7 +88,7 @@ impl RuleSetProcessor {
                 name: name.clone(),
                 parameters: params,
                 rules,
-                source_file: file_path.clone(),
+                source_file: file_path.to_path_buf(),
                 source_range: (range.start().into()..range.end().into()),
             };
 
@@ -256,33 +256,15 @@ impl RuleSetProcessor {
     }
 }
 
+impl Default for RuleSetProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cst::parse_fsh;
-    use crate::semantic::ruleset::RuleSetExpander;
-
-    #[test]
-    fn collect_ruleset_from_file() {
-        let content = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../mcode-ig/input/fsh/EX_Staging_Other.fsh"),
-        )
-        .unwrap();
-        let (cst, lex, parse) = parse_fsh(&content);
-        assert!(lex.is_empty() && parse.is_empty());
-
-        let parsed_files = vec![(PathBuf::from("EX_Staging_Other.fsh"), cst)];
-
-        let mut processor = RuleSetProcessor::new();
-        processor.collect_rulesets(&parsed_files).unwrap();
-
-        let (rulesets_found, _) = processor.stats();
-        assert!(rulesets_found > 0);
-
-        let expander: RuleSetExpander = processor.into_expander();
-        assert!(expander.has_ruleset("StagingInstanceRuleSet"));
-    }
 
     #[test]
     fn test_ruleset_processor_creation() {
@@ -298,11 +280,5 @@ mod tests {
         let parsed_files: Vec<(PathBuf, FshSyntaxNode)> = vec![];
         let result = processor.collect_rulesets(&parsed_files);
         assert!(result.is_ok());
-    }
-}
-
-impl Default for RuleSetProcessor {
-    fn default() -> Self {
-        Self::new()
     }
 }

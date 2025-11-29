@@ -30,10 +30,10 @@ pub fn check_invalid_caret_paths(model: &SemanticModel) -> Vec<Diagnostic> {
     // Check all caret rules in profiles
     for profile in document.profiles() {
         for rule in profile.rules() {
-            if let maki_core::cst::ast::Rule::CaretValue(caret_rule) = rule {
-                if let Some(diag) = validate_caret_path(&caret_rule, model) {
-                    diagnostics.push(diag);
-                }
+            if let maki_core::cst::ast::Rule::CaretValue(caret_rule) = rule
+                && let Some(diag) = validate_caret_path(&caret_rule, model)
+            {
+                diagnostics.push(diag);
             }
         }
     }
@@ -41,10 +41,10 @@ pub fn check_invalid_caret_paths(model: &SemanticModel) -> Vec<Diagnostic> {
     // Check all caret rules in extensions
     for ext in document.extensions() {
         for rule in ext.rules() {
-            if let maki_core::cst::ast::Rule::CaretValue(caret_rule) = rule {
-                if let Some(diag) = validate_caret_path(&caret_rule, model) {
-                    diagnostics.push(diag);
-                }
+            if let maki_core::cst::ast::Rule::CaretValue(caret_rule) = rule
+                && let Some(diag) = validate_caret_path(&caret_rule, model)
+            {
+                diagnostics.push(diag);
             }
         }
     }
@@ -52,10 +52,10 @@ pub fn check_invalid_caret_paths(model: &SemanticModel) -> Vec<Diagnostic> {
     // Check all caret rules in value sets
     for vs in document.value_sets() {
         for rule in vs.rules() {
-            if let maki_core::cst::ast::Rule::CaretValue(caret_rule) = rule {
-                if let Some(diag) = validate_caret_path(&caret_rule, model) {
-                    diagnostics.push(diag);
-                }
+            if let maki_core::cst::ast::Rule::CaretValue(caret_rule) = rule
+                && let Some(diag) = validate_caret_path(&caret_rule, model)
+            {
+                diagnostics.push(diag);
             }
         }
     }
@@ -63,10 +63,10 @@ pub fn check_invalid_caret_paths(model: &SemanticModel) -> Vec<Diagnostic> {
     // Check all caret rules in code systems
     for cs in document.code_systems() {
         for rule in cs.rules() {
-            if let maki_core::cst::ast::Rule::CaretValue(caret_rule) = rule {
-                if let Some(diag) = validate_caret_path(&caret_rule, model) {
-                    diagnostics.push(diag);
-                }
+            if let maki_core::cst::ast::Rule::CaretValue(caret_rule) = rule
+                && let Some(diag) = validate_caret_path(&caret_rule, model)
+            {
+                diagnostics.push(diag);
             }
         }
     }

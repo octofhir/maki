@@ -230,7 +230,7 @@ impl ExtensionExporter {
         structure_def.derivation = Some("constraint".to_string());
         structure_def.is_abstract = false;
 
-        // Set status to active for extensions (SUSHI parity)
+        // Set status to active for extensions
         structure_def.status = "active".to_string();
 
         if let Some(title_clause) = extension.title()
@@ -245,7 +245,7 @@ impl ExtensionExporter {
             structure_def.description = Some(desc);
         }
 
-        // Set version from config if available (SUSHI parity)
+        // Set version from config if available
         structure_def.version = self.version.clone();
 
         // Set FHIR version from session

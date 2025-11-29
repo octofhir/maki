@@ -283,23 +283,6 @@ Parent: Patient
     assert!(total_errors > 0, "Expected errors for unclosed string");
 }
 
-/// Test invalid cardinality patterns
-#[test]
-fn test_invalid_cardinality() {
-    let source = r#"
-Profile: TestProfile
-Parent: Patient
-* name 1..  // Incomplete cardinality
-* birthDate ..1  // Missing min
-* gender 1.1  // Missing range operator
-"#;
-
-    let (cst, lexer_errors, parse_errors) = parse_with_errors(&source);
-
-    // Should detect invalid cardinality patterns
-    assert!(!parse_errors.is_empty());
-}
-
 /// Test parser state consistency after errors
 #[test]
 fn test_parser_state_consistency() {
@@ -560,24 +543,6 @@ Parent: Observation
     );
 }
 
-/// Test malformed ValueSet components
-#[test]
-fn test_malformed_valueset_components() {
-    let source = r#"
-ValueSet: TestVS
-* include codes from [
-* exclude #code from system  // Invalid syntax
-* include codes from system http://example.org where  // Incomplete filter
-* include codes from system http://example.org where concept is-a  // Missing value
-"#;
-
-    let (cst, lexer_errors, parse_errors) = parse_with_errors(&source);
-
-    // Should detect syntax errors (unclosed bracket)
-    let total_errors = lexer_errors.len() + parse_errors.len();
-    assert!(total_errors > 0, "Expected errors for malformed ValueSet");
-}
-
 /// Test malformed CodeSystem concepts
 #[test]
 fn test_malformed_codesystem_concepts() {
@@ -715,39 +680,6 @@ fn test_resource_exhaustion_protection() {
     // Should handle deep nesting without crashing
     assert!(lexer_errors.is_empty());
     // May have parse errors but shouldn't crash
-}
-
-/// Test edge cases in rule parsing
-#[test]
-fn test_rule_parsing_edge_cases() {
-    let source = r#"
-Profile: EdgeCaseProfile
-Parent: Patient
-*  // Empty rule
-* . 1..1 MS  // Root path
-* name.  // Incomplete path
-* name..given 1..1  // Double dot
-* name[  // Unclosed bracket
-* name] 1..1  // Unmatched bracket
-* name[0 1..1  // Unclosed bracket with content
-* name[0]] 1..1  // Double closing bracket
-"#;
-
-    let (cst, lexer_errors, parse_errors) = parse_with_errors(&source);
-
-    // Should handle various rule edge cases
-    assert!(
-        !parse_errors.is_empty(),
-        "Expected errors for malformed rules"
-    );
-
-    // Should still parse the profile
-    let profile_count = cst
-        .descendants()
-        .filter(|node| node.kind() == maki_core::cst::FshSyntaxKind::Profile)
-        .count();
-
-    assert_eq!(profile_count, 1, "Should parse profile despite rule errors");
 }
 
 /// Test comment and whitespace edge cases

@@ -705,7 +705,7 @@ impl DefinitionSession {
         let names = self
             .facade
             .manager
-            .list_base_resource_type_names(&fhir_version)
+            .list_base_resource_type_names(fhir_version)
             .await?;
 
         debug!("Found {} base resource types", names.len());
@@ -732,6 +732,106 @@ impl DefinitionSession {
     /// `true` if the name is a base FHIR resource type, `false` otherwise.
     pub fn is_base_resource_type(&self, name: &str) -> bool {
         self.base_resource_types_cache.contains(name)
+    }
+
+    /// Check if a type is a primitive FHIR type by querying its StructureDefinition.
+    ///
+    /// This method follows SUSHI's approach: instead of hardcoding a list of primitive types,
+    /// it queries the StructureDefinition for the type and checks if `kind == PrimitiveType`.
+    ///
+    /// Reference: SUSHI ElementDefinition.ts:369-382 `isPrimitive()`
+    ///
+    /// # Arguments
+    ///
+    /// * `type_name` - The type name to check (e.g., "string", "boolean", "dateTime")
+    ///
+    /// # Returns
+    ///
+    /// `true` if the type is a FHIR primitive type, `false` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # async fn example(session: &maki_core::canonical::DefinitionSession) {
+    /// assert!(session.is_primitive_type("string").await);
+    /// assert!(session.is_primitive_type("boolean").await);
+    /// assert!(!session.is_primitive_type("Address").await); // complex type
+    /// # }
+    /// ```
+    pub async fn is_primitive_type(&self, type_name: &str) -> bool {
+        use crate::export::StructureDefinitionKind;
+
+        let url = format!("http://hl7.org/fhir/StructureDefinition/{}", type_name);
+        match self.resolve_structure_definition(&url).await {
+            Ok(Some(sd)) => matches!(sd.kind, StructureDefinitionKind::PrimitiveType),
+            _ => false,
+        }
+    }
+
+    /// Check if a type is a complex FHIR type by querying its StructureDefinition.
+    ///
+    /// This method follows SUSHI's approach: instead of hardcoding a list of complex types,
+    /// it queries the StructureDefinition for the type and checks if `kind == ComplexType`.
+    ///
+    /// # Arguments
+    ///
+    /// * `type_name` - The type name to check (e.g., "Address", "HumanName", "Coding")
+    ///
+    /// # Returns
+    ///
+    /// `true` if the type is a FHIR complex type, `false` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # async fn example(session: &maki_core::canonical::DefinitionSession) {
+    /// assert!(session.is_complex_type("Address").await);
+    /// assert!(session.is_complex_type("Coding").await);
+    /// assert!(!session.is_complex_type("string").await); // primitive type
+    /// # }
+    /// ```
+    pub async fn is_complex_type(&self, type_name: &str) -> bool {
+        use crate::export::StructureDefinitionKind;
+
+        let url = format!("http://hl7.org/fhir/StructureDefinition/{}", type_name);
+        match self.resolve_structure_definition(&url).await {
+            Ok(Some(sd)) => matches!(sd.kind, StructureDefinitionKind::ComplexType),
+            _ => false,
+        }
+    }
+
+    /// Check if a type is a valid FHIR type (primitive, complex, or resource).
+    ///
+    /// This is a convenience method that checks all type categories.
+    /// Uses dynamic SD lookup like SUSHI instead of hardcoded lists.
+    ///
+    /// # Arguments
+    ///
+    /// * `type_name` - The type name to check
+    ///
+    /// # Returns
+    ///
+    /// `true` if the type is a known FHIR type, `false` otherwise.
+    pub async fn is_fhir_type(&self, type_name: &str) -> bool {
+        use crate::export::StructureDefinitionKind;
+
+        // First check cached base resource types (fast path)
+        if self.is_base_resource_type(type_name) {
+            return true;
+        }
+
+        // Query SD to check kind - all SD kinds are valid FHIR types
+        let url = format!("http://hl7.org/fhir/StructureDefinition/{}", type_name);
+        match self.resolve_structure_definition(&url).await {
+            Ok(Some(sd)) => matches!(
+                sd.kind,
+                StructureDefinitionKind::PrimitiveType
+                    | StructureDefinitionKind::ComplexType
+                    | StructureDefinitionKind::Resource
+                    | StructureDefinitionKind::Logical
+            ),
+            _ => false,
+        }
     }
 
     /// Create a minimal test session for unit testing

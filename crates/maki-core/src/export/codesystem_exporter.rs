@@ -41,6 +41,7 @@
 //!     session,
 //!     "http://example.org/fhir".to_string(),
 //!     None,
+//!     None,
 //! ).await?;
 //!
 //! // Export to FHIR JSON
@@ -192,7 +193,7 @@ impl CodeSystemExporter {
         // Create base resource with status from config (defaults to "draft")
         let status = self.status.as_deref().unwrap_or("draft");
         let mut resource = CodeSystemResource::new(url, name.clone(), status);
-        // Set experimental to false by default (SUSHI parity)
+        // Set experimental to false by default
         resource.experimental = Some(false);
 
         // Set id from Id clause if present
@@ -216,7 +217,7 @@ impl CodeSystemExporter {
             resource.description = Some(desc_value);
         }
 
-        // Set version from config if available (SUSHI parity)
+        // Set version from config if available
         resource.version = self.version.clone();
 
         // Process rules and collect concepts

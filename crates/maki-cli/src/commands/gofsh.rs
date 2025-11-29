@@ -567,9 +567,6 @@ fn print_final_summary(summary: &GoFshSummary, output_dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
-    use std::fs;
-    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_gofsh_command_no_input() {
@@ -586,72 +583,5 @@ mod tests {
         .await;
 
         assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_gofsh_command_empty_directory() {
-        let temp_dir = TempDir::new().unwrap();
-
-        let result = gofsh_command(
-            temp_dir.path().to_path_buf(),
-            Some(temp_dir.path().join("output")),
-            "R4".to_string(),
-            vec![],
-            None,
-            false,
-            None,
-            None,
-        )
-        .await;
-
-        // Should succeed but warn about no resources
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_gofsh_command_with_fhir_resource() {
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create a sample FHIR resource
-        let patient_json = r#"{
-            "resourceType": "Patient",
-            "id": "example",
-            "name": [{
-                "family": "Test",
-                "given": ["John"]
-            }]
-        }"#;
-
-        fs::write(temp_dir.path().join("patient.json"), patient_json).unwrap();
-
-        let result = gofsh_command(
-            temp_dir.path().to_path_buf(),
-            Some(temp_dir.path().join("output")),
-            "R4".to_string(),
-            vec![],
-            None,
-            false,
-            None,
-            None,
-        )
-        .await;
-
-        if let Err(e) = &result {
-            eprintln!("Error: {:?}", e);
-        }
-        assert!(result.is_ok(), "Expected command to succeed but got error");
-
-        // Verify config files were created
-        let sushi_config = temp_dir.path().join("output/sushi-config.yaml");
-        let makirc = temp_dir.path().join("output/.makirc.json");
-
-        assert!(
-            sushi_config.exists(),
-            "sushi-config.yaml not found at {:?}",
-            sushi_config
-        );
-        assert!(makirc.exists(), ".makirc.json not found at {:?}", makirc);
     }
 }

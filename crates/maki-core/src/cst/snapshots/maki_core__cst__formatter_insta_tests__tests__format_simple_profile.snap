@@ -2,11 +2,11 @@
 source: crates/maki-core/src/cst/formatter_insta_tests.rs
 expression: formatted
 ---
-Profile: MyPatient
-Parent: Patient
-Id: my-patient
-Title: "My Patient Profile"
+Profile:MyPatient
+Parent:Patient
+Id:my-patient
+Title:"My Patient Profile"
 
-* identifier 1..* MS
-* name       1..1 MS
-* gender     1..1
+*identifier 1..* MS
+*name 1..1 MS
+*gender 1..1

@@ -40,6 +40,7 @@
 //!     session,
 //!     "http://example.org/fhir".to_string(),
 //!     None,
+//!     None,
 //! ).await?;
 //!
 //! // Export to FHIR JSON
@@ -61,8 +62,8 @@ use crate::cst::ast::{
     AstNode, Document, FixedValueRule, PathRule, Rule, ValueSet, VsComponent, VsConceptComponent,
     VsFilterComponent,
 };
-use serde_json::Value as JsonValue;
 use indexmap::IndexMap;
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
@@ -71,7 +72,7 @@ const SNOMED_COPYRIGHT: &str = "This value set includes content from SNOMED CT, 
 const LOINC_COPYRIGHT: &str = "This material contains content from LOINC (http://loinc.org). LOINC is copyright © 1995-2020, Regenstrief Institute, Inc. and the Logical Observation Identifiers Names and Codes (LOINC) Committee and is available at no cost under the license at http://loinc.org/license. LOINC® is a registered United States trademark of Regenstrief Institute, Inc";
 const SNOINC_COPYRIGHT: &str = "This value set includes content from SNOMED CT, which is copyright © 2002+ International Health Terminology Standards Development Organisation (IHTSDO), and distributed by agreement between IHTSDO and HL7. Implementer use of SNOMED CT is not covered by this agreement. This material contains content from LOINC (http://loinc.org). LOINC is copyright © 1995-2020, Regenstrief Institute, Inc. and the Logical Observation Identifiers Names and Codes (LOINC) Committee and is available at no cost under the license at http://loinc.org/license. LOINC® is a registered United States trademark of Regenstrief Institute, Inc";
 
-// Type alias for ordered map (preserves insertion order for SUSHI parity)
+// Type alias for ordered map (preserves insertion order)
 type SystemComponentMap =
     IndexMap<String, (Vec<ValueSetConcept>, Vec<ValueSetFilter>, Option<String>)>;
 
@@ -111,33 +112,72 @@ const CODE_SYSTEM_ALIASES: &[(&str, &str)] = &[
     ("SO", "http://www.sequenceontology.org/"),
     ("UMLS", "http://terminology.hl7.org/CodeSystem/umls"),
     // HL7 terminology code systems
-    ("AbsentReason", "http://terminology.hl7.org/CodeSystem/data-absent-reason"),
-    ("ClinStatus", "http://terminology.hl7.org/CodeSystem/condition-clinical"),
-    ("CondCat", "http://terminology.hl7.org/CodeSystem/condition-category"),
-    ("VerStatus", "http://terminology.hl7.org/CodeSystem/condition-ver-status"),
-    ("ObsCat", "http://terminology.hl7.org/CodeSystem/observation-category"),
-    ("ObsInt", "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation"),
-    ("RefMeaning", "http://terminology.hl7.org/CodeSystem/referencerange-meaning"),
+    (
+        "AbsentReason",
+        "http://terminology.hl7.org/CodeSystem/data-absent-reason",
+    ),
+    (
+        "ClinStatus",
+        "http://terminology.hl7.org/CodeSystem/condition-clinical",
+    ),
+    (
+        "CondCat",
+        "http://terminology.hl7.org/CodeSystem/condition-category",
+    ),
+    (
+        "VerStatus",
+        "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+    ),
+    (
+        "ObsCat",
+        "http://terminology.hl7.org/CodeSystem/observation-category",
+    ),
+    (
+        "ObsInt",
+        "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    ),
+    (
+        "RefMeaning",
+        "http://terminology.hl7.org/CodeSystem/referencerange-meaning",
+    ),
     ("IDTYPE", "http://terminology.hl7.org/CodeSystem/v2-0203"),
     ("SPTY", "http://terminology.hl7.org/CodeSystem/v2-0487"),
-    ("DiagnosticService", "http://terminology.hl7.org/CodeSystem/v2-0074"),
-    ("NULLFLAVOR", "http://terminology.hl7.org/CodeSystem/v3-NullFlavor"),
-    ("TimingAbbreviation", "http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation"),
+    (
+        "DiagnosticService",
+        "http://terminology.hl7.org/CodeSystem/v2-0074",
+    ),
+    (
+        "NULLFLAVOR",
+        "http://terminology.hl7.org/CodeSystem/v3-NullFlavor",
+    ),
+    (
+        "TimingAbbreviation",
+        "http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation",
+    ),
     ("MDR", "http://terminology.hl7.org/CodeSystem/mdr"),
     // FHIR core code systems
     ("ObsStatus", "http://hl7.org/fhir/observation-status"),
-    ("MedReqIntent", "http://hl7.org/fhir/CodeSystem/medicationrequest-intent"),
-    ("MedReqStatus", "http://hl7.org/fhir/CodeSystem/medicationrequest-status"),
-    ("MedReqCat", "http://terminology.hl7.org/CodeSystem/medicationrequest-category"),
+    (
+        "MedReqIntent",
+        "http://hl7.org/fhir/CodeSystem/medicationrequest-intent",
+    ),
+    (
+        "MedReqStatus",
+        "http://hl7.org/fhir/CodeSystem/medicationrequest-status",
+    ),
+    (
+        "MedReqCat",
+        "http://terminology.hl7.org/CodeSystem/medicationrequest-category",
+    ),
 ];
 
 fn resolve_code_system_alias(alias: &str) -> Option<&'static str> {
     CODE_SYSTEM_ALIASES
         .iter()
-        .find_map(|(name, url)| (*name == alias).then(|| *url))
+        .find_map(|(name, url)| (*name == alias).then_some(*url))
 }
 
-// Standard copyright notices for common code systems (SUSHI parity)
+// Standard copyright notices for common code systems
 const CODE_SYSTEM_COPYRIGHTS: &[(&str, &str)] = &[
     (
         "http://snomed.info/sct",
@@ -165,12 +205,11 @@ fn generate_copyright_from_compose(compose: &ValueSetCompose) -> Option<String> 
     // Check include systems
     if let Some(includes) = &compose.include {
         for include in includes {
-            if let Some(system) = &include.system {
-                if seen_systems.insert(system.clone()) {
-                    if let Some(copyright) = get_copyright_for_system(system) {
-                        copyrights.push(copyright);
-                    }
-                }
+            if let Some(system) = &include.system
+                && seen_systems.insert(system.clone())
+                && let Some(copyright) = get_copyright_for_system(system)
+            {
+                copyrights.push(copyright);
             }
         }
     }
@@ -178,12 +217,11 @@ fn generate_copyright_from_compose(compose: &ValueSetCompose) -> Option<String> 
     // Check exclude systems
     if let Some(excludes) = &compose.exclude {
         for exclude in excludes {
-            if let Some(system) = &exclude.system {
-                if seen_systems.insert(system.clone()) {
-                    if let Some(copyright) = get_copyright_for_system(system) {
-                        copyrights.push(copyright);
-                    }
-                }
+            if let Some(system) = &exclude.system
+                && seen_systems.insert(system.clone())
+                && let Some(copyright) = get_copyright_for_system(system)
+            {
+                copyrights.push(copyright);
             }
         }
     }
@@ -198,7 +236,7 @@ fn generate_copyright_from_compose(compose: &ValueSetCompose) -> Option<String> 
 fn get_copyright_for_system(system: &str) -> Option<&'static str> {
     CODE_SYSTEM_COPYRIGHTS
         .iter()
-        .find_map(|(url, copyright)| (system == *url).then(|| *copyright))
+        .find_map(|(url, copyright)| (system == *url).then_some(*copyright))
 }
 
 // ============================================================================
@@ -280,6 +318,7 @@ enum ComponentRule {
 /// let exporter = ValueSetExporter::new(
 ///     session,
 ///     "http://example.org/fhir".to_string(),
+///     None,
 ///     None,
 /// ).await?;
 /// # Ok(())
@@ -388,7 +427,7 @@ impl ValueSetExporter {
         // Create base resource with status from config (defaults to "draft")
         let status = self.status.as_deref().unwrap_or("draft");
         let mut resource = ValueSetResource::new(url, name.clone(), status);
-        // Set experimental to false by default (SUSHI parity)
+        // Set experimental to false by default
         resource.experimental = Some(false);
         // Ensure id is always present for parity with SUSHI defaults
         resource.id = Some(canonical_id.clone());
@@ -414,7 +453,7 @@ impl ValueSetExporter {
             resource.description = Some(desc_value);
         }
 
-        // Do not set version unless explicitly provided in FSH (SUSHI parity)
+        // Do not set version unless explicitly provided in FSH
         resource.version = None;
 
         // Build alias map from parent document
@@ -466,11 +505,10 @@ impl ValueSetExporter {
                 }
                 Rule::CaretValue(caret_rule) => {
                     // Only handle top-level caret rules (no element path)
-                    if caret_rule.element_path().is_none() {
-                        if let (Some(field), Some(value)) = (caret_rule.field(), caret_rule.value())
-                        {
-                            self.apply_metadata_property(&mut resource, &field, &value)?;
-                        }
+                    if caret_rule.element_path().is_none()
+                        && let (Some(field), Some(value)) = (caret_rule.field(), caret_rule.value())
+                    {
+                        self.apply_metadata_property(&mut resource, &field, &value)?;
                     }
                 }
                 Rule::AddElement(_)
@@ -511,7 +549,7 @@ impl ValueSetExporter {
         // Build compose.include from grouped rules
         let mut has_content = false;
 
-        // Add system-based includes (SUSHI parity: filters get separate includes, concepts are grouped)
+        // Add system-based includes (filters get separate includes, concepts are grouped)
         for (system, (concepts, filters, version)) in system_includes {
             let mut added_for_system = false;
             // Each filter gets its own include block (SUSHI behavior)
@@ -555,7 +593,7 @@ impl ValueSetExporter {
             has_content = true;
         }
 
-        // Build compose.exclude from grouped rules (SUSHI parity: filters get separate excludes, concepts are grouped)
+        // Build compose.exclude from grouped rules (filters get separate excludes, concepts are grouped)
         for (system, (concepts, filters, version)) in system_excludes {
             let mut added_for_system = false;
             // Each filter gets its own exclude block (SUSHI behavior)
@@ -603,7 +641,7 @@ impl ValueSetExporter {
             // Validate exclude rules don't conflict with include rules
             self.validate_exclude_conflicts(&compose, &name)?;
 
-            // Generate copyright notice based on code systems used (SUSHI parity)
+            // Generate copyright notice based on code systems used
             // Only set if not already set via FSH metadata rules
             if resource.copyright.is_none() {
                 resource.copyright = generate_copyright_from_compose(&compose);
@@ -735,7 +773,7 @@ impl ValueSetExporter {
                 '/' if !in_single && !in_double => {
                     if let Some((_, next_ch)) = iter.peek()
                         && *next_ch == '/'
-                        && prev_char.map_or(true, |c| c.is_whitespace())
+                        && prev_char.is_none_or(|c| c.is_whitespace())
                     {
                         return &value[..idx];
                     }
@@ -885,12 +923,11 @@ impl ValueSetExporter {
             && let Some(document) = Document::cast(parent)
         {
             for vs in document.value_sets() {
-                if let Some(vs_name) = vs.name() {
-                    if let Some(id_clause) = vs.id()
-                        && let Some(id_value) = id_clause.value()
-                    {
-                        map.insert(vs_name, id_value);
-                    }
+                if let Some(vs_name) = vs.name()
+                    && let Some(id_clause) = vs.id()
+                    && let Some(id_value) = id_clause.value()
+                {
+                    map.insert(vs_name, id_value);
                 }
             }
         }
@@ -990,16 +1027,16 @@ impl ValueSetExporter {
             )? {
                 structured_applied = true;
             }
-        } else if let Some(filter_component) = vs_component.filter() {
-            if self.process_filter_component_structured(
+        } else if let Some(filter_component) = vs_component.filter()
+            && self.process_filter_component_structured(
                 &filter_component,
                 vs_component.is_exclude(),
                 alias_map,
                 system_includes,
                 system_excludes,
-            )? {
-                structured_applied = true;
-            }
+            )?
+        {
+            structured_applied = true;
         }
 
         if !structured_applied {
@@ -1230,12 +1267,11 @@ impl ValueSetExporter {
         }
 
         // Check for "codes from system" syntax
-        if remaining_text.contains("codes from system") {
-            if let Some(component_rule) =
+        if remaining_text.contains("codes from system")
+            && let Some(component_rule) =
                 self.parse_system_reference(remaining_text, is_exclude, alias_map)?
-            {
-                return Ok(Some(component_rule));
-            }
+        {
+            return Ok(Some(component_rule));
         }
 
         // Check for "where" clause (filter syntax)
@@ -1416,12 +1452,12 @@ impl ValueSetExporter {
             (
                 r"concept\s+descend(?:e|a)nt-of\s+#?(\S+)",
                 "concept",
-                "descendent-of",  // FHIR uses British spelling
+                "descendent-of", // FHIR uses British spelling
             ),
             (
                 r"concept\s+descendsFrom\s+#?(\S+)",
                 "concept",
-                "descendent-of",  // FHIR uses British spelling
+                "descendent-of", // FHIR uses British spelling
             ),
             (r"concept\s+is-not-a\s+#?(\S+)", "concept", "is-not-a"),
             (r"concept\s+generalizes\s+#?(\S+)", "concept", "generalizes"),
@@ -1530,7 +1566,7 @@ impl ValueSetExporter {
             "=",
             "!=",
             "is-a",
-            "descendent-of",  // FHIR uses British spelling
+            "descendent-of", // FHIR uses British spelling
             "is-not-a",
             "regex",
             "in",
@@ -2075,7 +2111,7 @@ ValueSet: TestInsertVS
         let filter = ValueSetFilter::descendent_of("12345");
 
         assert_eq!(filter.property, "concept");
-        assert_eq!(filter.op, "descendent-of");  // FHIR uses British spelling
+        assert_eq!(filter.op, "descendent-of"); // FHIR uses British spelling
         assert_eq!(filter.value, "12345");
     }
 

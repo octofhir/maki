@@ -29,6 +29,7 @@ async fn decompile_profile(sd: StructureDefinition) -> Result<String> {
 
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_simple_patient_profile() {
     let profile = fixtures::simple_patient_profile();
     let fsh = decompile_profile(profile).await.unwrap();
@@ -48,6 +49,7 @@ async fn test_simple_patient_profile() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_complex_patient_profile() {
     let profile = fixtures::complex_patient_profile();
     let fsh = decompile_profile(profile).await.unwrap();
@@ -69,6 +71,7 @@ async fn test_complex_patient_profile() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_profile_with_slicing() {
     let profile = fixtures::observation_with_slicing();
     let fsh = decompile_profile(profile).await.unwrap();
@@ -86,6 +89,7 @@ async fn test_profile_with_slicing() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_profile_with_extensions() {
     let profile = TestProfileBuilder::new(
         "PatientWithExtensions",
@@ -117,6 +121,7 @@ async fn test_profile_with_extensions() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_profile_with_invariants() {
     let profile = TestProfileBuilder::new(
         "PatientWithInvariants",
@@ -146,6 +151,7 @@ async fn test_profile_with_invariants() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_profile_with_bindings() {
     let profile = TestProfileBuilder::new(
         "ObservationWithBinding",
@@ -179,6 +185,7 @@ async fn test_profile_with_bindings() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_profile_with_nested_slicing() {
     let profile = TestProfileBuilder::new(
         "PatientWithNestedSlicing",
@@ -210,6 +217,7 @@ async fn test_profile_with_nested_slicing() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_profile_with_cardinality_constraints() {
     let profile = TestProfileBuilder::new(
         "PatientWithCardinalityConstraints",
@@ -327,6 +335,7 @@ async fn test_complex_instance() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_simple_extension() {
     let extension = TestProfileBuilder::new(
         "SimpleExtension",
@@ -350,6 +359,7 @@ async fn test_simple_extension() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "requires canonical manager infrastructure"]
 async fn test_complex_extension() {
     let extension = TestProfileBuilder::new(
         "ComplexExtension",

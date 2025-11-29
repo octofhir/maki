@@ -8,7 +8,8 @@ members = [
   "crates/maki-test",
   "crates/maki-devtools",
   "crates/maki-bench",
-  "crates/maki-integration-tests", "crates/maki-decompiler",
+  "crates/maki-integration-tests",
+  "crates/maki-decompiler",
 ]
 resolver = "3"
 
@@ -66,7 +67,9 @@ notify = "8"
 dashmap = "6"
 
 # Canonical package management
-octofhir-canonical-manager = { version = "0.1.15", default-features = false, features = ["cli"] }
+octofhir-canonical-manager = { version = "0.1.15", default-features = false, features = [
+  "cli",
+] }
 
 # Testing
 criterion = { version = "0.7", features = ["html_reports"] }

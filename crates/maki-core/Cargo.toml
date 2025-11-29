@@ -35,7 +35,7 @@ dashmap = { workspace = true }
 octofhir-canonical-manager = { workspace = true }
 regex = "1.10"
 is-terminal = "0.4"
-indexmap = "2.0"  # Ordered HashMap for preserving insert order
+indexmap = "2.0"                                  # Ordered HashMap for preserving insert order
 petgraph = "0.8"                                  # Graph data structure and algorithms
 indicatif = "0.18"                                # Progress bars and spinners
 

@@ -1,8 +1,6 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use maki_core::{FshParser, Parser};
-use std::fs;
 use std::hint::black_box;
-use std::path::PathBuf;
 
 // Sample FSH content for synthetic benchmarks
 const SIMPLE_PROFILE: &str = r#"Profile: SimplePatient
@@ -57,88 +55,6 @@ fn bench_parser(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark real-world FSH files from mCODE IG
-fn bench_mcode_files(c: &mut Criterion) {
-    let mcode_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("examples/mcode-ig");
-
-    if !mcode_dir.exists() {
-        eprintln!("Skipping mCODE benchmarks - directory not found: {mcode_dir:?}");
-        return;
-    }
-
-    let fsh_files: Vec<_> = fs::read_dir(&mcode_dir)
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("fsh"))
-        .collect();
-
-    if fsh_files.is_empty() {
-        eprintln!("Skipping mCODE benchmarks - no FSH files found");
-        return;
-    }
-
-    println!("\n=== mCODE IG Benchmarking ===");
-    println!("Found {} FSH files", fsh_files.len());
-
-    let mut group = c.benchmark_group("mcode_real_world");
-
-    // Benchmark parsing a single large file
-    let large_file = fsh_files
-        .iter()
-        .max_by_key(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
-        .unwrap();
-
-    let large_content = fs::read_to_string(large_file.path()).unwrap();
-    let file_name = large_file.file_name();
-    let file_name_str = file_name.to_str().unwrap();
-
-    println!(
-        "Largest file: {} ({} bytes, {} lines)",
-        file_name_str,
-        large_content.len(),
-        large_content.lines().count()
-    );
-
-    group.bench_function(format!("parse_{file_name_str}"), |b| {
-        b.iter(|| {
-            let mut parser = FshParser;
-            black_box(parser.parse(&large_content))
-        });
-    });
-
-    // Benchmark parsing all files
-    let all_contents: Vec<String> = fsh_files
-        .iter()
-        .map(|e| fs::read_to_string(e.path()).unwrap())
-        .collect();
-
-    let total_size: usize = all_contents.iter().map(|s| s.len()).sum();
-    let total_lines: usize = all_contents.iter().map(|s| s.lines().count()).sum();
-
-    println!(
-        "Total corpus: {} files, {} bytes, {} lines\n",
-        all_contents.len(),
-        total_size,
-        total_lines
-    );
-
-    group.bench_function(format!("parse_all_{}_files", all_contents.len()), |b| {
-        b.iter(|| {
-            let mut parser = FshParser;
-            for content in &all_contents {
-                let _ = black_box(parser.parse(content));
-            }
-        });
-    });
-
-    group.finish();
-}
-
 /// Benchmark parsing large generated files
 fn bench_large_files(c: &mut Criterion) {
     let mut group = c.benchmark_group("large_files");
@@ -175,5 +91,5 @@ Description: "Test profile number {i}"
     group.finish();
 }
 
-criterion_group!(benches, bench_parser, bench_mcode_files, bench_large_files,);
+criterion_group!(benches, bench_parser, bench_large_files);
 criterion_main!(benches);

@@ -143,7 +143,7 @@ fn get_clause_text_after_colon(node: &FshSyntaxNode) -> Option<String> {
                 None
             }
         })
-        .unwrap_or_else(|| value);
+        .unwrap_or(value);
 
     if cleaned.is_empty() {
         None

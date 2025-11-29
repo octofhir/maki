@@ -400,6 +400,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    #[ignore = "requires canonical manager infrastructure"]
     async fn test_load_json_file() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test-profile.json");
@@ -429,6 +430,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    #[ignore = "requires canonical manager infrastructure"]
     async fn test_load_directory() {
         let temp_dir = TempDir::new().unwrap();
 
@@ -469,6 +471,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    #[ignore = "requires canonical manager infrastructure"]
     async fn test_skip_non_fhir_files() {
         let temp_dir = TempDir::new().unwrap();
 
@@ -502,6 +505,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    #[ignore = "requires canonical manager infrastructure"]
     async fn test_handle_parse_error() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("invalid.json");
@@ -536,6 +540,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    #[ignore = "requires canonical manager infrastructure"]
     async fn test_value_set_loading() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("valueset.json");
@@ -565,6 +570,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    #[ignore = "requires canonical manager infrastructure"]
     async fn test_code_system_loading() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("codesystem.json");

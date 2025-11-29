@@ -641,6 +641,42 @@ impl DefaultSemanticAnalyzer {
         }
     }
 
+    /// Build an FhirResource from an Instance AST node
+    ///
+    /// This is used to add instances to the FshTank before export,
+    /// enabling proper reference resolution via the fishing context.
+    pub fn build_instance_resource(
+        &self,
+        instance: &Instance,
+        source: &str,
+        file_path: &Path,
+    ) -> FhirResource {
+        let name = instance.name().unwrap_or_else(|| "Unknown".to_string());
+        let id = instance
+            .id()
+            .and_then(|c| c.value())
+            .unwrap_or_else(|| name.clone());
+        let title = instance.title().and_then(|c| c.value());
+        let description = instance.description().and_then(|c| c.value());
+        // The parent field stores the InstanceOf value (e.g., "USCorePractitioner", "Patient")
+        // This is used to resolve the actual FHIR resourceType via the fishing context
+        let instance_of = instance.instance_of().and_then(|c| c.value());
+
+        let location = node_to_location(file_path, instance.syntax(), source);
+
+        FhirResource {
+            resource_type: ResourceType::Instance,
+            id,
+            name: Some(name),
+            title,
+            description,
+            parent: instance_of,
+            elements: Vec::new(),
+            location,
+            metadata: ResourceMetadata::default(),
+        }
+    }
+
     /// Parse a cardinality string like "1..1" or "0..*"
     pub fn parse_cardinality(&self, text: &str) -> Result<Option<Cardinality>> {
         let trimmed = text.trim();

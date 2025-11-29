@@ -87,5 +87,3 @@ mod ast_tests;
 
 #[cfg(test)]
 mod formatter_insta_tests;
-#[cfg(test)]
-mod formatter_snapshot_tests;

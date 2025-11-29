@@ -383,10 +383,11 @@ impl FishingContext {
             .unwrap_or_else(|| identifier.to_string());
 
         // Helper to generate name variants
-        let mut name_candidates = Vec::new();
-        name_candidates.push(identifier.clone());
-        name_candidates.push(identifier.to_ascii_lowercase());
-        name_candidates.push(camel_to_kebab(&identifier));
+        let name_candidates = vec![
+            identifier.clone(),
+            identifier.to_ascii_lowercase(),
+            camel_to_kebab(&identifier),
+        ];
 
         // Helper to skip unexpected Extension hits (SUSHI behavior for non-extension parents)
         let is_unexpected_extension =
@@ -421,13 +422,12 @@ impl FishingContext {
                 continue;
             }
 
-            if let Ok(Some(resource)) = self.canonical_session.find_profile_parent(cand).await {
-                if let Ok(sd) =
+            if let Ok(Some(resource)) = self.canonical_session.find_profile_parent(cand).await
+                && let Ok(sd) =
                     serde_json::from_value::<StructureDefinition>((*resource.content).clone())
-                {
-                    debug!("Found StructureDefinition {} via find_profile_parent", cand);
-                    return Ok(Some(sd));
-                }
+            {
+                debug!("Found StructureDefinition {} via find_profile_parent", cand);
+                return Ok(Some(sd));
             }
         }
 
@@ -463,17 +463,16 @@ impl FishingContext {
                 .canonical_session
                 .resource_by_type_and_name("StructureDefinition", cand)
                 .await
+                && let Ok(sd) = serde_json::from_value((*resource.content).clone())
             {
-                if let Ok(sd) = serde_json::from_value((*resource.content).clone()) {
-                    if is_unexpected_extension(&sd) {
-                        debug!(
-                            "StructureDefinition {} resolved to Extension ({}), continuing search",
-                            cand, sd.url
-                        );
-                    } else {
-                        debug!("Found StructureDefinition {} in canonical by name", cand);
-                        return Ok(Some(sd));
-                    }
+                if is_unexpected_extension(&sd) {
+                    debug!(
+                        "StructureDefinition {} resolved to Extension ({}), continuing search",
+                        cand, sd.url
+                    );
+                } else {
+                    debug!("Found StructureDefinition {} in canonical by name", cand);
+                    return Ok(Some(sd));
                 }
             }
 
@@ -482,17 +481,16 @@ impl FishingContext {
                 .canonical_session
                 .resource_by_type_and_id("StructureDefinition", cand)
                 .await
+                && let Ok(sd) = serde_json::from_value((*resource.content).clone())
             {
-                if let Ok(sd) = serde_json::from_value((*resource.content).clone()) {
-                    if is_unexpected_extension(&sd) {
-                        debug!(
-                            "StructureDefinition {} (id) resolved to Extension ({}), continuing search",
-                            cand, sd.url
-                        );
-                    } else {
-                        debug!("Found StructureDefinition {} in canonical by id", cand);
-                        return Ok(Some(sd));
-                    }
+                if is_unexpected_extension(&sd) {
+                    debug!(
+                        "StructureDefinition {} (id) resolved to Extension ({}), continuing search",
+                        cand, sd.url
+                    );
+                } else {
+                    debug!("Found StructureDefinition {} in canonical by id", cand);
+                    return Ok(Some(sd));
                 }
             }
 
@@ -503,20 +501,19 @@ impl FishingContext {
                     .canonical_session
                     .resource_by_type_and_name("StructureDefinition", &with_suffix)
                     .await
+                    && let Ok(sd) = serde_json::from_value((*resource.content).clone())
                 {
-                    if let Ok(sd) = serde_json::from_value((*resource.content).clone()) {
-                        if is_unexpected_extension(&sd) {
-                            debug!(
-                                "StructureDefinition {} (suffix) resolved to Extension ({}), continuing search",
-                                with_suffix, sd.url
-                            );
-                        } else {
-                            debug!(
-                                "Found StructureDefinition {} in canonical by name with Profile suffix as {}",
-                                cand, with_suffix
-                            );
-                            return Ok(Some(sd));
-                        }
+                    if is_unexpected_extension(&sd) {
+                        debug!(
+                            "StructureDefinition {} (suffix) resolved to Extension ({}), continuing search",
+                            with_suffix, sd.url
+                        );
+                    } else {
+                        debug!(
+                            "Found StructureDefinition {} in canonical by name with Profile suffix as {}",
+                            cand, with_suffix
+                        );
+                        return Ok(Some(sd));
                     }
                 }
             }
@@ -528,20 +525,19 @@ impl FishingContext {
                     .canonical_session
                     .resource_by_type_and_name("StructureDefinition", without_suffix)
                     .await
+                    && let Ok(sd) = serde_json::from_value((*resource.content).clone())
                 {
-                    if let Ok(sd) = serde_json::from_value((*resource.content).clone()) {
-                        if is_unexpected_extension(&sd) {
-                            debug!(
-                                "StructureDefinition {} (no suffix) resolved to Extension ({}), continuing search",
-                                without_suffix, sd.url
-                            );
-                        } else {
-                            debug!(
-                                "Found StructureDefinition {} in canonical by name without Profile suffix as {}",
-                                cand, without_suffix
-                            );
-                            return Ok(Some(sd));
-                        }
+                    if is_unexpected_extension(&sd) {
+                        debug!(
+                            "StructureDefinition {} (no suffix) resolved to Extension ({}), continuing search",
+                            without_suffix, sd.url
+                        );
+                    } else {
+                        debug!(
+                            "Found StructureDefinition {} in canonical by name without Profile suffix as {}",
+                            cand, without_suffix
+                        );
+                        return Ok(Some(sd));
                     }
                 }
             }
@@ -585,25 +581,21 @@ impl FishingContext {
         if self
             .is_in_tank(identifier.as_str(), &[ResourceType::Extension])
             .await
-        {
-            // Try to get metadata from tank
-            if let Some(metadata) = self
+            && let Some(metadata) = self
                 .fish_metadata(&identifier, &[ResourceType::Extension])
                 .await
-            {
-                if !metadata.url.is_empty() {
-                    // Build a minimal StructureDefinition with the URL
-                    // We only need url for extension resolution
-                    let sd = StructureDefinition::new(
-                        metadata.url,
-                        metadata.name,
-                        "Extension".to_string(),
-                        StructureDefinitionKind::ComplexType,
-                    );
-                    debug!("Found Extension {} in tank", identifier);
-                    return Ok(Some(sd));
-                }
-            }
+            && !metadata.url.is_empty()
+        {
+            // Build a minimal StructureDefinition with the URL
+            // We only need url for extension resolution
+            let sd = StructureDefinition::new(
+                metadata.url,
+                metadata.name,
+                "Extension".to_string(),
+                StructureDefinitionKind::ComplexType,
+            );
+            debug!("Found Extension {} in tank", identifier);
+            return Ok(Some(sd));
         }
 
         // Try canonical lookups - this time we WANT Extensions
@@ -613,11 +605,10 @@ impl FishingContext {
                 .canonical_session
                 .resolve_structure_definition(cand)
                 .await
+                && sd.type_field == "Extension"
             {
-                if sd.type_field == "Extension" {
-                    debug!("Found Extension {} in canonical by URL", cand);
-                    return Ok(Some(sd));
-                }
+                debug!("Found Extension {} in canonical by URL", cand);
+                return Ok(Some(sd));
             }
 
             // Try by name
@@ -625,15 +616,12 @@ impl FishingContext {
                 .canonical_session
                 .resource_by_type_and_name("StructureDefinition", cand)
                 .await
-            {
-                if let Ok(sd) =
+                && let Ok(sd) =
                     serde_json::from_value::<StructureDefinition>((*resource.content).clone())
-                {
-                    if sd.type_field == "Extension" {
-                        debug!("Found Extension {} in canonical by name", cand);
-                        return Ok(Some(sd));
-                    }
-                }
+                && sd.type_field == "Extension"
+            {
+                debug!("Found Extension {} in canonical by name", cand);
+                return Ok(Some(sd));
             }
 
             // Try by id
@@ -641,15 +629,12 @@ impl FishingContext {
                 .canonical_session
                 .resource_by_type_and_id("StructureDefinition", cand)
                 .await
-            {
-                if let Ok(sd) =
+                && let Ok(sd) =
                     serde_json::from_value::<StructureDefinition>((*resource.content).clone())
-                {
-                    if sd.type_field == "Extension" {
-                        debug!("Found Extension {} in canonical by id", cand);
-                        return Ok(Some(sd));
-                    }
-                }
+                && sd.type_field == "Extension"
+            {
+                debug!("Found Extension {} in canonical by id", cand);
+                return Ok(Some(sd));
             }
         }
 
@@ -727,6 +712,203 @@ impl FishingContext {
         // Extract lightweight metadata using tank's canonical base
         Some(tank.extract_metadata(resource))
     }
+
+    /// Resolve an InstanceOf value to its base FHIR resourceType
+    ///
+    /// For instances, we need to know the actual FHIR resourceType (Patient, Observation, etc.)
+    /// to properly prefix references. The InstanceOf value can be:
+    /// - A base FHIR type (e.g., "Patient") - return as-is
+    /// - A profile name (e.g., "USCorePractitioner") - resolve via fishing to get the base type
+    ///
+    /// # Arguments
+    ///
+    /// * `instance_of` - The InstanceOf value from an Instance definition
+    ///
+    /// # Returns
+    ///
+    /// * `Some(base_type)` - The resolved FHIR resourceType (e.g., "Patient", "Practitioner")
+    /// * `None` - Could not resolve the type
+    pub async fn resolve_instance_base_type(&self, instance_of: &str) -> Option<String> {
+        // Check if it's already a base FHIR resourceType
+        if is_base_fhir_resource_type(instance_of) {
+            return Some(instance_of.to_string());
+        }
+
+        // Try to resolve as a profile via fishing
+        if let Ok(Some(sd)) = self.fish_structure_definition(instance_of).await {
+            // The type_field contains the base FHIR resourceType
+            // e.g., for USCorePractitioner profile, type_field = "Practitioner"
+            if !sd.type_field.is_empty() {
+                return Some(sd.type_field);
+            }
+        }
+
+        // Check tank for local profile definitions
+        let tank = self.tank.read().await;
+        if let Some(resource) = tank.fish(instance_of, &[ResourceType::Profile]) {
+            // For local profiles, the parent field contains the base type
+            if let Some(parent) = resource.parent.clone() {
+                // Release the lock before recursive call
+                drop(tank);
+                // Recursively resolve if the parent is also a profile
+                return Box::pin(self.resolve_instance_base_type(&parent)).await;
+            }
+        }
+
+        debug!(
+            "Could not resolve base type for InstanceOf: {}",
+            instance_of
+        );
+        None
+    }
+}
+
+/// Check if a name is a base FHIR resourceType
+fn is_base_fhir_resource_type(name: &str) -> bool {
+    matches!(
+        name,
+        "Account"
+            | "ActivityDefinition"
+            | "AdministrableProductDefinition"
+            | "AdverseEvent"
+            | "AllergyIntolerance"
+            | "Appointment"
+            | "AppointmentResponse"
+            | "AuditEvent"
+            | "Basic"
+            | "Binary"
+            | "BiologicallyDerivedProduct"
+            | "BodyStructure"
+            | "Bundle"
+            | "CapabilityStatement"
+            | "CarePlan"
+            | "CareTeam"
+            | "CatalogEntry"
+            | "ChargeItem"
+            | "ChargeItemDefinition"
+            | "Citation"
+            | "Claim"
+            | "ClaimResponse"
+            | "ClinicalImpression"
+            | "ClinicalUseDefinition"
+            | "CodeSystem"
+            | "Communication"
+            | "CommunicationRequest"
+            | "CompartmentDefinition"
+            | "Composition"
+            | "ConceptMap"
+            | "Condition"
+            | "Consent"
+            | "Contract"
+            | "Coverage"
+            | "CoverageEligibilityRequest"
+            | "CoverageEligibilityResponse"
+            | "DetectedIssue"
+            | "Device"
+            | "DeviceDefinition"
+            | "DeviceMetric"
+            | "DeviceRequest"
+            | "DeviceUseStatement"
+            | "DiagnosticReport"
+            | "DocumentManifest"
+            | "DocumentReference"
+            | "Encounter"
+            | "Endpoint"
+            | "EnrollmentRequest"
+            | "EnrollmentResponse"
+            | "EpisodeOfCare"
+            | "EventDefinition"
+            | "Evidence"
+            | "EvidenceReport"
+            | "EvidenceVariable"
+            | "ExampleScenario"
+            | "ExplanationOfBenefit"
+            | "FamilyMemberHistory"
+            | "Flag"
+            | "Goal"
+            | "GraphDefinition"
+            | "Group"
+            | "GuidanceResponse"
+            | "HealthcareService"
+            | "ImagingStudy"
+            | "Immunization"
+            | "ImmunizationEvaluation"
+            | "ImmunizationRecommendation"
+            | "ImplementationGuide"
+            | "Ingredient"
+            | "InsurancePlan"
+            | "Invoice"
+            | "Library"
+            | "Linkage"
+            | "List"
+            | "Location"
+            | "ManufacturedItemDefinition"
+            | "Measure"
+            | "MeasureReport"
+            | "Media"
+            | "Medication"
+            | "MedicationAdministration"
+            | "MedicationDispense"
+            | "MedicationKnowledge"
+            | "MedicationRequest"
+            | "MedicationStatement"
+            | "MedicinalProductDefinition"
+            | "MessageDefinition"
+            | "MessageHeader"
+            | "MolecularSequence"
+            | "NamingSystem"
+            | "NutritionOrder"
+            | "NutritionProduct"
+            | "Observation"
+            | "ObservationDefinition"
+            | "OperationDefinition"
+            | "OperationOutcome"
+            | "Organization"
+            | "OrganizationAffiliation"
+            | "PackagedProductDefinition"
+            | "Parameters"
+            | "Patient"
+            | "PaymentNotice"
+            | "PaymentReconciliation"
+            | "Person"
+            | "PlanDefinition"
+            | "Practitioner"
+            | "PractitionerRole"
+            | "Procedure"
+            | "Provenance"
+            | "Questionnaire"
+            | "QuestionnaireResponse"
+            | "RegulatedAuthorization"
+            | "RelatedPerson"
+            | "RequestGroup"
+            | "ResearchDefinition"
+            | "ResearchElementDefinition"
+            | "ResearchStudy"
+            | "ResearchSubject"
+            | "RiskAssessment"
+            | "Schedule"
+            | "SearchParameter"
+            | "ServiceRequest"
+            | "Slot"
+            | "Specimen"
+            | "SpecimenDefinition"
+            | "StructureDefinition"
+            | "StructureMap"
+            | "Subscription"
+            | "SubscriptionStatus"
+            | "SubscriptionTopic"
+            | "Substance"
+            | "SubstanceDefinition"
+            | "SupplyDelivery"
+            | "SupplyRequest"
+            | "Task"
+            | "TerminologyCapabilities"
+            | "TestReport"
+            | "TestScript"
+            | "ValueSet"
+            | "VerificationResult"
+            | "VisionPrescription"
+    )
 }
 
 /// Convert CamelCase to kebab-case (simple heuristic)

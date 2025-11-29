@@ -248,80 +248,10 @@ fn get_element_type(element: &ElementDefinition, full_path: &str) -> Option<Stri
     }
 }
 
-fn is_fhir_primitive_or_complex_type(type_name: &str) -> bool {
-    // Primitive types
-    const PRIMITIVE_TYPES: &[&str] = &[
-        "boolean",
-        "integer",
-        "integer64",
-        "string",
-        "decimal",
-        "uri",
-        "url",
-        "canonical",
-        "base64Binary",
-        "instant",
-        "date",
-        "dateTime",
-        "time",
-        "code",
-        "oid",
-        "id",
-        "markdown",
-        "unsignedInt",
-        "positiveInt",
-        "uuid",
-        "xhtml",
-    ];
-
-    // Common complex types (not exhaustive, but covers most common ones)
-    const COMPLEX_TYPES: &[&str] = &[
-        "Address",
-        "Age",
-        "Annotation",
-        "Attachment",
-        "CodeableConcept",
-        "CodeableReference",
-        "Coding",
-        "ContactDetail",
-        "ContactPoint",
-        "Contributor",
-        "Count",
-        "DataRequirement",
-        "Distance",
-        "Dosage",
-        "Duration",
-        "Expression",
-        "Extension",
-        "HumanName",
-        "Identifier",
-        "Meta",
-        "Money",
-        "MoneyQuantity",
-        "Narrative",
-        "ParameterDefinition",
-        "Period",
-        "Quantity",
-        "Range",
-        "Ratio",
-        "RatioRange",
-        "Reference",
-        "RelatedArtifact",
-        "SampledData",
-        "Signature",
-        "SimpleQuantity",
-        "Timing",
-        "TriggerDefinition",
-        "UsageContext",
-        // Resource types commonly used in element types
-        "Resource",
-        "DomainResource",
-        "BackboneElement",
-        "Element",
-    ];
-
-    PRIMITIVE_TYPES.contains(&type_name) || COMPLEX_TYPES.contains(&type_name)
-}
+// REMOVED: is_fhir_primitive_or_complex_type() - replaced with session.is_fhir_type()
+// which dynamically queries StructureDefinition.kind from canonical manager.
+// This follows SUSHI's approach: no hardcoded type lists.
+// See: SUSHI ElementDefinition.ts:369-382 isPrimitive()
 
 /// Profile export errors
 #[derive(Debug, Error)]
@@ -680,15 +610,13 @@ impl ProfileExporter {
         // 0b. Fast path: Use find_profile_parent for case-insensitive search with Extension exclusion
         // This is optimized to search by id/name/url with proper package priority ordering
         // Skip this for Extension parents (they should match Extensions)
-        if parent != "Extension" {
-            if let Ok(Some(resource)) = self.session.find_profile_parent(parent).await {
-                if let Ok(sd) =
-                    serde_json::from_value::<StructureDefinition>((*resource.content).clone())
-                {
-                    debug!("Resolved parent '{}' via find_profile_parent", parent);
-                    return Ok(sd);
-                }
-            }
+        if parent != "Extension"
+            && let Ok(Some(resource)) = self.session.find_profile_parent(parent).await
+            && let Ok(sd) =
+                serde_json::from_value::<StructureDefinition>((*resource.content).clone())
+        {
+            debug!("Resolved parent '{}' via find_profile_parent", parent);
+            return Ok(sd);
         }
 
         // 0c. Check if parent is an alias and resolve it to canonical URL
@@ -726,18 +654,15 @@ impl ProfileExporter {
             .session
             .resource_by_type_and_name("StructureDefinition", parent_to_resolve)
             .await
-        {
-            if let Ok(sd) =
+            && let Ok(sd) =
                 serde_json::from_value::<StructureDefinition>((*resource.content).clone())
-            {
-                if !is_unexpected_extension(&sd) {
-                    debug!(
-                        "Resolved parent '{}' from canonical packages by name",
-                        parent_to_resolve
-                    );
-                    return Ok(sd);
-                }
-            }
+            && !is_unexpected_extension(&sd)
+        {
+            debug!(
+                "Resolved parent '{}' from canonical packages by name",
+                parent_to_resolve
+            );
+            return Ok(sd);
         }
 
         // 1c. Try well-known dependency canonical bases (e.g., genomics-reporting Variant)
@@ -762,14 +687,13 @@ impl ProfileExporter {
             if let Some(sd) = self
                 .resolve_structure_definition_from_canonical(&candidate)
                 .await?
+                && !is_unexpected_extension(&sd)
             {
-                if !is_unexpected_extension(&sd) {
-                    debug!(
-                        "Resolved parent '{}' via dependency canonical {}",
-                        parent_to_resolve, candidate
-                    );
-                    return Ok(sd);
-                }
+                debug!(
+                    "Resolved parent '{}' via dependency canonical {}",
+                    parent_to_resolve, candidate
+                );
+                return Ok(sd);
             }
         }
 
@@ -878,9 +802,10 @@ impl ProfileExporter {
                         with_profile_suffix
                     );
                     resource.canonical_url.clone()
-                } else if parent_to_resolve.ends_with("Profile") {
+                } else if let Some(without_profile_suffix) =
+                    parent_to_resolve.strip_suffix("Profile")
+                {
                     // Try WITHOUT "Profile" suffix (USCoreVitalSignsProfile -> USCoreVitalSigns)
-                    let without_profile_suffix = &parent_to_resolve[..parent_to_resolve.len() - 7];
                     debug!(
                         "Trying without Profile suffix by name: {}",
                         without_profile_suffix
@@ -1034,19 +959,19 @@ impl ProfileExporter {
         }
 
         // 3. Try canonical manager by name
-        if let Ok(resource) = self.session.resolve(type_name).await {
-            if let Ok(sd) =
+        if let Ok(resource) = self.session.resolve(type_name).await
+            && let Ok(sd) =
                 serde_json::from_value::<StructureDefinition>((*resource.content).clone())
-            {
-                return Some(sd.url.clone());
-            }
+        {
+            return Some(sd.url.clone());
         }
 
         // 4. Try FHIR core canonical URL format
         let core_candidate = format!("http://hl7.org/fhir/StructureDefinition/{}", type_name);
-        if let Ok(Some(_)) = self
+        if self
             .resolve_structure_definition_from_canonical(&core_candidate)
             .await
+            .is_ok_and(|opt| opt.is_some())
         {
             return Some(core_candidate);
         }
@@ -1057,12 +982,10 @@ impl ProfileExporter {
             .session
             .resource_by_type_and_id("StructureDefinition", &kebab_name)
             .await
-        {
-            if let Ok(sd) =
+            && let Ok(sd) =
                 serde_json::from_value::<StructureDefinition>((*resource.content).clone())
-            {
-                return Some(sd.url.clone());
-            }
+        {
+            return Some(sd.url.clone());
         }
 
         None
@@ -1162,7 +1085,8 @@ impl ProfileExporter {
 
         // For simple types or profile constraints (e.g., "string", "Quantity", "USCorePatient")
         // Check if it's a profile name that should go in the profile field
-        if !is_fhir_primitive_or_complex_type(type_str) {
+        // Use dynamic SD lookup like SUSHI instead of hardcoded type lists
+        if !self.session.is_fhir_type(type_str).await {
             // This might be a profile name - try to resolve it
             if let Some(canonical_url) = self.resolve_type_to_canonical(type_str).await {
                 // It's a profile - the code should be the base type and profile should be the URL
@@ -1205,26 +1129,21 @@ impl ProfileExporter {
                 // Try to parse as ValueSet
                 if let Some(resource_type) =
                     resource_json.get("resourceType").and_then(|v| v.as_str())
+                    && resource_type == "ValueSet"
                 {
-                    if resource_type == "ValueSet" {
-                        // Check if name matches
-                        if let Some(name) = resource_json.get("name").and_then(|v| v.as_str()) {
-                            if name == value_set_name {
-                                if let Some(url) = resource_json.get("url").and_then(|v| v.as_str())
-                                {
-                                    return url.to_string();
-                                }
-                            }
-                        }
-                        // Also check if id matches (for cases where id is used instead of name)
-                        if let Some(id) = resource_json.get("id").and_then(|v| v.as_str()) {
-                            if id == value_set_name || id == camel_to_kebab(value_set_name) {
-                                if let Some(url) = resource_json.get("url").and_then(|v| v.as_str())
-                                {
-                                    return url.to_string();
-                                }
-                            }
-                        }
+                    // Check if name matches
+                    if let Some(name) = resource_json.get("name").and_then(|v| v.as_str())
+                        && name == value_set_name
+                        && let Some(url) = resource_json.get("url").and_then(|v| v.as_str())
+                    {
+                        return url.to_string();
+                    }
+                    // Also check if id matches (for cases where id is used instead of name)
+                    if let Some(id) = resource_json.get("id").and_then(|v| v.as_str())
+                        && (id == value_set_name || id == camel_to_kebab(value_set_name))
+                        && let Some(url) = resource_json.get("url").and_then(|v| v.as_str())
+                    {
+                        return url.to_string();
                     }
                 }
             }
@@ -1236,15 +1155,15 @@ impl ProfileExporter {
         }
 
         // 4. Try canonical manager by name
-        if let Ok(resource) = self.session.resolve(value_set_name).await {
-            if let Some(url) = resource.content.get("url").and_then(|v| v.as_str()) {
-                return url.to_string();
-            }
+        if let Ok(resource) = self.session.resolve(value_set_name).await
+            && let Some(url) = resource.content.get("url").and_then(|v| v.as_str())
+        {
+            return url.to_string();
         }
 
         // 5. Try FHIR core ValueSet URL format
         let core_candidate = format!("http://hl7.org/fhir/ValueSet/{}", value_set_name);
-        if let Ok(_) = self.session.resolve(&core_candidate).await {
+        if self.session.resolve(&core_candidate).await.is_ok() {
             return core_candidate;
         }
 
@@ -1286,7 +1205,7 @@ impl ProfileExporter {
         // Note: Fields like contact, use_context, jurisdiction, purpose, copyright, keyword
         // don't exist in our simplified struct yet. They would be cleared in a full implementation.
 
-        // STEP 3: Filter out uninherited extensions (SUSHI parity)
+        // STEP 3: Filter out uninherited extensions
         // These HL7-specific extensions should not be inherited from parent
         if let Some(extensions) = &structure_def.extension {
             let filtered: Vec<serde_json::Value> = extensions
@@ -1896,24 +1815,23 @@ impl ProfileExporter {
             let package = self.package.read().await;
             // Package stores resources by canonical URL, try to find by matching name
             for (url, resource) in package.all_resources() {
-                if let Some(name) = resource.get("name").and_then(|n| n.as_str()) {
-                    if name == ext_type
-                        && resource.get("resourceType").and_then(|t| t.as_str())
-                            == Some("StructureDefinition")
-                        && resource.get("kind").and_then(|k| k.as_str()) == Some("complex-type")
-                    {
-                        debug!(
-                            "Resolved extension '{}' from local package -> '{}'",
-                            ext_type, url
-                        );
-                        return url.clone();
-                    }
+                if let Some(name) = resource.get("name").and_then(|n| n.as_str())
+                    && name == ext_type
+                    && resource.get("resourceType").and_then(|t| t.as_str())
+                        == Some("StructureDefinition")
+                    && resource.get("kind").and_then(|k| k.as_str()) == Some("complex-type")
+                {
+                    debug!(
+                        "Resolved extension '{}' from local package -> '{}'",
+                        ext_type, url
+                    );
+                    return url.clone();
                 }
             }
         }
 
         // Fallback: construct URL from base_url and extension type name
-        // Convert PascalCase to kebab-case with IG prefix for SUSHI parity
+        // Convert PascalCase to kebab-case with IG prefix
         let kebab = Self::pascal_to_kebab(ext_type);
         let extension_url = format!("{}/StructureDefinition/{}", self.base_url, kebab);
         debug!(

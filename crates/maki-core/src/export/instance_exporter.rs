@@ -550,7 +550,7 @@ impl InstanceExporter {
             })
         };
 
-        // Pre-populate fixed/pattern values from the profile chain (SUSHI parity)
+        // Pre-populate fixed/pattern values from the profile chain
         let mut deferred_constraints = Vec::new();
         if let Some(sd) = sd_opt.as_ref() {
             let profile_chain = if let Some(fishing_ctx) = &self.fishing_context {
@@ -582,7 +582,7 @@ impl InstanceExporter {
             }
         }
 
-        // Inline referenced instances inside Bundle entries (SUSHI parity)
+        // Inline referenced instances inside Bundle entries
         if resource["resourceType"] == "Bundle" {
             self.inline_bundle_resources(&mut resource);
         }
@@ -629,10 +629,10 @@ impl InstanceExporter {
         self.current_extension_urls.clear();
         self.current_resource_type = None;
 
-        // Remove internal slice markers before returning (SUSHI parity)
+        // Remove internal slice markers before returning
         Self::strip_slice_markers(&mut resource);
 
-        // Reorder fields to match FHIR specification order (SUSHI parity)
+        // Reorder fields to match FHIR specification order
         Self::order_fhir_fields(&mut resource);
 
         debug!("Successfully exported instance {}", name);
@@ -730,9 +730,14 @@ impl InstanceExporter {
     }
 
     /// Minimal field ordering - just ensures resourceType, id, meta are first
-    /// JSON key order doesn't affect FHIR validity
+    ///
+    /// NOTE: This is a presentation preference, not a hardcoded element list.
+    /// - JSON key order doesn't affect FHIR validity (JSON is unordered by spec)
+    /// - resourceType/id/meta first is a universal FHIR convention (SUSHI does this too)
+    /// - Full SD-based ordering would be expensive (resolve SD for every object)
     fn order_fhir_fields(value: &mut JsonValue) {
         if let JsonValue::Object(map) = value {
+            // Standard FHIR presentation: resourceType, id, meta first
             const FIRST_FIELDS: &[&str] = &["resourceType", "id", "meta"];
 
             let mut ordered = serde_json::Map::new();
@@ -979,23 +984,22 @@ impl InstanceExporter {
                     // Handle consecutive brackets like [sliceName][0]
                     // If the field is empty and the previous segment is an ArrayAccess,
                     // this is a secondary index on the same slice
-                    if field.is_empty() {
-                        if let Some(PathSegment::ArrayAccess {
+                    if field.is_empty()
+                        && let Some(PathSegment::ArrayAccess {
                             field: prev_field,
                             slice_name: prev_slice,
                             ..
                         }) = segments.last()
-                        {
-                            // Update the previous segment with the new index while keeping the slice name
-                            let updated_segment = PathSegment::ArrayAccess {
-                                field: prev_field.clone(),
-                                index: index.clone(),
-                                slice_name: prev_slice.clone(),
-                            };
-                            segments.pop();
-                            segments.push(updated_segment);
-                            continue;
-                        }
+                    {
+                        // Update the previous segment with the new index while keeping the slice name
+                        let updated_segment = PathSegment::ArrayAccess {
+                            field: prev_field.clone(),
+                            index: index.clone(),
+                            slice_name: prev_slice.clone(),
+                        };
+                        segments.pop();
+                        segments.push(updated_segment);
+                        continue;
                     }
 
                     segments.push(PathSegment::ArrayAccess {
@@ -1362,11 +1366,11 @@ impl InstanceExporter {
 
         for element in elements {
             if let Some(slice_name) = Self::extract_slice_name(element) {
-                if element.path.ends_with(".url") {
-                    if let Some(url) = Self::extract_fixed_uri(element) {
-                        map.entry(slice_name.clone()).or_insert(url);
-                        continue;
-                    }
+                if element.path.ends_with(".url")
+                    && let Some(url) = Self::extract_fixed_uri(element)
+                {
+                    map.entry(slice_name.clone()).or_insert(url);
+                    continue;
                 }
 
                 if let Some(url) = Self::extract_type_profile(element) {
@@ -1416,7 +1420,7 @@ impl InstanceExporter {
     /// Convert a string to PascalCase (simple heuristic)
     fn pascal_case(input: &str) -> String {
         input
-            .split(|c: char| c == '-' || c == '_' || c == ' ')
+            .split(['-', '_', ' '])
             .filter(|part| !part.is_empty())
             .map(|part| {
                 let mut chars = part.chars();
@@ -1471,10 +1475,10 @@ impl InstanceExporter {
         instance_of: &str,
         canonical_url: Option<&str>,
     ) -> Option<StructureDefinition> {
-        if let Some(url) = canonical_url {
-            if let Ok(Some(sd)) = fishing_ctx.fish_structure_definition(url).await {
-                return Some(sd);
-            }
+        if let Some(url) = canonical_url
+            && let Ok(Some(sd)) = fishing_ctx.fish_structure_definition(url).await
+        {
+            return Some(sd);
         }
 
         if let Ok(Some(sd)) = fishing_ctx.fish_structure_definition(instance_of).await {
@@ -1581,15 +1585,19 @@ impl InstanceExporter {
                     continue;
                 }
 
+                // Resolve any code system aliases in the constraint value
+                let mut resolved_value = constraint_value.clone();
+                self.resolve_aliases_in_json(&mut resolved_value);
+
                 if element.path.contains(".component") {
                     deferred.push(DeferredConstraint {
                         segments,
-                        value: constraint_value.clone(),
+                        value: resolved_value,
                     });
                     continue;
                 }
 
-                self.set_value_at_path(resource, &segments, constraint_value.clone())
+                self.set_value_at_path(resource, &segments, resolved_value)
                     .await?;
             }
         }
@@ -1688,22 +1696,54 @@ impl InstanceExporter {
 
     /// Extract the fixed or pattern constraint value from an element
     fn extract_fixed_or_pattern(element: &ElementDefinition) -> Option<(String, JsonValue)> {
-        if let Some(fixed_map) = element.fixed.as_ref() {
-            if let Some((key, value)) = fixed_map.iter().find(|(key, _)| key.starts_with("fixed")) {
-                return Some((key.clone(), value.clone()));
-            }
+        if let Some(fixed_map) = element.fixed.as_ref()
+            && let Some((key, value)) = fixed_map.iter().find(|(key, _)| key.starts_with("fixed"))
+        {
+            return Some((key.clone(), value.clone()));
         }
 
-        if let Some(pattern_map) = element.pattern.as_ref() {
-            if let Some((key, value)) = pattern_map
+        if let Some(pattern_map) = element.pattern.as_ref()
+            && let Some((key, value)) = pattern_map
                 .iter()
                 .find(|(key, _)| key.starts_with("pattern"))
-            {
-                return Some((key.clone(), value.clone()));
-            }
+        {
+            return Some((key.clone(), value.clone()));
         }
 
         None
+    }
+
+    /// Resolve code system aliases in a JSON value recursively
+    ///
+    /// This processes CodeableConcept and Coding structures to resolve
+    /// alias references (e.g., "NCIT") to their full URLs.
+    fn resolve_aliases_in_json(&self, value: &mut JsonValue) {
+        match value {
+            JsonValue::Object(map) => {
+                // If this looks like a Coding with a system field, resolve the alias
+                if let Some(system_val) = map.get_mut("system")
+                    && let Some(system_str) = system_val.as_str()
+                    // Only resolve if it looks like an alias (not a URL)
+                    && !system_str.starts_with("http://")
+                    && !system_str.starts_with("https://")
+                    && !system_str.starts_with("urn:")
+                    && let Some(fishing_ctx) = &self.fishing_context
+                    && let Some(resolved) = fishing_ctx.resolve_alias(system_str)
+                {
+                    *system_val = JsonValue::String(resolved);
+                }
+                // Recurse into all values
+                for (_, v) in map.iter_mut() {
+                    self.resolve_aliases_in_json(v);
+                }
+            }
+            JsonValue::Array(arr) => {
+                for item in arr.iter_mut() {
+                    self.resolve_aliases_in_json(item);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Convert an ElementDefinition path to an instance assignment path
@@ -2094,12 +2134,12 @@ impl InstanceExporter {
         }
 
         // Pattern: system#code "display" or system#code
-        if trimmed.contains('#') {
-            if let Some(code_part) = trimmed.split('#').nth(1) {
-                // Split on space to separate code from display
-                let code = code_part.split_whitespace().next().unwrap_or(code_part);
-                return code.trim_matches('"').to_string();
-            }
+        if trimmed.contains('#')
+            && let Some(code_part) = trimmed.split('#').nth(1)
+        {
+            // Split on space to separate code from display
+            let code = code_part.split_whitespace().next().unwrap_or(code_part);
+            return code.trim_matches('"').to_string();
         }
 
         // No code pattern, return as-is (remove quotes if present)
@@ -2119,67 +2159,77 @@ impl InstanceExporter {
     ///
     /// `true` if the field is an array based on the current resource type's
     /// StructureDefinition, `false` otherwise or if resource type is unknown.
+    ///
+    /// # Implementation
+    ///
+    /// This method uses dynamic SD lookup like SUSHI instead of hardcoded field lists.
+    /// It tries multiple resolution strategies:
+    /// 1. Resource-level path (e.g., "Patient.identifier")
+    /// 2. Common datatype paths for nested fields (e.g., "HumanName.given", "Address.line")
+    ///
+    /// Reference: SUSHI ElementDefinition.ts:359-367 `isArrayOrChoice()`
     async fn is_array_field(&self, field_name: &str) -> bool {
-        // First, check common array fields that appear in nested datatypes
-        // (session lookup only works for top-level resource fields)
-        if Self::is_known_array_field(field_name) {
-            return true;
-        }
-
+        // 1. Try resource-level path first
         if let Some(resource_type) = &self.current_resource_type {
             let element_path = format!("{}.{}", resource_type, field_name);
-            self.session.is_array_element(&element_path).await
-        } else {
-            // No resource type context - default to non-array
-            trace!(
-                "No current_resource_type set, defaulting '{}' to non-array",
-                field_name
-            );
-            false
+            if self.session.is_array_element(&element_path).await {
+                return true;
+            }
+        }
+
+        // 2. Try common datatype paths for nested fields
+        // This handles fields like "given" (HumanName), "line" (Address), "coding" (CodeableConcept)
+        // The canonical manager will look up the datatype's SD and check cardinality
+        let datatype_paths = Self::get_datatype_paths_for_field(field_name);
+        for datatype_path in datatype_paths {
+            if self.session.is_array_element(&datatype_path).await {
+                return true;
+            }
+        }
+
+        // Default to non-array if no path matched
+        trace!(
+            "Field '{}' not found as array in any known type, defaulting to non-array",
+            field_name
+        );
+        false
+    }
+
+    /// Get potential datatype paths for a field name
+    ///
+    /// This maps field names to the FHIR datatypes where they commonly appear.
+    /// Used for looking up cardinality when we don't have full path context.
+    ///
+    /// NOTE: This is a mapping, not a hardcoded "is array" list.
+    /// The actual cardinality is queried from the StructureDefinition.
+    fn get_datatype_paths_for_field(field_name: &str) -> Vec<String> {
+        match field_name {
+            // HumanName fields
+            "given" | "prefix" | "suffix" => vec![format!("HumanName.{}", field_name)],
+            // Address fields
+            "line" => vec!["Address.line".to_string()],
+            // CodeableConcept fields
+            "coding" => vec!["CodeableConcept.coding".to_string()],
+            // Timing fields
+            "event" | "timeOfDay" => vec![format!("Timing.repeat.{}", field_name)],
+            // ContactPoint (within various types)
+            "telecom" => vec![
+                "Patient.telecom".to_string(),
+                "ContactPoint.telecom".to_string(),
+            ],
+            // Dosage fields
+            "doseAndRate" => vec!["Dosage.doseAndRate".to_string()],
+            // Extension fields (always array)
+            "extension" | "modifierExtension" => vec!["Element.extension".to_string()],
+            // Other common fields - check in DomainResource
+            "contained" => vec!["DomainResource.contained".to_string()],
+            _ => vec![],
         }
     }
 
-    /// Known array fields that appear in nested datatypes
-    /// This handles fields where the session lookup can't find them because
-    /// they're in datatypes (like Timing.event) not top-level resources
-    fn is_known_array_field(field_name: &str) -> bool {
-        matches!(
-            field_name,
-            // Common resource array fields
-            "identifier" | "telecom" | "address" | "contact" | "communication" |
-            "contained" | "extension" | "modifierExtension" |
-            // Name fields (note: 'name' is context-dependent - use session lookup)
-            "given" | "prefix" | "suffix" |
-            // Address fields
-            "line" |
-            // Coding/CodeableConcept
-            "coding" |
-            // Observation
-            "category" | "performer" | "interpretation" | "note" | "referenceRange" | "component" |
-            // Patient
-            "photo" | "link" |
-            // Practitioner
-            "qualification" |
-            // Organization
-            "alias" | "endpoint" |
-            // Condition (note: bodySite is context-dependent - use session lookup)
-            "stage" | "evidence" | "locationQualifier" |
-            // Procedure
-            "complication" | "followUp" | "focalDevice" | "usedReference" | "usedCode" |
-            // MedicationRequest/MedicationAdministration
-            "dosageInstruction" | "doseAndRate" | "detectedIssue" | "eventHistory" |
-            // DiagnosticReport
-            "result" | "imagingStudy" | "media" |
-            // Encounter
-            "statusHistory" | "classHistory" | "participant" | "diagnosis" | "account" | "hospitalization" |
-            // Timing datatype array fields
-            "event" | "timeOfDay" |
-            // Various
-            "instantiatesCanonical" | "instantiatesUri" | "basedOn" | "partOf" | "reasonCode" | "reasonReference" |
-            // Condition stage
-            "assessment"
-        )
-    }
+    // REMOVED: is_known_array_field() - replaced with dynamic SD lookup via session.is_array_element()
+    // This follows SUSHI's approach: no hardcoded array field lists.
+    // See: SUSHI ElementDefinition.ts:359-367 isArrayOrChoice()
 
     /// Convert a FSH value string to appropriate JSON value
     ///
@@ -2351,21 +2401,17 @@ impl InstanceExporter {
 
         // Extract optional display text (between double quotes after the unit)
         let after_unit = &value[last_quote_idx + 1..];
-        let display = if let Some(dq_start) = after_unit.find('"') {
-            if let Some(dq_end) = after_unit[dq_start + 1..].find('"') {
-                Some(after_unit[dq_start + 1..dq_start + 1 + dq_end].trim())
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        let display = after_unit.find('"').and_then(|dq_start| {
+            after_unit[dq_start + 1..]
+                .find('"')
+                .map(|dq_end| after_unit[dq_start + 1..dq_start + 1 + dq_end].trim())
+        });
 
         // Use display text as unit if provided, otherwise use UCUM code
         let unit_display = display.unwrap_or(ucum_code);
 
         // Parse numeric value
-        // If the value can be represented as an integer, serialize as integer (SUSHI parity)
+        // If the value can be represented as an integer, serialize as integer
         let numeric_value = if let Ok(num) = value_str.parse::<i64>() {
             serde_json::json!(num)
         } else if let Ok(num) = value_str.parse::<f64>() {
@@ -2392,58 +2438,23 @@ impl InstanceExporter {
         Ok(quantity)
     }
 
-    /// Fallback reference type lookup using field name patterns
-    /// Used when canonical manager lookup fails (e.g., for profiles without base definitions)
-    fn fallback_reference_type(&self, path: &str) -> Option<String> {
-        // Extract the last field name from the path
-        let field_name = path.rsplit('.').next()?;
-
-        // Common FHIR reference field patterns
-        // This is a fallback for when canonical manager doesn't have the info
-        match field_name {
-            // Patient references
-            "patient" | "subject" => Some("Patient".to_string()),
-            // Practitioner references
-            "performer" | "actor" | "recorder" | "asserter" | "informant" | "attester"
-            | "author" | "sender" | "receiver" | "requester" | "collector" | "interpreter"
-            | "practitioner" | "responsibleParty" | "enterer" | "provider" => {
-                Some("Practitioner".to_string())
-            }
-            // Organization references
-            "organization" | "managingOrganization" | "custodian" | "owner" | "manufacturer"
-            | "supplier" => Some("Organization".to_string()),
-            // Encounter references
-            "encounter" | "context" => Some("Encounter".to_string()),
-            // Location references
-            "location" | "destination" | "origin" => Some("Location".to_string()),
-            // Device references
-            "device" => Some("Device".to_string()),
-            // Specimen references
-            "specimen" => Some("Specimen".to_string()),
-            // Condition references
-            "condition" | "reasonReference" => Some("Condition".to_string()),
-            // Observation references
-            "hasMember" | "derivedFrom" => Some("Observation".to_string()),
-            // ServiceRequest references
-            "basedOn" => Some("ServiceRequest".to_string()),
-            // MedicationRequest references
-            "medicationReference" => Some("Medication".to_string()),
-            // Coverage references
-            "coverage" | "insurer" => Some("Coverage".to_string()),
-            // CareTeam references
-            "careTeam" => Some("CareTeam".to_string()),
-            // CarePlan references
-            "carePlan" => Some("CarePlan".to_string()),
-            // Goal references
-            "goal" => Some("Goal".to_string()),
-            // Other common references
-            "focus" | "entity" => None, // Too generic, needs context
-            _ => None,
-        }
+    /// Clean a path for canonical manager lookup by removing array indices
+    /// e.g., "hasMember[0]" -> "hasMember", "stage.assessment" -> "stage.assessment"
+    fn clean_path_for_lookup(&self, path: &str) -> String {
+        // Remove array indices from each segment
+        path.split('.')
+            .map(|segment| segment.find('[').map(|i| &segment[..i]).unwrap_or(segment))
+            .collect::<Vec<_>>()
+            .join(".")
     }
 
     /// Parse Reference from FSH notation with optional path context
     /// Format: Reference(Patient/example) or Reference(resourceId)
+    ///
+    /// Uses proper resource resolution via fishing context:
+    /// 1. Check local instance registry
+    /// 2. Fish for the instance in the tank, resolve its InstanceOf to get actual FHIR type
+    /// 3. Fall back to canonical manager for path-based type inference
     async fn parse_reference_with_context(
         &self,
         value: &str,
@@ -2456,31 +2467,9 @@ impl InstanceExporter {
             .unwrap_or(value)
             .to_string();
 
-        // Try to infer the expected reference type from the path context
-        // First, try dynamic lookup from canonical manager (preferred - uses FHIR spec)
-        let expected_type = if let Some(p) = path {
-            // Get reference target types from canonical manager
-            let target_types = self.session.get_reference_target_types(p).await;
-            if !target_types.is_empty() {
-                // Use the first target type (most common/primary target)
-                trace!(
-                    "Dynamic lookup for path '{}' found targets: {:?}",
-                    p,
-                    target_types
-                );
-                Some(target_types.into_iter().next().unwrap())
-            } else {
-                // Fall back to hardcoded map for cases where canonical lookup fails
-                self.fallback_reference_type(p)
-            }
-        } else {
-            None
-        };
-
-        // If this looks like a local instance id (no slash) and we know its resourceType,
-        // construct a proper typed reference (e.g., Patient/{id}) for parity with SUSHI.
+        // If this looks like a local instance id (no slash), resolve its type
         if !ref_value.contains('/') {
-            // First, try local instance registry
+            // First, try local instance registry (already exported instances)
             if let Some(instance_json) = self.instance_registry.get(&ref_value) {
                 if let Some(rt) = instance_json.get("resourceType").and_then(|v| v.as_str()) {
                     ref_value = format!("{}/{}", rt, ref_value);
@@ -2488,20 +2477,53 @@ impl InstanceExporter {
             }
             // Second, try fishing context to find the instance in FSH tank
             else if let Some(fishing_ctx) = &self.fishing_context {
-                if let Some(metadata) = fishing_ctx.fish_metadata(&ref_value, &[]).await {
-                    // resource_type is a String, not Option
-                    if !metadata.resource_type.is_empty() {
+                // Look up the instance in the tank
+                if let Some(metadata) = fishing_ctx
+                    .fish_metadata(&ref_value, &[crate::semantic::ResourceType::Instance])
+                    .await
+                    // For Instances, metadata.parent contains the InstanceOf value
+                    // We need to resolve it to the actual FHIR resourceType
+                    && let Some(instance_of) = &metadata.parent
+                    && let Some(base_type) =
+                        fishing_ctx.resolve_instance_base_type(instance_of).await
+                {
+                    ref_value = format!("{}/{}", base_type, ref_value);
+                }
+                // If not found as an instance, try other resource types (profiles, etc.)
+                else if let Some(metadata) = fishing_ctx.fish_metadata(&ref_value, &[]).await {
+                    // For non-Instance resources, resource_type is the FHIR type
+                    if metadata.resource_type != "Instance" && !metadata.resource_type.is_empty() {
                         ref_value = format!("{}/{}", metadata.resource_type, ref_value);
-                    } else if let Some(rt) = &expected_type {
+                    }
+                }
+                // Fall back to canonical manager for path-based type inference
+                else if let Some(p) = path {
+                    let full_path = if let Some(ref rt) = self.current_resource_type {
+                        let clean_path = self.clean_path_for_lookup(p);
+                        format!("{}.{}", rt, clean_path)
+                    } else {
+                        p.to_string()
+                    };
+
+                    let target_types = self.session.get_reference_target_types(&full_path).await;
+                    if let Some(rt) = target_types.into_iter().next() {
                         ref_value = format!("{}/{}", rt, ref_value);
                     }
-                } else if let Some(rt) = &expected_type {
-                    ref_value = format!("{}/{}", rt, ref_value);
                 }
             }
-            // Third, fall back to path context
-            else if let Some(rt) = expected_type {
-                ref_value = format!("{}/{}", rt, ref_value);
+            // If no fishing context available, fall back to canonical manager
+            else if let Some(p) = path {
+                let full_path = if let Some(ref rt) = self.current_resource_type {
+                    let clean_path = self.clean_path_for_lookup(p);
+                    format!("{}.{}", rt, clean_path)
+                } else {
+                    p.to_string()
+                };
+
+                let target_types = self.session.get_reference_target_types(&full_path).await;
+                if let Some(rt) = target_types.into_iter().next() {
+                    ref_value = format!("{}/{}", rt, ref_value);
+                }
             }
         }
 
@@ -2737,83 +2759,6 @@ mod tests {
         let exporter = create_test_exporter();
         let value = exporter.convert_value("#male").await.unwrap();
         assert_eq!(value, JsonValue::String("male".to_string()));
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_export_sets_bodystructure_patient() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../mcode-ig/input/fsh/EX_Basic.fsh");
-        let content = std::fs::read_to_string(&path).expect("read mcode file");
-        let (cst, lex, parse) = crate::cst::parse_fsh(&content);
-        assert!(
-            lex.is_empty() && parse.is_empty(),
-            "lexer_errors: {}, parse_errors: {}",
-            lex.len(),
-            parse.len()
-        );
-
-        let instance = cst
-            .descendants()
-            .filter_map(Instance::cast)
-            .find(|inst| inst.name().as_deref() == Some("john-anyperson-treatment-volume"))
-            .expect("instance present");
-
-        let patient_rule_value = instance.rules().find_map(|rule| match rule {
-            Rule::FixedValue(fv)
-                if fv
-                    .path()
-                    .map(|p| p.as_string() == "patient")
-                    .unwrap_or(false) =>
-            {
-                fv.value()
-            }
-            _ => None,
-        });
-        assert!(
-            patient_rule_value.is_some(),
-            "patient assignment should be parsed"
-        );
-
-        let session = Arc::new(crate::canonical::DefinitionSession::for_testing());
-        let mut exporter = InstanceExporter::new(session, "http://example.org/fhir".to_string())
-            .await
-            .unwrap();
-
-        let resource = exporter.export(&instance).await.unwrap();
-        assert!(
-            resource.get("patient").is_some(),
-            "export should set BodyStructure.patient"
-        );
-    }
-
-    #[test]
-    fn test_mcode_bodystructure_has_patient_rule() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../mcode-ig/input/fsh/EX_Basic.fsh");
-        let content = std::fs::read_to_string(&path).expect("read mcode file");
-        let (cst, lex, parse) = crate::cst::parse_fsh(&content);
-        assert!(
-            lex.is_empty() && parse.is_empty(),
-            "lexer_errors: {}, parse_errors: {}",
-            lex.len(),
-            parse.len()
-        );
-
-        let instance = cst
-            .descendants()
-            .filter_map(Instance::cast)
-            .find(|inst| inst.name().as_deref() == Some("john-anyperson-treatment-volume"))
-            .expect("instance present");
-
-        let has_patient_rule = instance.rules().any(|rule| match rule {
-            Rule::FixedValue(fv) => fv
-                .path()
-                .map(|p| p.as_string() == "patient")
-                .unwrap_or(false),
-            _ => false,
-        });
-
-        assert!(has_patient_rule, "patient rule should be parsed");
     }
 
     #[test]
@@ -3240,63 +3185,5 @@ InstanceOf: Observation
 
         let resource = exporter.export(&instance).await.unwrap();
         assert_eq!(resource["status"], "final");
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_instance_rules_include_insert() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../mcode-ig/input/fsh/EX_Staging_Other.fsh");
-        let content = std::fs::read_to_string(path).expect("read fsh");
-        let (cst, lex, parse) = crate::cst::parse_fsh(&content);
-        assert!(lex.is_empty() && parse.is_empty());
-
-        let instance = cst
-            .descendants()
-            .filter_map(Instance::cast)
-            .find(|inst| inst.name().as_deref() == Some("binet-stage-group-B"))
-            .unwrap();
-
-        let has_insert = instance.rules().any(|r| matches!(r, Rule::Insert(_)));
-        assert!(has_insert, "instance should contain an Insert rule");
-    }
-
-    #[test]
-    fn test_practitioner_rule_paths_present() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../mcode-ig/input/fsh/EX_ExtendedExample.fsh");
-        let content = std::fs::read_to_string(path).expect("read fsh");
-        let (cst, lex, parse) = crate::cst::parse_fsh(&content);
-        assert!(lex.is_empty() && parse.is_empty());
-
-        let instance = cst
-            .descendants()
-            .filter_map(Instance::cast)
-            .find(|inst| inst.name().as_deref() == Some("us-core-practitioner-jane-radiotech"))
-            .unwrap();
-
-        for rule in instance.rules() {
-            if let Rule::FixedValue(fv) = &rule {
-                let path_str = fv.path().map(|p| p.as_string()).unwrap_or_default();
-                println!("RULE path=`{}` text=`{}`", path_str, rule.syntax().text());
-            }
-        }
-
-        let mut found = false;
-        for rule in instance.rules() {
-            if let Rule::FixedValue(fv) = &rule {
-                if let Some(path) = fv.path().map(|p| p.as_string()) {
-                    if path == "address.use" {
-                        found = true;
-                        let text = rule.syntax().text().to_string();
-                        assert!(
-                            text.contains("address.use"),
-                            "Rule text should contain path, got: {}",
-                            text
-                        );
-                    }
-                }
-            }
-        }
-        assert!(found, "Expected address.use rule to be present");
     }
 }

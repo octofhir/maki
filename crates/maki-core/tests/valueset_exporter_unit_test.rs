@@ -147,7 +147,7 @@ fn test_valueset_filters() {
     // Test descendent-of filter
     let descendent_filter = ValueSetFilter::descendent_of("12345");
     assert_eq!(descendent_filter.property, "concept");
-    assert_eq!(descendent_filter.op, "descendant-of");
+    assert_eq!(descendent_filter.op, "descendent-of"); // FHIR uses British spelling
     assert_eq!(descendent_filter.value, "12345");
 
     // Test exists filter

@@ -539,27 +539,29 @@ pub fn check_binding_without_valueset(
                     .map(|global| global.contains(&vs_name))
                     .unwrap_or(false);
 
-                if !is_defined_locally && !is_defined_globally {
-                    if !vs_name.starts_with("http://") && !vs_name.starts_with("https://") {
-                        let location = model.source_map.node_to_diagnostic_location(
-                            vs_rule.syntax(),
-                            &model.source,
-                            &model.source_file,
-                        );
+                if !is_defined_locally
+                    && !is_defined_globally
+                    && !vs_name.starts_with("http://")
+                    && !vs_name.starts_with("https://")
+                {
+                    let location = model.source_map.node_to_diagnostic_location(
+                        vs_rule.syntax(),
+                        &model.source,
+                        &model.source_file,
+                    );
 
-                        diagnostics.push(
-                            Diagnostic::new(
-                                BINDING_WITHOUT_VALUESET,
-                                Severity::Warning,
-                                format!(
-                                    "Binding references ValueSet '{}' which is not defined in this project",
-                                    vs_name
-                                ),
-                                location,
-                            )
-                            .with_code("undefined-valueset".to_string()),
-                        );
-                    }
+                    diagnostics.push(
+                        Diagnostic::new(
+                            BINDING_WITHOUT_VALUESET,
+                            Severity::Warning,
+                            format!(
+                                "Binding references ValueSet '{}' which is not defined in this project",
+                                vs_name
+                            ),
+                            location,
+                        )
+                        .with_code("undefined-valueset".to_string()),
+                    );
                 }
             }
         }

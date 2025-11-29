@@ -182,6 +182,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    #[ignore = "requires canonical manager infrastructure"]
     async fn test_batch_process_structure_definitions() {
         let session = setup_canonical_environment(parse_fhir_release("R4").unwrap(), vec![])
             .await
@@ -204,6 +205,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    #[ignore = "requires canonical manager infrastructure"]
     async fn test_batch_process_with_custom_concurrency() {
         let session = setup_canonical_environment(parse_fhir_release("R4").unwrap(), vec![])
             .await
@@ -226,6 +228,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    #[ignore = "requires canonical manager infrastructure"]
     async fn test_batch_process_large_batch() {
         let session = setup_canonical_environment(parse_fhir_release("R4").unwrap(), vec![])
             .await

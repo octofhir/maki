@@ -78,11 +78,11 @@ cargo build --release --bin maki
 ### Initialize Configuration
 
 ```bash
-# Create a .makirc.json config file in the current directory
+# Create a maki.yaml config file in the current directory
 maki config init
 
-# Initialize with JSONC format (supports comments)
-maki config init --format jsonc
+# Initialize with JSON format
+maki config init --format json
 ```
 
 ### Lint Files
@@ -173,61 +173,88 @@ maki rules --category correctness
 ### Validate Configuration
 
 ```bash
-# Validate your .makirc.json
+# Validate your maki.yaml configuration
 maki config validate
 ```
 
 ## Configuration
 
-FSH Lint supports configuration files in JSON or JSONC format. Place a `.makirc.json` file in your project root:
+MAKI supports configuration files in YAML or JSON format. Place a `maki.yaml` (or `maki.json`) file in your project root:
 
-```jsonc
-{
-  // Enable/disable specific rules
-  "rules": {
-    "documentation/require-description": "error",
-    "naming/profile-pascal-case": "warn",
-    "correctness/valid-cardinality": "error"
-  },
+```yaml
+# maki.yaml
+root: true
 
-  // File patterns to include/exclude
-  "include": ["input/**/*.fsh"],
-  "exclude": ["**/node_modules/**", "**/temp/**"],
+# FHIR package dependencies
+dependencies:
+  hl7.fhir.us.core: "6.1.0"
+  hl7.terminology.r4: "5.3.0"
 
-  // Custom rule directories
-  "customRules": ["./custom-rules"],
+# Build configuration (SUSHI-compatible)
+build:
+  canonical: http://example.org/fhir/my-ig
+  fhirVersion: ["4.0.1"]
+  id: my.example.ig
+  name: MyImplementationGuide
+  title: My Example Implementation Guide
+  version: "1.0.0"
+  status: draft
 
-  // Formatter options
-  "formatter": {
-    "indentWidth": 2,
-    "lineWidth": 100
-  }
-}
+# Linter configuration
+linter:
+  enabled: true
+  rules:
+    recommended: true
+    correctness:
+      duplicate-definition: error
+      invalid-reference: error
+    documentation:
+      require-description: warn
+
+# Formatter configuration
+formatter:
+  enabled: true
+  indentSize: 2
+  lineWidth: 100
+
+# File patterns
+files:
+  include:
+    - "input/fsh/**/*.fsh"
+  exclude:
+    - "**/node_modules/**"
 ```
+
+### Configuration Discovery
+
+MAKI searches for configuration files in this order:
+
+1. `maki.yaml` / `maki.yml`
+2. `maki.json`
+3. `.makirc.json` (legacy)
+
+The search walks up the directory tree until a config with `root: true` is found.
 
 ### Rule Severity Levels
 
-- `"error"` - Fail the linting process
-- `"warn"` - Show warning but don't fail
-- `"off"` - Disable the rule
+- `error` - Fail the linting/build process
+- `warn` - Show warning but don't fail
+- `info` - Informational message
+- `off` - Disable the rule
 
-### Extending Configurations
+### Rule Categories
 
-You can extend base configurations:
+- **blocking** - Critical requirements that must pass first
+- **correctness** - Syntax and semantic errors
+- **suspicious** - Patterns that often indicate bugs
+- **style** - Naming conventions and formatting
+- **documentation** - Metadata requirements
 
-```jsonc
-{
-  "extends": ["./base-config.json"],
-  "rules": {
-    // Override specific rules
-    "naming/profile-pascal-case": "off"
-  }
-}
-```
+See [examples/configs/](examples/configs/) for comprehensive configuration examples.
 
 ## Built-in Rules
 
-FSH Lint includes comprehensive built-in rules organized by category:
+MAKI includes comprehensive built-in rules organized by category:
 
 ### Documentation Rules
 - `documentation/require-description` - Require Description for all resources
@@ -269,11 +296,12 @@ You can write custom rules using [GritQL](https://docs.grit.io/language) pattern
    }
    ```
 
-3. Configure FSH Lint to use your custom rules:
-   ```jsonc
-   {
-     "customRules": ["./custom-rules"]
-   }
+3. Configure MAKI to use your custom rules in `maki.yaml`:
+
+   ```yaml
+   linter:
+     ruleDirectories:
+       - "./custom-rules"
    ```
 
 ## Integration with CI/CD
@@ -281,23 +309,23 @@ You can write custom rules using [GritQL](https://docs.grit.io/language) pattern
 ### GitHub Actions
 
 ```yaml
-name: FSH Lint
+name: MAKI
 
 on: [push, pull_request]
 
 jobs:
-  lint:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download FSH Lint
+      - name: Download MAKI
         run: |
           curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o maki
           chmod +x maki
 
-      - name: Lint FSH files
-        run: ./maki lint --format sarif input/ > results.sarif
+      - name: Build FSH to FHIR
+        run: ./maki build --lint
 
       - name: Upload SARIF results
         uses: github/codeql-action/upload-sarif@v3
@@ -314,7 +342,7 @@ maki:
   script:
     - curl -L https://github.com/octofhir/maki/releases/latest/download/maki-linux-x64 -o maki
     - chmod +x maki
-    - ./maki lint input/
+    - ./maki build --lint
 ```
 
 ## Project Structure

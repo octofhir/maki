@@ -474,17 +474,21 @@ impl RuleProcessor {
         }
 
         // Try canonical manager by name
-        if let Ok(resource) = self.canonical_session.resolve(type_name).await {
-            if let Ok(sd) =
+        if let Ok(resource) = self.canonical_session.resolve(type_name).await
+            && let Ok(sd) =
                 serde_json::from_value::<StructureDefinition>((*resource.content).clone())
-            {
-                return Some(sd.url.clone());
-            }
+        {
+            return Some(sd.url.clone());
         }
 
         // Try FHIR core canonical URL format
         let core_candidate = format!("http://hl7.org/fhir/StructureDefinition/{}", type_name);
-        if let Ok(_) = self.canonical_session.resolve(&core_candidate).await {
+        if self
+            .canonical_session
+            .resolve(&core_candidate)
+            .await
+            .is_ok()
+        {
             return Some(core_candidate);
         }
 
@@ -790,27 +794,27 @@ impl RuleProcessor {
         // Look for extension slices in parent's snapshot
         for element in &snapshot.element {
             // Extension slices have path like "Patient.extension" with a slice_name
-            if element.path == format!("{}.extension", resource_type) {
-                if let Some(ref slice_name) = element.slice_name {
-                    // Direct match: FSH reference matches slice name
-                    if slice_name == fsh_reference {
-                        return Some(slice_name.clone());
-                    }
+            if element.path == format!("{}.extension", resource_type)
+                && let Some(ref slice_name) = element.slice_name
+            {
+                // Direct match: FSH reference matches slice name
+                if slice_name == fsh_reference {
+                    return Some(slice_name.clone());
+                }
 
-                    // Check if FSH reference (as alias/URL) matches the extension's type profile
-                    // Extension slices have type[0].profile[0] = extension URL
-                    if let Some(ref types) = element.type_ {
-                        for type_def in types {
-                            if let Some(ref profiles) = type_def.profile {
-                                for profile_url in profiles {
-                                    // Check if the FSH reference matches the profile URL
-                                    // e.g., fsh_reference = "us-core-birthsex" and
-                                    // profile_url = "http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex"
-                                    if profile_url.ends_with(fsh_reference)
-                                        || profile_url.contains(&format!("/{}", fsh_reference))
-                                    {
-                                        return Some(slice_name.clone());
-                                    }
+                // Check if FSH reference (as alias/URL) matches the extension's type profile
+                // Extension slices have type[0].profile[0] = extension URL
+                if let Some(ref types) = element.type_ {
+                    for type_def in types {
+                        if let Some(ref profiles) = type_def.profile {
+                            for profile_url in profiles {
+                                // Check if the FSH reference matches the profile URL
+                                // e.g., fsh_reference = "us-core-birthsex" and
+                                // profile_url = "http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex"
+                                if profile_url.ends_with(fsh_reference)
+                                    || profile_url.contains(&format!("/{}", fsh_reference))
+                                {
+                                    return Some(slice_name.clone());
                                 }
                             }
                         }
@@ -974,7 +978,7 @@ impl RuleProcessor {
     /// - Searches for existing element by path
     /// - Creates new element if not found
     /// - Sets appropriate id based on path
-    /// - Root element (e.g., "Patient") always placed first (SUSHI parity)
+    /// - Root element (e.g., "Patient") always placed first
     /// - Other elements appended in FSH source order
     fn find_or_create_element<'a>(
         &self,
@@ -997,7 +1001,7 @@ impl RuleProcessor {
         trace!("Created new element in differential: {}", path);
 
         // Check if this is a root element (no dots in path, e.g., "Patient", "Observation")
-        // Root elements should always be placed first for SUSHI parity
+        // Root elements should always be placed first
         let is_root_element = !path.contains('.');
 
         if is_root_element {
@@ -1340,9 +1344,10 @@ impl RuleProcessor {
                 };
 
                 // Resolve system alias to canonical URL
-                let system = crate::export::profile_exporter::resolve_code_system_alias(system_or_alias)
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| system_or_alias.to_string());
+                let system =
+                    crate::export::profile_exporter::resolve_code_system_alias(system_or_alias)
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| system_or_alias.to_string());
 
                 // Build coding object
                 let mut coding = serde_json::Map::new();

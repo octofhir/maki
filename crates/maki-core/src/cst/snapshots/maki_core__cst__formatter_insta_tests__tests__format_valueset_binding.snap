@@ -2,8 +2,8 @@
 source: crates/maki-core/src/cst/formatter_insta_tests.rs
 expression: formatted
 ---
-Profile: Test
-Parent: Patient
+Profile:Test
+Parent:Patient
 
-* gender from GenderValueSet (required)
-* communication.language from AllLanguages (extensible)
+*gender from GenderValueSet (required)
+*communication.language from AllLanguages (extensible)

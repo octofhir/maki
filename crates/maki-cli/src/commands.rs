@@ -237,7 +237,7 @@ pub async fn lint_command(
         return Ok(());
     }
 
-    debug!("Found {} FSH files to lint", fsh_files.len());
+    println!("Linting {} FSH file(s)...", fsh_files.len());
 
     // Initialize progress reporter
     let mut progress_reporter = ProgressReporter::new(progress, fsh_files.len());
@@ -359,14 +359,13 @@ pub async fn lint_command(
 
         if let Ok(mut parser) = CachedFshParser::new() {
             for file_path in &fsh_files {
-                if let Ok(source) = std::fs::read_to_string(file_path) {
-                    if let Ok(parse_result) = parser.parse(&source) {
-                        if let Some(document) = Document::cast(parse_result.cst) {
-                            for vs in document.value_sets() {
-                                if let Some(name) = vs.name() {
-                                    global_valuesets.insert(name);
-                                }
-                            }
+                if let Ok(source) = std::fs::read_to_string(file_path)
+                    && let Ok(parse_result) = parser.parse(&source)
+                    && let Some(document) = Document::cast(parse_result.cst)
+                {
+                    for vs in document.value_sets() {
+                        if let Some(name) = vs.name() {
+                            global_valuesets.insert(name);
                         }
                     }
                 }
@@ -547,12 +546,10 @@ pub async fn lint_command(
     formatter.print_results(&remaining_diagnostics, &summary, progress)?;
 
     let duration = start_time.elapsed();
-    if progress {
-        println!(
-            "Completed in {}",
-            crate::output::utils::format_duration(duration)
-        );
-    }
+    println!(
+        "Lint completed in {}",
+        crate::output::utils::format_duration(duration)
+    );
 
     // Determine exit code
     let has_errors = summary.errors > 0;
