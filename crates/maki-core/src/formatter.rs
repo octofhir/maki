@@ -883,12 +883,13 @@ impl RichDiagnosticFormatter {
     }
 
     fn format_context_line(&self, line_num: usize, line: &str, width: usize) -> String {
+        // Pad the line number BEFORE applying colors (ANSI codes break alignment)
+        let padded_num = format!("{:>width$}", line_num, width = width);
         format!(
-            "{:>width$} {} {}\n",
-            self.colorize(&line_num.to_string(), AnsiColor::Dim),
+            "{} {} {}\n",
+            self.colorize(&padded_num, AnsiColor::Dim),
             self.colorize("│", AnsiColor::Blue),
             line,
-            width = width
         )
     }
 
@@ -903,17 +904,19 @@ impl RichDiagnosticFormatter {
     ) -> String {
         let mut output = String::new();
 
-        // Line content
+        // Line content - pad the line number BEFORE applying colors (ANSI codes break alignment)
+        let padded_num = format!("{:>width$}", line_num, width = width);
         output.push_str(&format!(
-            "{:>width$} {} {}\n",
-            self.colorize(&line_num.to_string(), AnsiColor::Blue),
+            "{} {} {}\n",
+            self.colorize(&padded_num, AnsiColor::Blue),
             self.colorize("│", AnsiColor::Blue),
             line,
-            width = width
         ));
 
         // Caret line pointing to the issue
-        let spaces = " ".repeat(width + 3 + col);
+        // The format string already includes: " ".repeat(width) + " " + "│" + " "
+        // So we only need 'col' spaces to align with the column in the content
+        let spaces = " ".repeat(col);
         let carets = "^".repeat(length);
         output.push_str(&format!(
             "{} {} {}{}\n",

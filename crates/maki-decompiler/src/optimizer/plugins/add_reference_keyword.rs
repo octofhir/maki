@@ -161,6 +161,7 @@ mod tests {
     use crate::exportable::ExportableProfile;
     use crate::lake::ResourceLake;
     use maki_core::canonical::{CanonicalFacade, CanonicalOptions, FhirRelease};
+    use serial_test::serial;
     use std::sync::Arc;
 
     async fn create_test_lake() -> ResourceLake {
@@ -175,6 +176,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_convert_reference_without_display() {
         let mut profile = ExportableProfile::new("TestProfile".to_string(), "Patient".to_string());
 
@@ -212,6 +214,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_convert_reference_with_display() {
         let mut profile = ExportableProfile::new("TestProfile".to_string(), "Patient".to_string());
 

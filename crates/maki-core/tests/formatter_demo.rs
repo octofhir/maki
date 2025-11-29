@@ -59,8 +59,8 @@ Title: "Problematic Patient Profile"
         category: Some(DiagnosticCategory::Correctness),
     };
 
-    // Format with rich formatter
-    let formatter = RichDiagnosticFormatter::new();
+    // Format with rich formatter (disable colors for consistent assertions)
+    let formatter = RichDiagnosticFormatter::new().no_colors();
     let output = formatter.format_diagnostic(&diagnostic, source);
 
     println!("\n{}", "=".repeat(80));
