@@ -258,6 +258,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_remove_hash_prefix_for_contained() {
         let mut profile = ExportableProfile::new("TestProfile".to_string(), "Patient".to_string());
 
@@ -290,6 +291,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_no_reference_assignments() {
         let mut profile = ExportableProfile::new("TestProfile".to_string(), "Patient".to_string());
 

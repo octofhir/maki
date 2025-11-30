@@ -7,6 +7,26 @@ use maki_core::{
 };
 use std::path::PathBuf;
 
+/// Strip ANSI escape codes from a string for reliable assertions
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip escape sequence until we hit a letter (end of sequence)
+            while let Some(&next) = chars.peek() {
+                chars.next();
+                if next.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 #[test]
 fn demo_rich_diagnostic_output() {
     // Create a sample FSH source
@@ -69,13 +89,14 @@ Title: "Problematic Patient Profile"
     println!("{output}");
     println!("{}", "=".repeat(80));
 
-    // Verify output contains expected elements
-    assert!(output.contains("error[FSH001]"));
-    assert!(output.contains("invalid-cardinality.fsh:8:14"));
-    assert!(output.contains("* identifier 1..0"));
-    assert!(output.contains("^^^^"));
-    assert!(output.contains("suggestion"));
-    assert!(output.contains("0..1"));
+    // Verify output contains expected elements (strip ANSI for reliable cross-platform assertions)
+    let clean_output = strip_ansi(&output);
+    assert!(clean_output.contains("error[FSH001]"));
+    assert!(clean_output.contains("invalid-cardinality.fsh:8:14"));
+    assert!(clean_output.contains("* identifier 1..0"));
+    assert!(clean_output.contains("^^^^"));
+    assert!(clean_output.contains("suggestion"));
+    assert!(clean_output.contains("0..1"));
 }
 
 #[test]
@@ -150,9 +171,10 @@ Parent: Patient
     println!("{output}");
     println!("{}", "=".repeat(80));
 
-    assert!(output.contains("warning[FSH023]"));
-    assert!(output.contains("missing-metadata"));
-    assert!(output.contains("Profile: IncompletePatient"));
+    let clean_output = strip_ansi(&output);
+    assert!(clean_output.contains("warning[FSH023]"));
+    assert!(clean_output.contains("missing-metadata"));
+    assert!(clean_output.contains("Profile: IncompletePatient"));
 }
 
 #[test]
@@ -217,6 +239,7 @@ Parent: Patient
     println!("{output}");
     println!("{}", "=".repeat(80));
 
-    assert!(output.contains("error[FSH001]"));
-    assert!(output.contains("error[FSH002]"));
+    let clean_output = strip_ansi(&output);
+    assert!(clean_output.contains("error[FSH001]"));
+    assert!(clean_output.contains("error[FSH002]"));
 }
