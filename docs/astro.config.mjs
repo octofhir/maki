@@ -75,6 +75,8 @@ export default defineConfig({
 					label: 'CLI',
 					items: [
 						{ label: 'Commands', slug: 'cli/commands' },
+						{ label: 'Build', slug: 'cli/build' },
+						{ label: 'GoFSH', slug: 'cli/gofsh' },
 						{ label: 'Autofix Reference', slug: 'cli/autofix-reference' },
 						{ label: 'Options', slug: 'cli/options' },
 						{ label: 'Exit Codes', slug: 'cli/exit-codes' },

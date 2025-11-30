@@ -1,0 +1,122 @@
+---
+title: maki gofsh
+description: Convert FHIR resources (JSON/XML) back to FSH
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="Active Development">
+  The GoFSH command is still in active development. Some features may be incomplete or subject to change.
+  Please report any issues on [GitHub](https://github.com/octofhir/maki/issues).
+</Aside>
+
+Convert FHIR resources (JSON/XML) back to FSH (GoFSH functionality).
+
+```bash
+maki gofsh [OPTIONS] <INPUT>
+```
+
+## Options
+
+- `--output, -o <PATH>` - Output directory for FSH files (default: `output`)
+- `--fhir-version <VERSION>` - FHIR version: `R4` or `R5` (default: `R4`)
+- `--dependency, -d <PKG>` - FHIR package dependencies (e.g., `hl7.fhir.us.core@5.0.1`)
+- `--strategy <STRATEGY>` - File organization strategy:
+  - `file` - One file per definition (default)
+  - `type` - Group by FSH type (profiles.fsh, valuesets.fsh, etc.)
+  - `profile` - Group by profile
+  - `single` - All definitions in one file
+- `--indent-size <N>` - Number of spaces for indentation (default: 2)
+- `--line-width <N>` - Maximum line width (default: 100)
+- `--progress` - Show progress bar and detailed output
+
+## Examples
+
+```bash
+# Convert FHIR resources in a directory
+maki gofsh ./fsh-generated
+
+# Specify output directory
+maki gofsh ./fsh-generated -o ./input/fsh
+
+# With FHIR dependencies
+maki gofsh ./resources -d hl7.fhir.us.core@5.0.1
+
+# Use R5 FHIR version
+maki gofsh ./resources --fhir-version R5
+
+# With progress reporting
+maki gofsh ./resources --progress
+
+# Group output by FSH type
+maki gofsh ./resources --strategy type
+
+# All in one file
+maki gofsh ./resources --strategy single
+```
+
+## Conversion Process
+
+1. **Setup Packages** - Installs base FHIR packages and dependencies
+2. **Load Resources** - Reads FHIR JSON/XML files from input
+3. **Process Resources** - Extracts FSH definitions:
+   - StructureDefinitions → Profiles, Extensions, Logical Models
+   - ValueSets → ValueSet definitions
+   - CodeSystems → CodeSystem definitions
+   - Other resources → Instance definitions
+4. **Optimize** - Applies rule optimizations:
+   - Remove duplicate rules
+   - Combine related rules
+   - Simplify cardinality expressions
+   - Remove implied/redundant rules
+5. **Write FSH** - Generates formatted FSH files
+6. **Generate Config** - Creates `sushi-config.yaml` and `.makirc.json`
+
+## Output Structure
+
+With `--strategy file` (default):
+```
+output/
+├── MyProfile.fsh
+├── MyExtension.fsh
+├── MyValueSet.fsh
+├── sushi-config.yaml
+└── .makirc.json
+```
+
+With `--strategy type`:
+```
+output/
+├── profiles.fsh
+├── extensions.fsh
+├── valuesets.fsh
+├── codesystems.fsh
+├── instances.fsh
+├── sushi-config.yaml
+└── .makirc.json
+```
+
+## Supported Resources
+
+The following FHIR resource types are converted to FSH:
+
+| FHIR Resource | FSH Definition |
+|--------------|----------------|
+| StructureDefinition (constraint) | Profile |
+| StructureDefinition (extension) | Extension |
+| StructureDefinition (logical) | Logical |
+| StructureDefinition (resource) | Resource |
+| ValueSet | ValueSet |
+| CodeSystem | CodeSystem |
+| Other resources | Instance |
+
+## Limitations
+
+<Aside type="note">
+  Current limitations that are being addressed:
+</Aside>
+
+- Complex slicing patterns may not be fully reconstructed
+- Some inline extensions may be expanded unnecessarily
+- Mapping definitions are partially supported
+- Invariants with complex FHIRPath may need manual review
