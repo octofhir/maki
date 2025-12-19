@@ -18,8 +18,8 @@ impl RuleExtractor for BindingExtractor {
     fn extract(
         &self,
         elem: &mut ProcessableElementDefinition,
-    ) -> Result<Vec<Box<dyn ExportableRule>>> {
-        let mut rules: Vec<Box<dyn ExportableRule>> = Vec::new();
+    ) -> Result<Vec<Box<dyn ExportableRule + Send + Sync>>> {
+        let mut rules: Vec<Box<dyn ExportableRule + Send + Sync>> = Vec::new();
 
         // Check if binding exists
         if let Some(binding) = &elem.element.binding {

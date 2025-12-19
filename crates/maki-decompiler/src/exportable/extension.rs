@@ -41,7 +41,7 @@ pub struct ExportableExtension {
     pub title: Option<String>,
     pub description: Option<String>,
     pub contexts: Vec<Context>,
-    pub rules: Vec<Box<dyn ExportableRule>>,
+    pub rules: Vec<Box<dyn ExportableRule + Send + Sync>>,
 }
 
 impl Exportable for ExportableExtension {
@@ -91,7 +91,7 @@ impl Exportable for ExportableExtension {
         &self.name
     }
 
-    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule>> {
+    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule + Send + Sync>> {
         &mut self.rules
     }
 }
@@ -110,7 +110,7 @@ impl ExportableExtension {
     }
 
     /// Add a rule to this extension
-    pub fn add_rule(&mut self, rule: Box<dyn ExportableRule>) {
+    pub fn add_rule(&mut self, rule: Box<dyn ExportableRule + Send + Sync>) {
         self.rules.push(rule);
     }
 

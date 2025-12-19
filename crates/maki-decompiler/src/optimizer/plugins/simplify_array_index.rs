@@ -75,7 +75,7 @@ impl SimplifyArrayIndexingOptimizer {
     }
 
     /// Simplify paths in a rule by removing [0] indices
-    fn simplify_path(rule: &mut Box<dyn ExportableRule>) -> Option<()> {
+    fn simplify_path(rule: &mut Box<dyn ExportableRule + Send + Sync>) -> Option<()> {
         use crate::exportable::{
             AddElementRule, AssignmentRule, BindingRule, CardinalityFlagRule, CardinalityRule,
             CaretValueRule, ContainsRule, FlagRule, MappingRule, ObeysRule, TypeRule,

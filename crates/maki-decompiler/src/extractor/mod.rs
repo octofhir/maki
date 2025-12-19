@@ -40,5 +40,5 @@ pub trait RuleExtractor {
     fn extract(
         &self,
         elem: &mut ProcessableElementDefinition,
-    ) -> Result<Vec<Box<dyn ExportableRule>>>;
+    ) -> Result<Vec<Box<dyn ExportableRule + Send + Sync>>>;
 }

@@ -115,8 +115,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Create sample exportables for the demo
-fn create_sample_exportables() -> Vec<Box<dyn Exportable>> {
-    let mut exportables: Vec<Box<dyn Exportable>> = Vec::new();
+fn create_sample_exportables() -> Vec<Box<dyn Exportable + Send + Sync>> {
+    let mut exportables: Vec<Box<dyn Exportable + Send + Sync>> = Vec::new();
 
     // Patient profiles
     let mut us_core_patient =

@@ -104,7 +104,7 @@ impl Optimizer for CombineAssignmentsOptimizer {
 impl CombineAssignmentsOptimizer {
     /// Find potential component groups (Coding/Quantity fields)
     fn find_component_groups(
-        rules: &[Box<dyn ExportableRule>],
+        rules: &[Box<dyn ExportableRule + Send + Sync>],
     ) -> HashMap<String, HashMap<String, usize>> {
         let mut groups: HashMap<String, HashMap<String, usize>> = HashMap::new();
 
@@ -140,8 +140,8 @@ impl CombineAssignmentsOptimizer {
     fn combine_coding_assignments(
         base_path: &str,
         components: &HashMap<String, usize>,
-        rules: &[Box<dyn ExportableRule>],
-    ) -> Option<Box<dyn ExportableRule>> {
+        rules: &[Box<dyn ExportableRule + Send + Sync>],
+    ) -> Option<Box<dyn ExportableRule + Send + Sync>> {
         // Extract system value
         let system_idx = components.get("system")?;
         let system_rule = rules.get(*system_idx)?;
@@ -198,8 +198,8 @@ impl CombineAssignmentsOptimizer {
     fn combine_quantity_assignments(
         base_path: &str,
         components: &HashMap<String, usize>,
-        rules: &[Box<dyn ExportableRule>],
-    ) -> Option<Box<dyn ExportableRule>> {
+        rules: &[Box<dyn ExportableRule + Send + Sync>],
+    ) -> Option<Box<dyn ExportableRule + Send + Sync>> {
         // Extract value
         let value_idx = components.get("value")?;
         let value_rule = rules.get(*value_idx)?;

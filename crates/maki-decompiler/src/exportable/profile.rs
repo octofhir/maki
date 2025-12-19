@@ -10,7 +10,7 @@ pub struct ExportableProfile {
     pub parent: String,
     pub title: Option<String>,
     pub description: Option<String>,
-    pub rules: Vec<Box<dyn ExportableRule>>,
+    pub rules: Vec<Box<dyn ExportableRule + Send + Sync>>,
 }
 
 impl Exportable for ExportableProfile {
@@ -56,7 +56,7 @@ impl Exportable for ExportableProfile {
         &self.name
     }
 
-    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule>> {
+    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule + Send + Sync>> {
         &mut self.rules
     }
 }
@@ -75,7 +75,7 @@ impl ExportableProfile {
     }
 
     /// Add a rule to this profile
-    pub fn add_rule(&mut self, rule: Box<dyn ExportableRule>) {
+    pub fn add_rule(&mut self, rule: Box<dyn ExportableRule + Send + Sync>) {
         self.rules.push(rule);
     }
 

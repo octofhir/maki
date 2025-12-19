@@ -17,8 +17,8 @@ impl RuleExtractor for FlagExtractor {
     fn extract(
         &self,
         elem: &mut ProcessableElementDefinition,
-    ) -> Result<Vec<Box<dyn ExportableRule>>> {
-        let mut rules: Vec<Box<dyn ExportableRule>> = Vec::new();
+    ) -> Result<Vec<Box<dyn ExportableRule + Send + Sync>>> {
+        let mut rules: Vec<Box<dyn ExportableRule + Send + Sync>> = Vec::new();
         let mut flags = Vec::new();
 
         // MustSupport (MS)

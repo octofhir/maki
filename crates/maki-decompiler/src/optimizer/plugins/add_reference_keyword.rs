@@ -88,7 +88,7 @@ impl Optimizer for AddReferenceKeywordOptimizer {
 impl AddReferenceKeywordOptimizer {
     /// Find potential reference groups (reference, display fields)
     fn find_reference_groups(
-        rules: &[Box<dyn ExportableRule>],
+        rules: &[Box<dyn ExportableRule + Send + Sync>],
     ) -> HashMap<String, HashMap<String, usize>> {
         let mut groups: HashMap<String, HashMap<String, usize>> = HashMap::new();
 
@@ -116,8 +116,8 @@ impl AddReferenceKeywordOptimizer {
     fn create_reference_rule(
         base_path: &str,
         components: &HashMap<String, usize>,
-        rules: &[Box<dyn ExportableRule>],
-    ) -> Option<Box<dyn ExportableRule>> {
+        rules: &[Box<dyn ExportableRule + Send + Sync>],
+    ) -> Option<Box<dyn ExportableRule + Send + Sync>> {
         // Extract reference value
         let ref_idx = components.get("reference")?;
         let ref_rule = rules.get(*ref_idx)?;

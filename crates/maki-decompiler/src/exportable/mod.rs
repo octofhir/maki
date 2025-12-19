@@ -27,7 +27,10 @@ pub use value_set::*;
 use std::fmt;
 
 /// Core trait for types that can be exported to FSH
-pub trait Exportable {
+///
+/// This trait requires `Send + Sync` to allow exportables to be used in async contexts
+/// and shared across threads.
+pub trait Exportable: Send + Sync {
     /// Convert this exportable to FSH text
     fn to_fsh(&self) -> String;
 
@@ -38,7 +41,7 @@ pub trait Exportable {
     fn name(&self) -> &str;
 
     /// Get mutable access to rules (for optimizers)
-    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule>>;
+    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule + Send + Sync>>;
 }
 
 /// FSH value types that can appear in rules

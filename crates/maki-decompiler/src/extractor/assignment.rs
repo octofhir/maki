@@ -99,8 +99,8 @@ impl RuleExtractor for AssignmentExtractor {
     fn extract(
         &self,
         elem: &mut ProcessableElementDefinition,
-    ) -> Result<Vec<Box<dyn ExportableRule>>> {
-        let mut rules: Vec<Box<dyn ExportableRule>> = Vec::new();
+    ) -> Result<Vec<Box<dyn ExportableRule + Send + Sync>>> {
+        let mut rules: Vec<Box<dyn ExportableRule + Send + Sync>> = Vec::new();
 
         // Process fixed[x] values (use exactly = true)
         // These are constraints that fix the value exactly

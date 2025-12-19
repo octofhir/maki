@@ -567,7 +567,7 @@ impl DefinitionSession {
             .facade
             .manager
             .storage()
-            .package_storage()
+            .search_storage()
             .get_resource(resource_index)
             .await?;
 
@@ -629,7 +629,7 @@ impl DefinitionSession {
                 .facade
                 .manager
                 .storage()
-                .package_storage()
+                .search_storage()
                 .get_resource(&resource_index)
                 .await?;
 
@@ -1098,7 +1098,7 @@ impl DefinitionSession {
             self.facade
                 .manager
                 .storage()
-                .package_storage()
+                .search_storage()
                 .set_package_priority(name, version, priority)
                 .await
                 .map_err(CanonicalLoaderError::from)?;
@@ -1136,7 +1136,7 @@ impl DefinitionSession {
             .facade
             .manager
             .storage()
-            .package_storage()
+            .search_storage()
             .find_resource_info(key, Some(&types), true, true)
             .await
             .map_err(CanonicalLoaderError::from)?;
@@ -1159,7 +1159,7 @@ impl DefinitionSession {
                 .facade
                 .manager
                 .storage()
-                .package_storage()
+                .search_storage()
                 .get_resource(&resource_index)
                 .await
                 .map_err(CanonicalLoaderError::from)?;
@@ -1209,7 +1209,7 @@ impl DefinitionSession {
             .facade
             .manager
             .storage()
-            .package_storage()
+            .search_storage()
             .find_resource_info(key, types, exclude_extensions, true)
             .await
             .map_err(CanonicalLoaderError::from)?;
@@ -1232,7 +1232,7 @@ impl DefinitionSession {
                 .facade
                 .manager
                 .storage()
-                .package_storage()
+                .search_storage()
                 .get_resource(&resource_index)
                 .await
                 .map_err(CanonicalLoaderError::from)?;

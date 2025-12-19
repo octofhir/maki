@@ -87,7 +87,7 @@ impl RemoveImpliedCardinalityOptimizer {
 
     /// Collect paths with mustSupport flag
     fn collect_must_support_paths(
-        rules: &[Box<dyn ExportableRule>],
+        rules: &[Box<dyn ExportableRule + Send + Sync>],
     ) -> std::collections::HashSet<String> {
         let mut paths = std::collections::HashSet::new();
 

@@ -6,7 +6,10 @@
 use super::FshValue;
 
 /// Trait for rules that can be exported to FSH
-pub trait ExportableRule: std::fmt::Debug {
+///
+/// This trait requires `Send + Sync` to allow rules to be used in async contexts
+/// and shared across threads.
+pub trait ExportableRule: std::fmt::Debug + Send + Sync {
     /// Convert this rule to FSH syntax
     fn to_fsh(&self) -> String;
 

@@ -9,7 +9,7 @@ pub struct ExportableCodeSystem {
     pub id: Option<String>,
     pub title: Option<String>,
     pub description: Option<String>,
-    pub rules: Vec<Box<dyn ExportableRule>>,
+    pub rules: Vec<Box<dyn ExportableRule + Send + Sync>>,
 }
 
 impl Exportable for ExportableCodeSystem {
@@ -54,7 +54,7 @@ impl Exportable for ExportableCodeSystem {
         &self.name
     }
 
-    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule>> {
+    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule + Send + Sync>> {
         &mut self.rules
     }
 }
@@ -72,7 +72,7 @@ impl ExportableCodeSystem {
     }
 
     /// Add a rule to this code system
-    pub fn add_rule(&mut self, rule: Box<dyn ExportableRule>) {
+    pub fn add_rule(&mut self, rule: Box<dyn ExportableRule + Send + Sync>) {
         self.rules.push(rule);
     }
 

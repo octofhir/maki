@@ -18,8 +18,8 @@ impl RuleExtractor for TypeExtractor {
     fn extract(
         &self,
         elem: &mut ProcessableElementDefinition,
-    ) -> Result<Vec<Box<dyn ExportableRule>>> {
-        let mut rules: Vec<Box<dyn ExportableRule>> = Vec::new();
+    ) -> Result<Vec<Box<dyn ExportableRule + Send + Sync>>> {
+        let mut rules: Vec<Box<dyn ExportableRule + Send + Sync>> = Vec::new();
 
         // Check if type constraints exist
         if let Some(types) = &elem.element.type_ {

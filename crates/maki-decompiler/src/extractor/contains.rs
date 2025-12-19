@@ -121,7 +121,7 @@ impl RuleExtractor for ContainsExtractor {
     fn extract(
         &self,
         _elem: &mut ProcessableElementDefinition,
-    ) -> Result<Vec<Box<dyn ExportableRule>>> {
+    ) -> Result<Vec<Box<dyn ExportableRule + Send + Sync>>> {
         // ContainsExtractor requires analyzing multiple elements together
         // So this single-element extract method is not suitable
         // Use extract_slicing() instead with a collection of elements

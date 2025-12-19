@@ -17,8 +17,8 @@ impl RuleExtractor for CaretValueExtractor {
     fn extract(
         &self,
         elem: &mut ProcessableElementDefinition,
-    ) -> Result<Vec<Box<dyn ExportableRule>>> {
-        let mut rules: Vec<Box<dyn ExportableRule>> = Vec::new();
+    ) -> Result<Vec<Box<dyn ExportableRule + Send + Sync>>> {
+        let mut rules: Vec<Box<dyn ExportableRule + Send + Sync>> = Vec::new();
 
         let fsh_path = Self::element_path_to_fsh(&elem.element.path);
 

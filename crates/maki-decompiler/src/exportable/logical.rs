@@ -11,7 +11,7 @@ pub struct ExportableLogical {
     pub title: Option<String>,
     pub description: Option<String>,
     pub characteristics: Vec<String>,
-    pub rules: Vec<Box<dyn ExportableRule>>,
+    pub rules: Vec<Box<dyn ExportableRule + Send + Sync>>,
 }
 
 impl Exportable for ExportableLogical {
@@ -66,7 +66,7 @@ impl Exportable for ExportableLogical {
         &self.name
     }
 
-    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule>> {
+    fn get_rules_mut(&mut self) -> &mut Vec<Box<dyn ExportableRule + Send + Sync>> {
         &mut self.rules
     }
 }
@@ -86,7 +86,7 @@ impl ExportableLogical {
     }
 
     /// Add a rule to this logical model
-    pub fn add_rule(&mut self, rule: Box<dyn ExportableRule>) {
+    pub fn add_rule(&mut self, rule: Box<dyn ExportableRule + Send + Sync>) {
         self.rules.push(rule);
     }
 

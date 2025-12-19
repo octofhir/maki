@@ -77,7 +77,7 @@ impl RuleExtractor for ObeysExtractor {
     fn extract(
         &self,
         elem: &mut ProcessableElementDefinition,
-    ) -> Result<Vec<Box<dyn ExportableRule>>> {
+    ) -> Result<Vec<Box<dyn ExportableRule + Send + Sync>>> {
         // Check if constraints have already been processed
         if elem.is_processed("constraint") {
             return Ok(vec![]);
@@ -87,7 +87,7 @@ impl RuleExtractor for ObeysExtractor {
 
         Ok(rules
             .into_iter()
-            .map(|r| Box::new(r) as Box<dyn ExportableRule>)
+            .map(|r| Box::new(r) as Box<dyn ExportableRule + Send + Sync>)
             .collect())
     }
 }

@@ -80,7 +80,7 @@ impl Optimizer for RemoveGeneratedTextRulesOptimizer {
 
 impl RemoveGeneratedTextRulesOptimizer {
     /// Check if exportable has generated text (text.status = "generated" or "extensions")
-    fn has_generated_text(rules: &[Box<dyn ExportableRule>]) -> bool {
+    fn has_generated_text(rules: &[Box<dyn ExportableRule + Send + Sync>]) -> bool {
         for rule in rules {
             // Check CaretValueRule
             if let Some(caret_rule) = rule.as_any().downcast_ref::<CaretValueRule>() {

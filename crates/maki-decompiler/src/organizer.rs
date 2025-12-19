@@ -22,7 +22,7 @@
 //! let organizer = FileOrganizer::new(OrganizationStrategy::FilePerDefinition);
 //! let profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string());
 //!
-//! let exportables: Vec<Box<dyn Exportable>> = vec![Box::new(profile)];
+//! let exportables: Vec<Box<dyn Exportable + Send + Sync>> = vec![Box::new(profile)];
 //! organizer.organize(&exportables, Path::new("output")).unwrap();
 //! ```
 //!
@@ -37,7 +37,7 @@
 //! let profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string());
 //! let value_set = ExportableValueSet::new("MyValueSet".to_string());
 //!
-//! let exportables: Vec<Box<dyn Exportable>> = vec![
+//! let exportables: Vec<Box<dyn Exportable + Send + Sync>> = vec![
 //!     Box::new(profile),
 //!     Box::new(value_set),
 //! ];
@@ -152,10 +152,10 @@ impl FileOrganizer {
     /// let organizer = FileOrganizer::new(OrganizationStrategy::FilePerDefinition);
     /// let profile = ExportableProfile::new("MyPatient".to_string(), "Patient".to_string());
     ///
-    /// let exportables: Vec<Box<dyn Exportable>> = vec![Box::new(profile)];
+    /// let exportables: Vec<Box<dyn Exportable + Send + Sync>> = vec![Box::new(profile)];
     /// organizer.organize(&exportables, Path::new("output")).unwrap();
     /// ```
-    pub fn organize(&self, exportables: &[Box<dyn Exportable>], output_dir: &Path) -> Result<()> {
+    pub fn organize(&self, exportables: &[Box<dyn Exportable + Send + Sync>], output_dir: &Path) -> Result<()> {
         match self.strategy {
             OrganizationStrategy::FilePerDefinition => {
                 self.organize_per_definition(exportables, output_dir)
@@ -171,7 +171,7 @@ impl FileOrganizer {
     /// Organize with one file per definition
     fn organize_per_definition(
         &self,
-        exportables: &[Box<dyn Exportable>],
+        exportables: &[Box<dyn Exportable + Send + Sync>],
         output_dir: &Path,
     ) -> Result<()> {
         // Create output directory
@@ -190,11 +190,11 @@ impl FileOrganizer {
     /// Organize by grouping files by FSH type
     fn organize_by_type(
         &self,
-        exportables: &[Box<dyn Exportable>],
+        exportables: &[Box<dyn Exportable + Send + Sync>],
         output_dir: &Path,
     ) -> Result<()> {
         // Group exportables by type
-        let mut groups: HashMap<&str, Vec<&Box<dyn Exportable>>> = HashMap::new();
+        let mut groups: HashMap<&str, Vec<&Box<dyn Exportable + Send + Sync>>> = HashMap::new();
 
         for exportable in exportables {
             let type_dir = self.get_fsh_type_directory(exportable.as_ref());
@@ -219,11 +219,11 @@ impl FileOrganizer {
     /// Organize by grouping profiles by their parent type
     fn organize_by_profile(
         &self,
-        exportables: &[Box<dyn Exportable>],
+        exportables: &[Box<dyn Exportable + Send + Sync>],
         output_dir: &Path,
     ) -> Result<()> {
         // Group exportables by profile parent or type
-        let mut groups: HashMap<String, Vec<&Box<dyn Exportable>>> = HashMap::new();
+        let mut groups: HashMap<String, Vec<&Box<dyn Exportable + Send + Sync>>> = HashMap::new();
 
         for exportable in exportables {
             let group_name = self.get_profile_group(exportable.as_ref());
@@ -248,7 +248,7 @@ impl FileOrganizer {
     /// Organize into a single file
     fn organize_single_file(
         &self,
-        exportables: &[Box<dyn Exportable>],
+        exportables: &[Box<dyn Exportable + Send + Sync>],
         output_dir: &Path,
     ) -> Result<()> {
         // Create output directory
@@ -330,7 +330,7 @@ impl FileOrganizer {
     /// improving performance when writing many files.
     pub async fn organize_concurrent(
         &self,
-        exportables: &[Box<dyn Exportable>],
+        exportables: &[Box<dyn Exportable + Send + Sync>],
         output_dir: &Path,
     ) -> Result<()> {
         match self.strategy {
@@ -356,7 +356,7 @@ impl FileOrganizer {
     /// Organize with one file per definition (concurrent)
     async fn organize_per_definition_concurrent(
         &self,
-        exportables: &[Box<dyn Exportable>],
+        exportables: &[Box<dyn Exportable + Send + Sync>],
         output_dir: &Path,
     ) -> Result<()> {
         // Create output directory
@@ -383,11 +383,11 @@ impl FileOrganizer {
     /// Organize by grouping files by FSH type (concurrent)
     async fn organize_by_type_concurrent(
         &self,
-        exportables: &[Box<dyn Exportable>],
+        exportables: &[Box<dyn Exportable + Send + Sync>],
         output_dir: &Path,
     ) -> Result<()> {
         // Group exportables by type (synchronous)
-        let mut groups: HashMap<&str, Vec<&Box<dyn Exportable>>> = HashMap::new();
+        let mut groups: HashMap<&str, Vec<&Box<dyn Exportable + Send + Sync>>> = HashMap::new();
 
         for exportable in exportables {
             let type_dir = self.get_fsh_type_directory(exportable.as_ref());
@@ -419,11 +419,11 @@ impl FileOrganizer {
     /// Organize by grouping profiles by their parent type (concurrent)
     async fn organize_by_profile_concurrent(
         &self,
-        exportables: &[Box<dyn Exportable>],
+        exportables: &[Box<dyn Exportable + Send + Sync>],
         output_dir: &Path,
     ) -> Result<()> {
         // Group exportables by profile parent or type
-        let mut groups: HashMap<String, Vec<&Box<dyn Exportable>>> = HashMap::new();
+        let mut groups: HashMap<String, Vec<&Box<dyn Exportable + Send + Sync>>> = HashMap::new();
 
         for exportable in exportables {
             let group_name = self.get_profile_group(exportable.as_ref());
@@ -455,7 +455,7 @@ impl FileOrganizer {
     /// Organize into a single file (concurrent)
     async fn organize_single_file_concurrent(
         &self,
-        exportables: &[Box<dyn Exportable>],
+        exportables: &[Box<dyn Exportable + Send + Sync>],
         output_dir: &Path,
     ) -> Result<()> {
         // Create output directory
@@ -524,7 +524,7 @@ mod tests {
         let profile1 = ExportableProfile::new("Profile1".to_string(), "Patient".to_string());
         let profile2 = ExportableProfile::new("Profile2".to_string(), "Observation".to_string());
 
-        let exportables: Vec<Box<dyn Exportable>> = vec![Box::new(profile1), Box::new(profile2)];
+        let exportables: Vec<Box<dyn Exportable + Send + Sync>> = vec![Box::new(profile1), Box::new(profile2)];
 
         organizer.organize(&exportables, output_dir).unwrap();
 
@@ -548,7 +548,7 @@ mod tests {
         let value_set = ExportableValueSet::new("MyValueSet".to_string());
         let code_system = ExportableCodeSystem::new("MyCodeSystem".to_string());
 
-        let exportables: Vec<Box<dyn Exportable>> = vec![
+        let exportables: Vec<Box<dyn Exportable + Send + Sync>> = vec![
             Box::new(profile),
             Box::new(value_set),
             Box::new(code_system),
@@ -581,7 +581,7 @@ mod tests {
             "Observation".to_string(),
         );
 
-        let exportables: Vec<Box<dyn Exportable>> =
+        let exportables: Vec<Box<dyn Exportable + Send + Sync>> =
             vec![Box::new(patient_profile), Box::new(obs_profile)];
 
         organizer.organize(&exportables, output_dir).unwrap();
@@ -609,7 +609,7 @@ mod tests {
         let profile1 = ExportableProfile::new("Profile1".to_string(), "Patient".to_string());
         let profile2 = ExportableProfile::new("Profile2".to_string(), "Observation".to_string());
 
-        let exportables: Vec<Box<dyn Exportable>> = vec![Box::new(profile1), Box::new(profile2)];
+        let exportables: Vec<Box<dyn Exportable + Send + Sync>> = vec![Box::new(profile1), Box::new(profile2)];
 
         organizer.organize(&exportables, output_dir).unwrap();
 
@@ -632,7 +632,7 @@ mod tests {
         let organizer = FileOrganizer::with_writer(OrganizationStrategy::FilePerDefinition, writer);
 
         let profile = ExportableProfile::new("MyProfile".to_string(), "Patient".to_string());
-        let exportables: Vec<Box<dyn Exportable>> = vec![Box::new(profile)];
+        let exportables: Vec<Box<dyn Exportable + Send + Sync>> = vec![Box::new(profile)];
 
         organizer.organize(&exportables, output_dir).unwrap();
 

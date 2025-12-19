@@ -44,7 +44,7 @@ impl BatchProcessor {
         &self,
         structure_definitions: Vec<StructureDefinition>,
         lake: Arc<ResourceLake>,
-    ) -> Result<Vec<Box<dyn Exportable>>> {
+    ) -> Result<Vec<Box<dyn Exportable + Send + Sync>>> {
         // Use futures::stream for concurrent processing without Send bounds
         let results: Vec<_> = stream::iter(structure_definitions)
             .map(|sd| {
@@ -76,7 +76,7 @@ impl BatchProcessor {
         &self,
         value_sets: Vec<ValueSet>,
         lake: Arc<ResourceLake>,
-    ) -> Result<Vec<Box<dyn Exportable>>> {
+    ) -> Result<Vec<Box<dyn Exportable + Send + Sync>>> {
         let results: Vec<_> = stream::iter(value_sets)
             .map(|vs| {
                 let lake_ref = Arc::clone(&lake);
@@ -84,7 +84,7 @@ impl BatchProcessor {
                     let processor = ValueSetProcessor::new(&lake_ref);
                     processor
                         .process(&vs)
-                        .map(|v| Box::new(v) as Box<dyn Exportable>)
+                        .map(|v| Box::new(v) as Box<dyn Exportable + Send + Sync>)
                 }
             })
             .buffer_unordered(self.concurrency)
@@ -108,7 +108,7 @@ impl BatchProcessor {
         &self,
         code_systems: Vec<CodeSystem>,
         lake: Arc<ResourceLake>,
-    ) -> Result<Vec<Box<dyn Exportable>>> {
+    ) -> Result<Vec<Box<dyn Exportable + Send + Sync>>> {
         let results: Vec<_> = stream::iter(code_systems)
             .map(|cs| {
                 let lake_ref = Arc::clone(&lake);
@@ -116,7 +116,7 @@ impl BatchProcessor {
                     let processor = CodeSystemProcessor::new(&lake_ref);
                     processor
                         .process(&cs)
-                        .map(|c| Box::new(c) as Box<dyn Exportable>)
+                        .map(|c| Box::new(c) as Box<dyn Exportable + Send + Sync>)
                 }
             })
             .buffer_unordered(self.concurrency)
@@ -140,7 +140,7 @@ impl BatchProcessor {
     pub async fn process_all_concurrent(
         &self,
         lake: Arc<ResourceLake>,
-    ) -> Result<Vec<Box<dyn Exportable>>> {
+    ) -> Result<Vec<Box<dyn Exportable + Send + Sync>>> {
         let lake_clone_1 = Arc::clone(&lake);
         let lake_clone_2 = Arc::clone(&lake);
         let lake_clone_3 = Arc::clone(&lake);

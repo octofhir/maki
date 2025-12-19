@@ -67,8 +67,9 @@ notify = "8"
 dashmap = "6"
 
 # Canonical package management
-octofhir-canonical-manager = { version = "0.1.15", default-features = false, features = [
+octofhir-canonical-manager = { version = "0.1.21", default-features = false, features = [
   "cli",
+  "sqlite"
 ] }
 
 # Testing

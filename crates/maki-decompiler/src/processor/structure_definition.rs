@@ -34,7 +34,7 @@ impl<'a> StructureDefinitionProcessor<'a> {
     }
 
     /// Process a StructureDefinition into an Exportable
-    pub async fn process(&self, sd: &StructureDefinition) -> Result<Box<dyn Exportable>> {
+    pub async fn process(&self, sd: &StructureDefinition) -> Result<Box<dyn Exportable + Send + Sync>> {
         let def_type = self.determine_type(sd)?;
 
         debug!(
@@ -45,19 +45,19 @@ impl<'a> StructureDefinitionProcessor<'a> {
         match def_type {
             DefinitionType::Profile => {
                 let profile = self.process_profile(sd).await?;
-                Ok(Box::new(profile) as Box<dyn Exportable>)
+                Ok(Box::new(profile) as Box<dyn Exportable + Send + Sync>)
             }
             DefinitionType::Extension => {
                 let extension = self.process_extension(sd).await?;
-                Ok(Box::new(extension) as Box<dyn Exportable>)
+                Ok(Box::new(extension) as Box<dyn Exportable + Send + Sync>)
             }
             DefinitionType::Logical => {
                 let logical = self.process_logical(sd).await?;
-                Ok(Box::new(logical) as Box<dyn Exportable>)
+                Ok(Box::new(logical) as Box<dyn Exportable + Send + Sync>)
             }
             DefinitionType::Resource => {
                 let resource = self.process_resource(sd).await?;
-                Ok(Box::new(resource) as Box<dyn Exportable>)
+                Ok(Box::new(resource) as Box<dyn Exportable + Send + Sync>)
             }
         }
     }
@@ -91,13 +91,13 @@ impl<'a> StructureDefinitionProcessor<'a> {
     fn extract_rules(
         &self,
         elements: &mut [ProcessableElementDefinition],
-    ) -> Result<Vec<Box<dyn ExportableRule>>> {
-        let mut rules: Vec<Box<dyn ExportableRule>> = Vec::new();
+    ) -> Result<Vec<Box<dyn ExportableRule + Send + Sync>>> {
+        let mut rules: Vec<Box<dyn ExportableRule + Send + Sync>> = Vec::new();
 
         // First pass: ContainsExtractor (requires analyzing multiple elements)
         let contains_rules = ContainsExtractor::extract_slicing(elements)?;
         for rule in contains_rules {
-            rules.push(Box::new(rule) as Box<dyn ExportableRule>);
+            rules.push(Box::new(rule) as Box<dyn ExportableRule + Send + Sync>);
         }
 
         // Second pass: Per-element extractors

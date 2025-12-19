@@ -17,8 +17,8 @@ impl RuleExtractor for CardinalityExtractor {
     fn extract(
         &self,
         elem: &mut ProcessableElementDefinition,
-    ) -> Result<Vec<Box<dyn ExportableRule>>> {
-        let mut rules: Vec<Box<dyn ExportableRule>> = Vec::new();
+    ) -> Result<Vec<Box<dyn ExportableRule + Send + Sync>>> {
+        let mut rules: Vec<Box<dyn ExportableRule + Send + Sync>> = Vec::new();
 
         // Check if cardinality has been set and is different from parent
         if let (Some(min), Some(max)) = (elem.element.min, &elem.element.max) {
