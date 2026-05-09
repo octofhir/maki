@@ -148,7 +148,7 @@ pub async fn gofsh_command(
 
     // Phase 3: Process resources and extract FSH
     let mut processing_stats = ProcessingStats::new();
-    let mut exportables: Vec<Box<dyn maki_decompiler::Exportable>> = Vec::new();
+    let mut exportables: Vec<Box<dyn maki_decompiler::Exportable + Send + Sync>> = Vec::new();
 
     if !has_resources {
         if progress {

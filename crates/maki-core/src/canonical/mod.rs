@@ -383,6 +383,7 @@ impl DefinitionSession {
                 name: pkg.name.clone(),
                 version: pkg.version.clone(),
                 priority: pkg.priority,
+                url: None,
             })
             .collect();
 
@@ -1441,16 +1442,13 @@ pub fn create_default_maki_config(enable_metrics: bool) -> FcmConfig {
     let maki_dir = PathBuf::from(home_dir).join(".maki");
 
     FcmConfig {
-        registry: RegistryConfig {
-            url: "https://fs.get-ig.org/pkgs/".to_string(),
-            timeout: 60,
-            retry_attempts: 3,
-        },
+        registry: RegistryConfig::default(),
         storage: StorageConfig {
             cache_dir: maki_dir.join("cache"),
             packages_dir: maki_dir.join("packages"),
             max_cache_size: "5GB".to_string(),
             connection_pool_size: 32,
+            ..Default::default()
         },
         optimization: OptimizationConfig {
             parallel_workers: rayon::current_num_threads(),
@@ -1460,6 +1458,7 @@ pub fn create_default_maki_config(enable_metrics: bool) -> FcmConfig {
             checksum_cache_size: 50000,
             enable_metrics,
             metrics_interval: "30s".to_string(),
+            ..Default::default()
         },
         packages: vec![],
         local_packages: vec![],

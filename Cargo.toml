@@ -23,7 +23,7 @@ edition = "2024"
 
 [workspace.dependencies]
 # Core parsing and AST - using Chumsky parser combinator
-chumsky = "0.11.1"
+chumsky = "0.13"
 ariadne = "0.6"
 
 # CST (Concrete Syntax Tree) - using Rowan for lossless syntax trees
@@ -33,7 +33,7 @@ biome_text_size = "0.5"
 # Serialization and configuration
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
-toml = "0.9"
+toml = "1"
 serde_yaml = "0.9"
 
 # CLI and argument parsing
@@ -67,13 +67,13 @@ notify = "8"
 dashmap = "6"
 
 # Canonical package management
-octofhir-canonical-manager = { version = "0.1.21", default-features = false, features = [
+octofhir-canonical-manager = { version = "0.2.0", default-features = false, features = [
   "cli",
   "sqlite"
 ] }
 
 # Testing
-criterion = { version = "0.7", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 insta = { version = "1.44", features = ["yaml"] }
 assert_cmd = "2"
 predicates = "3.0"
