@@ -666,6 +666,7 @@ impl InstanceExporter {
                 trace!("Skipping path rule in instance");
             }
             Rule::AddElement(_)
+            | Rule::AddCRElement(_)
             | Rule::Contains(_)
             | Rule::Only(_)
             | Rule::Obeys(_)

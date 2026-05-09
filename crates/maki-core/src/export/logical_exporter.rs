@@ -76,11 +76,11 @@ impl LogicalExporter {
 
         debug!("Exporting logical model: {}", name);
 
-        // Get parent (defaults to Element if not specified)
+        // Get parent (defaults to Base per FSH spec §Defining Logical Models)
         let parent = logical
             .parent()
             .and_then(|p| p.value())
-            .unwrap_or_else(|| "Element".to_string());
+            .unwrap_or_else(|| "Base".to_string());
 
         // Get base StructureDefinition
         let mut structure_def = self.get_base_structure_definition(&parent).await?;
@@ -143,11 +143,19 @@ impl LogicalExporter {
 
         debug!("Exporting resource: {}", name);
 
-        // Get parent (defaults to DomainResource for resources)
+        // Get parent (defaults to DomainResource per FSH spec §Defining Resources;
+        // explicit parents must be Resource or DomainResource).
         let parent = resource
             .parent()
             .and_then(|p| p.value())
             .unwrap_or_else(|| "DomainResource".to_string());
+
+        if parent != "Resource" && parent != "DomainResource" {
+            return Err(ExportError::InvalidParent(format!(
+                "Resource '{}' parent must be Resource or DomainResource, got '{}'",
+                name, parent
+            )));
+        }
 
         // Get base StructureDefinition
         let mut structure_def = self.get_base_structure_definition(&parent).await?;
@@ -345,6 +353,10 @@ impl LogicalExporter {
             }
             Rule::AddElement(add_rule) => {
                 self.apply_add_element_rule(structure_def, add_rule).await
+            }
+            Rule::AddCRElement(add_cr_rule) => {
+                self.apply_add_cr_element_rule(structure_def, add_cr_rule)
+                    .await
             }
             Rule::Path(_) => {
                 // PathRule is for type constraints
@@ -648,6 +660,80 @@ impl LogicalExporter {
             debug!("Inserted new element at position {}", insert_pos);
         } else {
             warn!("No snapshot available to add element to");
+        }
+
+        Ok(())
+    }
+
+    /// Apply AddCRElement rule (`* path CARD contentreference REF "short"`)
+    ///
+    /// Adds a new element whose semantics are defined by `contentReference`
+    /// rather than a datatype `type`.
+    async fn apply_add_cr_element_rule(
+        &self,
+        structure_def: &mut StructureDefinition,
+        rule: &crate::cst::ast::AddCRElementRule,
+    ) -> Result<(), ExportError> {
+        let path_str = rule
+            .path()
+            .map(|p| p.as_string())
+            .ok_or_else(|| ExportError::MissingRequiredField("path".to_string()))?;
+
+        let cardinality = rule
+            .cardinality()
+            .ok_or_else(|| ExportError::MissingRequiredField("cardinality".to_string()))?;
+
+        let content_ref = rule.content_reference().ok_or_else(|| {
+            ExportError::MissingRequiredField("contentReference target".to_string())
+        })?;
+
+        let short = rule.short();
+        let definition = rule.definition();
+
+        debug!(
+            "Adding contentReference element: {} -> {}",
+            path_str, content_ref
+        );
+
+        let (min, max) = if let Some(range_pos) = cardinality.find("..") {
+            let min_str = cardinality[..range_pos].trim();
+            let max_str = cardinality[range_pos + 2..].trim();
+            let min = min_str
+                .parse::<u32>()
+                .map_err(|_| ExportError::InvalidCardinality(cardinality.clone()))?;
+            (min, max_str.to_string())
+        } else {
+            return Err(ExportError::InvalidCardinality(cardinality));
+        };
+
+        let full_path = self.resolve_full_path(structure_def, &path_str).await?;
+
+        let mut element = ElementDefinition::new(full_path.clone());
+        element.path = full_path.clone();
+        element.min = Some(min);
+        element.max = Some(max);
+        element.content_reference = Some(content_ref);
+
+        if let Some(short_desc) = short {
+            element.short = Some(short_desc);
+        }
+        if let Some(def_desc) = definition {
+            element.definition = Some(def_desc);
+        }
+
+        for flag in rule.flags().iter().map(|f| f.as_str().to_string()) {
+            self.apply_flag_to_element(&mut element, &flag)?;
+        }
+
+        if let Some(ref mut snapshot) = structure_def.snapshot {
+            let insert_pos = snapshot
+                .element
+                .iter()
+                .position(|e| e.path > full_path)
+                .unwrap_or(snapshot.element.len());
+            snapshot.element.insert(insert_pos, element);
+        } else {
+            warn!("No snapshot available to add contentReference element to");
         }
 
         Ok(())

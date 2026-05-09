@@ -371,7 +371,7 @@ fn print_build_results(stats: &BuildStats, elapsed: std::time::Duration) {
         println!();
         println!(
             "{}",
-            "Ready for IG Publisher. Run ./_genonce.sh to publish.".bright_blue()
+            "Ready for IG Publisher. Run ./_build.sh to publish.".bright_blue()
         );
     }
 

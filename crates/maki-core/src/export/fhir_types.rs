@@ -266,6 +266,10 @@ pub struct ElementDefinition {
     /// Map element to another set of definitions
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mapping: Option<Vec<ElementDefinitionMapping>>,
+
+    /// Reference to definition of content for the element (URL of another element)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "contentReference")]
+    pub content_reference: Option<String>,
 }
 
 impl ElementDefinition {
@@ -290,6 +294,7 @@ impl ElementDefinition {
             fixed: None,
             pattern: None,
             mapping: None,
+            content_reference: None,
         }
     }
 
@@ -310,6 +315,7 @@ impl ElementDefinition {
             || self.slicing.is_some()
             || self.fixed.is_some()
             || self.pattern.is_some()
+            || self.content_reference.is_some()
     }
 
     /// Compare with another element to check if modified
@@ -328,6 +334,7 @@ impl ElementDefinition {
             || self.slicing != base.slicing
             || self.fixed != base.fixed
             || self.pattern != base.pattern
+            || self.content_reference != base.content_reference
     }
 }
 
@@ -418,7 +425,7 @@ pub struct ElementDefinitionConstraint {
 }
 
 /// Slicing definition for an element
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElementDefinitionSlicing {
     /// Human description of slicing

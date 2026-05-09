@@ -56,6 +56,7 @@ pub enum DiscriminatorType {
     Pattern,
     Type,
     Profile,
+    Position,
 }
 
 /// Slicing rules enumeration

@@ -216,6 +216,9 @@ pub enum DiscriminatorType {
     Profile,
     /// The slices are differentiated by the presence or absence of the nominated element.
     Exists,
+    /// The slices are differentiated by their index. Order of the slices is significant.
+    /// Added in FHIR R5 / SUSHI 3.13.
+    Position,
 }
 
 impl DiscriminatorType {
@@ -227,6 +230,7 @@ impl DiscriminatorType {
             "type" => Ok(DiscriminatorType::Type),
             "profile" => Ok(DiscriminatorType::Profile),
             "exists" => Ok(DiscriminatorType::Exists),
+            "position" => Ok(DiscriminatorType::Position),
             _ => Err(SlicingError::InvalidDiscriminatorType(s.to_string())),
         }
     }
@@ -239,6 +243,7 @@ impl DiscriminatorType {
             DiscriminatorType::Type => "type",
             DiscriminatorType::Profile => "profile",
             DiscriminatorType::Exists => "exists",
+            DiscriminatorType::Position => "position",
         }
     }
 }

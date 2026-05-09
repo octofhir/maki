@@ -1824,6 +1824,7 @@ pub enum Rule {
     Only(OnlyRule),
     Obeys(ObeysRule),
     AddElement(AddElementRule),
+    AddCRElement(AddCRElementRule),
     Mapping(MappingRule),
     CaretValue(CaretValueRule),
     CodeCaretValue(CodeCaretValueRule),
@@ -1843,6 +1844,9 @@ impl Rule {
             FshSyntaxKind::OnlyRule => OnlyRule::cast(node).map(Rule::Only),
             FshSyntaxKind::ObeysRule => ObeysRule::cast(node).map(Rule::Obeys),
             FshSyntaxKind::AddElementRule => AddElementRule::cast(node).map(Rule::AddElement),
+            FshSyntaxKind::AddCRElementRule => {
+                AddCRElementRule::cast(node).map(Rule::AddCRElement)
+            }
             FshSyntaxKind::MappingRule => MappingRule::cast(node).map(Rule::Mapping),
             FshSyntaxKind::CaretValueRule => CaretValueRule::cast(node).map(Rule::CaretValue),
             FshSyntaxKind::CodeCaretValueRule => {
@@ -1865,6 +1869,7 @@ impl Rule {
             Rule::Only(r) => r.syntax(),
             Rule::Obeys(r) => r.syntax(),
             Rule::AddElement(r) => r.syntax(),
+            Rule::AddCRElement(r) => r.syntax(),
             Rule::Mapping(r) => r.syntax(),
             Rule::CaretValue(r) => r.syntax(),
             Rule::CodeCaretValue(r) => r.syntax(),
@@ -2634,6 +2639,138 @@ impl AddElementRule {
                 if string_count == 2 {
                     let text = token.text();
                     // Remove surrounding quotes
+                    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+                        return Some(text[1..text.len() - 1].to_string());
+                    } else {
+                        return Some(text.to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
+// ============================================================================
+// AddCRElementRule (contentReference)
+// ============================================================================
+
+/// AddCRElement rule: `* path CARD flags* contentreference REF "short" "definition"?`
+///
+/// Adds an element whose type is a `contentReference` to another element
+/// (rather than a datatype). Used in Logical/Resource definitions.
+///
+/// Spec: FHIR Shorthand §Defining Logical Models.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddCRElementRule {
+    syntax: FshSyntaxNode,
+}
+
+impl AstNode for AddCRElementRule {
+    fn can_cast(kind: FshSyntaxKind) -> bool {
+        kind == FshSyntaxKind::AddCRElementRule
+    }
+
+    fn cast(node: FshSyntaxNode) -> Option<Self> {
+        if Self::can_cast(node.kind()) {
+            Some(Self { syntax: node })
+        } else {
+            None
+        }
+    }
+
+    fn syntax(&self) -> &FshSyntaxNode {
+        &self.syntax
+    }
+}
+
+impl AddCRElementRule {
+    /// Get the element path (previous sibling)
+    pub fn path(&self) -> Option<Path> {
+        self.syntax
+            .prev_sibling()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .and_then(Path::cast)
+    }
+
+    /// Get the cardinality string (e.g. "0..1")
+    pub fn cardinality(&self) -> Option<String> {
+        let mut parts = Vec::new();
+
+        if let Some(min_token) = token_of_kind(&self.syntax, FshSyntaxKind::Integer) {
+            parts.push(min_token.text().trim().to_string());
+        }
+
+        for child in self.syntax.children_with_tokens() {
+            if let Some(token) = child.as_token() {
+                match token.kind() {
+                    FshSyntaxKind::Integer => {
+                        if parts.len() == 1 {
+                            parts.push(token.text().trim().to_string());
+                            break;
+                        }
+                    }
+                    FshSyntaxKind::Asterisk => {
+                        if parts.len() == 1 {
+                            parts.push("*".to_string());
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if parts.len() == 2 {
+            Some(format!("{}..{}", parts[0], parts[1]))
+        } else {
+            None
+        }
+    }
+
+    /// Get all flag values
+    pub fn flags(&self) -> Vec<FlagValue> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|e| e.into_token())
+            .filter_map(|t| FlagValue::from_syntax_kind(t.kind()))
+            .collect()
+    }
+
+    /// Get the contentReference target (URL or `#code`)
+    pub fn content_reference(&self) -> Option<String> {
+        let mut after_kw = false;
+        for child in self.syntax.children_with_tokens() {
+            if let Some(token) = child.as_token() {
+                match token.kind() {
+                    FshSyntaxKind::ContentreferenceKw => {
+                        after_kw = true;
+                    }
+                    FshSyntaxKind::Ident | FshSyntaxKind::Code if after_kw => {
+                        return Some(token.text().trim().to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+
+    /// Get the short description (first string literal)
+    pub fn short(&self) -> Option<String> {
+        get_string_text(&self.syntax)
+    }
+
+    /// Get the full definition (second string literal, if present)
+    pub fn definition(&self) -> Option<String> {
+        let mut string_count = 0;
+        for child in self.syntax.children_with_tokens() {
+            if let Some(token) = child.as_token()
+                && token.kind() == FshSyntaxKind::String
+            {
+                string_count += 1;
+                if string_count == 2 {
+                    let text = token.text();
                     if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
                         return Some(text[1..text.len() - 1].to_string());
                     } else {

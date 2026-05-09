@@ -105,6 +105,107 @@ pub fn get_auto_dependencies(fhir_version: &str) -> Vec<AutoDependency> {
     ]
 }
 
+/// Redirect legacy `hl7.fhir.extensions.r{X}:<source-version>` package
+/// declarations to the SUSHI 3.19 official cross-version extension packages
+/// (`hl7.fhir.uv.xver-r{X}.r{Y}`).
+///
+/// SUSHI 3.19 retired the `hl7.fhir.extensions.r4`/`.r4b`/`.r5` family; the
+/// official cross-version extensions are now published under
+/// `hl7.fhir.uv.xver-<source>.<target>` where `<source>` is the FHIR release
+/// the extensions originate from and `<target>` is the IG's own release.
+///
+/// # Arguments
+///
+/// * `package_id` — declared dependency package id (e.g. `hl7.fhir.extensions.r5`).
+/// * `pinned_fhir_version` — version pin from the dependency entry
+///   (e.g. `4.0.1`); identifies the target release the extensions should
+///   be back-ported to.
+///
+/// # Returns
+///
+/// `Some((new_pkg, new_version))` if the package matched a known legacy id,
+/// otherwise `None`. The redirected version is `current` so `cargo`-style
+/// pinning is left to the resolver.
+///
+/// # Examples
+///
+/// ```
+/// use maki_core::config::auto_dependencies::redirect_legacy_extension_package;
+///
+/// // R5 extensions used inside an R4 IG → xver-r5.r4
+/// let r = redirect_legacy_extension_package("hl7.fhir.extensions.r5", "4.0.1");
+/// assert_eq!(r.unwrap().0, "hl7.fhir.uv.xver-r5.r4");
+///
+/// // R4 extensions used inside an R5 IG → xver-r4.r5
+/// let r = redirect_legacy_extension_package("hl7.fhir.extensions.r4", "5.0.0");
+/// assert_eq!(r.unwrap().0, "hl7.fhir.uv.xver-r4.r5");
+/// ```
+pub fn redirect_legacy_extension_package(
+    package_id: &str,
+    pinned_fhir_version: &str,
+) -> Option<(String, String)> {
+    let source_release = match package_id {
+        "hl7.fhir.extensions.r4" => "r4",
+        "hl7.fhir.extensions.r4b" => "r4b",
+        "hl7.fhir.extensions.r5" => "r5",
+        "hl7.fhir.extensions.r6" => "r6",
+        _ => return None,
+    };
+
+    let target_release = if pinned_fhir_version.starts_with("4.0") {
+        "r4"
+    } else if pinned_fhir_version.starts_with("4.3") {
+        "r4b"
+    } else if pinned_fhir_version.starts_with("5.") {
+        "r5"
+    } else if pinned_fhir_version.starts_with("6.") {
+        "r6"
+    } else {
+        // Unknown target — let the resolver fail rather than guess.
+        return None;
+    };
+
+    if source_release == target_release {
+        // No back-port needed; legacy package id was redundant.
+        return None;
+    }
+
+    Some((
+        format!("hl7.fhir.uv.xver-{}.{}", source_release, target_release),
+        "current".to_string(),
+    ))
+}
+
+/// URL-encode the literal `[x]` choice marker that appears in cross-version
+/// extension URLs, matching SUSHI 3.14's normalisation rule.
+///
+/// FHIR canonical URLs that target choice elements (e.g.
+/// `http://hl7.org/fhir/5.0/StructureDefinition/extension-Questionnaire.versionAlgorithm[x]`)
+/// must percent-encode the `[` and `]` characters before being written
+/// into the published IG, otherwise some validators reject the URL as
+/// malformed. SUSHI rewrites `[x]` to `%5Bx%5D` (and only those exact
+/// brackets — slice-name brackets remain literal).
+///
+/// The function is a no-op for URLs without a `[x]` marker.
+///
+/// # Examples
+///
+/// ```
+/// use maki_core::config::auto_dependencies::encode_choice_marker_in_url;
+///
+/// let url = "http://hl7.org/fhir/StructureDefinition/Questionnaire.versionAlgorithm[x]";
+/// assert_eq!(
+///     encode_choice_marker_in_url(url),
+///     "http://hl7.org/fhir/StructureDefinition/Questionnaire.versionAlgorithm%5Bx%5D"
+/// );
+///
+/// let url = "http://hl7.org/fhir/StructureDefinition/Patient";
+/// assert_eq!(encode_choice_marker_in_url(url), url);
+/// ```
+pub fn encode_choice_marker_in_url(url: &str) -> String {
+    url.replace("[x]", "%5Bx%5D")
+}
+
 /// Parse a dependency specification, handling NPM aliases
 ///
 /// NPM aliases allow package renaming using the format: `alias@npm:actual-package`.

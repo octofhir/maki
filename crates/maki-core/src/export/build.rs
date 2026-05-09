@@ -5,7 +5,7 @@
 
 use crate::cst::FshSyntaxNode;
 use crate::cst::TextRange;
-use crate::cst::ast::{CodeSystem, Extension, Instance, Profile, ValueSet};
+use crate::cst::ast::{CodeSystem, Extension, Instance, Mapping, Profile, ValueSet};
 use crate::export::ruleset_integration::RuleSetProcessor;
 use crate::export::*;
 use crate::semantic::ruleset::RuleSetExpander;
@@ -46,6 +46,7 @@ struct ParsedResources {
     valuesets: Vec<SourceTrackedResource<ValueSet>>,
     codesystems: Vec<SourceTrackedResource<CodeSystem>>,
     instances: Vec<SourceTrackedResource<Instance>>,
+    mappings: Vec<SourceTrackedResource<Mapping>>,
 }
 
 /// Build errors
@@ -692,6 +693,12 @@ impl BuildOrchestrator {
         )
         .await?;
 
+        // Step 6b: Apply Mapping items onto already-exported StructureDefinitions
+        if !resources.mappings.is_empty() {
+            self.export_mappings(session.clone(), package.clone(), &resources, &mut stats)
+                .await?;
+        }
+
         if !self.deferred_rules.is_empty() {
             if self.options.show_progress {
                 info!("🔗 Phase 3: Resolving circular dependencies...");
@@ -925,6 +932,7 @@ impl BuildOrchestrator {
         let mut valuesets = Vec::new();
         let mut codesystems = Vec::new();
         let mut instances = Vec::new();
+        let mut mappings = Vec::new();
 
         // Extract all resources from parsed files
         for (file_path, root) in parsed_files {
@@ -992,6 +1000,18 @@ impl BuildOrchestrator {
                     end_line,
                 ));
             }
+
+            // Extract mappings with source tracking
+            for mapping_node in root.children().filter_map(Mapping::cast) {
+                let range = mapping_node.syntax().text_range();
+                let (start_line, end_line) = self.calculate_line_numbers(&source_text, range);
+                mappings.push(SourceTrackedResource::new(
+                    mapping_node,
+                    file_path.clone(),
+                    start_line,
+                    end_line,
+                ));
+            }
         }
 
         let total_extracted = profiles.len()
@@ -1026,6 +1046,7 @@ impl BuildOrchestrator {
             valuesets,
             codesystems,
             instances,
+            mappings,
         })
     }
 
@@ -2196,6 +2217,132 @@ impl BuildOrchestrator {
 
             stats.code_systems += codesystem_count.load(std::sync::atomic::Ordering::SeqCst);
             stats.errors += error_count.load(std::sync::atomic::Ordering::SeqCst);
+        }
+
+        Ok(())
+    }
+
+    /// Apply Mapping items to already-exported StructureDefinitions
+    ///
+    /// For each Mapping with `Source: ProfileName`, locate the matching
+    /// exported StructureDefinition in the package, deserialize, run
+    /// MappingExporter::apply_mapping, and write the modified JSON back.
+    async fn export_mappings(
+        &self,
+        session: Arc<crate::canonical::DefinitionSession>,
+        package: Arc<tokio::sync::RwLock<crate::semantic::Package>>,
+        resources: &ParsedResources,
+        stats: &mut BuildStats,
+    ) -> std::result::Result<(), BuildError> {
+        use crate::export::MappingExporter;
+        use crate::export::fhir_types::StructureDefinition;
+        use std::collections::HashMap;
+
+        let mapping_exporter = MappingExporter::new(session, None).await.map_err(|e| {
+            BuildError::ExportError(format!("Failed to create MappingExporter: {}", e))
+        })?;
+
+        for tracked in &resources.mappings {
+            let mapping = &tracked.resource;
+            let mapping_name = mapping
+                .name()
+                .unwrap_or_else(|| "<unnamed mapping>".to_string());
+
+            let source_name = match mapping.source().and_then(|s| s.value()) {
+                Some(s) => s,
+                None => {
+                    warn!(
+                        "Mapping '{}' has no Source clause; skipping",
+                        mapping_name
+                    );
+                    stats.errors += 1;
+                    continue;
+                }
+            };
+
+            // Find the canonical URL of the source StructureDefinition in the package
+            let source_url = {
+                let pkg = package.read().await;
+                pkg.all_resources()
+                    .iter()
+                    .find_map(|(url, json)| {
+                        if json.get("resourceType").and_then(|v| v.as_str())
+                            == Some("StructureDefinition")
+                            && (json.get("name").and_then(|v| v.as_str()) == Some(&source_name)
+                                || json.get("id").and_then(|v| v.as_str()) == Some(&source_name))
+                        {
+                            Some(url.clone())
+                        } else {
+                            None
+                        }
+                    })
+            };
+
+            let Some(source_url) = source_url else {
+                warn!(
+                    "Mapping '{}' Source '{}' not found among exported StructureDefinitions; skipping",
+                    mapping_name, source_name
+                );
+                stats.errors += 1;
+                continue;
+            };
+
+            // Deserialize, apply, reserialize
+            let json = {
+                let pkg = package.read().await;
+                pkg.all_resources()
+                    .get(&source_url)
+                    .map(|arc| (**arc).clone())
+            };
+            let Some(json) = json else { continue };
+
+            let mut sd: StructureDefinition = match serde_json::from_value(json) {
+                Ok(sd) => sd,
+                Err(e) => {
+                    warn!(
+                        "Failed to deserialize StructureDefinition for Mapping source '{}': {}",
+                        source_name, e
+                    );
+                    stats.errors += 1;
+                    continue;
+                }
+            };
+
+            let mut sd_map: HashMap<String, StructureDefinition> = HashMap::new();
+            sd_map.insert(source_name.clone(), sd.clone());
+
+            if let Err(e) = mapping_exporter.apply_mapping(mapping, &mut sd_map).await {
+                warn!("Failed to apply Mapping '{}': {}", mapping_name, e);
+                stats.errors += 1;
+                continue;
+            }
+
+            if let Some(updated) = sd_map.remove(&source_name) {
+                sd = updated;
+            }
+
+            let updated_json = match serde_json::to_value(&sd) {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!(
+                        "Failed to serialize StructureDefinition after Mapping '{}': {}",
+                        mapping_name, e
+                    );
+                    stats.errors += 1;
+                    continue;
+                }
+            };
+
+            {
+                let mut pkg = package.write().await;
+                pkg.add_resource(source_url, updated_json);
+            }
+
+            stats.mappings += 1;
+            debug!(
+                "Applied Mapping '{}' (Source: {})",
+                mapping_name, source_name
+            );
         }
 
         Ok(())

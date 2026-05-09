@@ -304,6 +304,9 @@ pub enum ExportError {
 
     #[error("Invalid context expression: {0}")]
     InvalidContextExpression(String),
+
+    #[error("Invalid parent: {0}")]
+    InvalidParent(String),
 }
 
 /// Profile exporter
@@ -1299,13 +1302,22 @@ impl ProfileExporter {
             Rule::FixedValue(fixed_rule) => {
                 self.apply_fixed_value_rule(structure_def, fixed_rule).await
             }
-            Rule::AddElement(_) => {
-                // AddElement is only for Logical/Resource, not Profiles
+            Rule::AddElement(_) | Rule::AddCRElement(_) => {
+                // AddElement / AddCRElement are only for Logical/Resource, not Profiles
                 warn!("AddElement rule not applicable to Profiles");
                 Ok(())
             }
             Rule::Mapping(_) => {
-                // Mapping rules are handled by MappingExporter, not ProfileExporter
+                // Inline `* path -> "target"` rules within a Profile body are not
+                // attached to ElementDefinition.mapping here; FSH spec requires a
+                // matching top-level `Mapping:` definition with `Source:` pointing
+                // at this Profile, which is processed by MappingExporter.
+                warn!(
+                    "Inline Mapping rule inside Profile is not yet attached \
+                     to ElementDefinition.mapping; declare a top-level `Mapping:` \
+                     with `Source: {}` to map elements",
+                    structure_def.name
+                );
                 Ok(())
             }
             Rule::Path(_) => {
@@ -1742,12 +1754,34 @@ impl ProfileExporter {
                 .push(ElementDefinition::new(full_path.clone()));
         }
 
-        // TODO: Add slicing discriminator for extensions
-        // This requires adding slicing field to ElementDefinition struct
-        // For now, we just create the slice elements
+        // For extension slicing, the FHIR spec mandates `slicing.discriminator`
+        // of `{ type: "value", path: "url" }` and `slicing.rules: "open"` unless
+        // overridden by `^slicing.*` caret rules.
         if is_extension {
-            debug!("Extension slicing on {}", full_path);
-            // base_elem.slicing would be set here in full implementation
+            let base_elem = snapshot
+                .element
+                .iter_mut()
+                .find(|e| e.path == full_path)
+                .expect("base element guaranteed to exist after the push above");
+
+            if base_elem.slicing.is_none() {
+                use crate::export::fhir_types::{
+                    ElementDefinitionSlicing, ElementDefinitionSlicingDiscriminator,
+                };
+                base_elem.slicing = Some(ElementDefinitionSlicing {
+                    description: None,
+                    ordered: Some(false),
+                    rules: Some("open".to_string()),
+                    discriminator: Some(vec![ElementDefinitionSlicingDiscriminator {
+                        discriminator_type: "value".to_string(),
+                        path: "url".to_string(),
+                    }]),
+                });
+                debug!(
+                    "Auto-generated extension slicing discriminator on {}",
+                    full_path
+                );
+            }
         }
 
         // Get items with both extension type and slice name
@@ -2007,6 +2041,16 @@ impl ProfileExporter {
         field: &str,
         value: &str,
     ) -> Result<(), ExportError> {
+        // Slicing fields: ^slicing.rules, ^slicing.ordered, ^slicing.description,
+        // ^slicing.discriminator[+/=/<n>].<sub>
+        if field == "slicing.rules"
+            || field == "slicing.ordered"
+            || field == "slicing.description"
+            || field.starts_with("slicing.discriminator")
+        {
+            return self.apply_slicing_field_to_element(element, field, value);
+        }
+
         match field {
             "short" => {
                 element.short = Some(value.trim_matches('"').to_string());
@@ -2023,6 +2067,104 @@ impl ProfileExporter {
                 // available in the current ElementDefinition struct
             }
         }
+        Ok(())
+    }
+
+    /// Apply a `^slicing.*` caret rule to an ElementDefinition.
+    ///
+    /// Supports:
+    /// - `slicing.rules` — #open / #closed / #openAtEnd
+    /// - `slicing.ordered` — true / false
+    /// - `slicing.description` — "..."
+    /// - `slicing.discriminator[+|=|<n>].type` — discriminator type code
+    /// - `slicing.discriminator[+|=|<n>].path` — discriminator path string
+    fn apply_slicing_field_to_element(
+        &self,
+        element: &mut ElementDefinition,
+        field: &str,
+        value: &str,
+    ) -> Result<(), ExportError> {
+        use crate::export::fhir_types::ElementDefinitionSlicingDiscriminator;
+
+        let slicing = element.slicing.get_or_insert_default();
+
+        match field {
+            "slicing.rules" => {
+                let v = value.trim_start_matches('#').trim_matches('"');
+                slicing.rules = Some(v.to_string());
+                return Ok(());
+            }
+            "slicing.ordered" => {
+                slicing.ordered = Some(value == "true");
+                return Ok(());
+            }
+            "slicing.description" => {
+                slicing.description = Some(value.trim_matches('"').to_string());
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        // slicing.discriminator[<idx>].<sub>
+        let re = regex::Regex::new(r"slicing\.discriminator\[([^\]]+)\]\.(\w+)").unwrap();
+        if let Some(caps) = re.captures(field) {
+            let idx_token = caps
+                .get(1)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+            let sub = caps
+                .get(2)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+
+            let disc_vec = slicing.discriminator.get_or_insert_with(Vec::new);
+
+            let idx = match idx_token.as_str() {
+                "+" => {
+                    disc_vec.push(ElementDefinitionSlicingDiscriminator {
+                        discriminator_type: String::new(),
+                        path: String::new(),
+                    });
+                    disc_vec.len() - 1
+                }
+                "=" => {
+                    if disc_vec.is_empty() {
+                        disc_vec.push(ElementDefinitionSlicingDiscriminator {
+                            discriminator_type: String::new(),
+                            path: String::new(),
+                        });
+                    }
+                    disc_vec.len() - 1
+                }
+                other => other
+                    .parse::<usize>()
+                    .map(|n| {
+                        while disc_vec.len() <= n {
+                            disc_vec.push(ElementDefinitionSlicingDiscriminator {
+                                discriminator_type: String::new(),
+                                path: String::new(),
+                            });
+                        }
+                        n
+                    })
+                    .unwrap_or(disc_vec.len().saturating_sub(1)),
+            };
+
+            let entry = &mut disc_vec[idx];
+            match sub.as_str() {
+                "type" => {
+                    entry.discriminator_type =
+                        value.trim_start_matches('#').trim_matches('"').to_string();
+                }
+                "path" => {
+                    entry.path = value.trim_matches('"').to_string();
+                }
+                _ => {
+                    debug!("Unhandled slicing discriminator subfield: {}", sub);
+                }
+            }
+        }
+
         Ok(())
     }
 

@@ -284,8 +284,8 @@ impl DifferentialGenerator {
                 // Code-level rules handled in CodeSystem/ValueSet exporters
                 Ok(())
             }
-            Rule::AddElement(_) => {
-                // AddElement is only for Logical/Resource, not Profiles
+            Rule::AddElement(_) | Rule::AddCRElement(_) => {
+                // AddElement / AddCRElement are only for Logical/Resource, not Profiles
                 warn!("AddElement rule not applicable to Profiles");
                 Ok(())
             }

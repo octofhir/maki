@@ -133,6 +133,23 @@ enum Commands {
         /// Use default values for all prompts (non-interactive)
         #[arg(long, help = "Use default values without prompting")]
         default: bool,
+
+        /// Fully scripted initialization: equivalent to `--default` plus
+        /// non-interactive script download.
+        #[arg(short = 'a', long = "auto-initialize", help = "Auto-initialize with defaults")]
+        auto_initialize: bool,
+
+        /// Override configuration values (e.g., -c canonical:http://example.org/fhir)
+        ///
+        /// Recognized keys: id, canonical, status, version, releaselabel,
+        /// publisher-name, publisher-url, name, title, description.
+        #[arg(
+            short = 'c',
+            long = "config",
+            help = "Override init config values: id, canonical, status, version, releaselabel, publisher-name, publisher-url, name, title, description",
+            value_parser = parse_config_override
+        )]
+        config: Vec<(String, String)>,
     },
 
     /// Convert FHIR resources (JSON/XML) back to FSH (GoFSH functionality)
@@ -562,7 +579,15 @@ async fn run_command(cli: Cli) -> Result<()> {
             .await
         }
 
-        Some(Commands::Init { name, default }) => commands::init::init_command(name, default).await,
+        Some(Commands::Init {
+            name,
+            default,
+            auto_initialize,
+            config,
+        }) => {
+            commands::init::init_command(name, default || auto_initialize, auto_initialize, config)
+                .await
+        }
 
         Some(Commands::Gofsh {
             input,

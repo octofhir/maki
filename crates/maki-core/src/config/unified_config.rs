@@ -245,6 +245,43 @@ impl UnifiedConfig {
             deps.extend(top_deps.clone());
         }
 
+        // SUSHI 3.19: redirect legacy `hl7.fhir.extensions.r{X}` package ids to
+        // the official cross-version extension packages (`hl7.fhir.uv.xver-*`).
+        // The redirect needs the IG's primary FHIR version as the back-port
+        // target; if the build section is missing we fall back to R4 to match
+        // the rest of the auto-dependency code paths.
+        let target_version = self
+            .build
+            .as_ref()
+            .and_then(|b| b.fhir_version.first())
+            .cloned()
+            .unwrap_or_else(|| "4.0.1".to_string());
+
+        let mut redirects: Vec<(String, String, DependencyVersion)> = Vec::new();
+        for legacy_id in deps.keys() {
+            if let Some((new_id, new_version)) =
+                super::auto_dependencies::redirect_legacy_extension_package(
+                    legacy_id,
+                    &target_version,
+                )
+            {
+                redirects.push((
+                    legacy_id.clone(),
+                    new_id,
+                    DependencyVersion::Simple(new_version),
+                ));
+            }
+        }
+        for (old_id, new_id, new_dep) in redirects {
+            tracing::info!(
+                "SUSHI 3.19: redirecting legacy '{}' → '{}'",
+                old_id,
+                new_id
+            );
+            deps.remove(&old_id);
+            deps.insert(new_id, new_dep);
+        }
+
         deps
     }
 

@@ -1391,6 +1391,7 @@ impl ExtensionExporter {
                 Ok(())
             }
             Rule::AddElement(_)
+            | Rule::AddCRElement(_)
             | Rule::Contains(_)
             | Rule::Only(_)
             | Rule::Obeys(_)

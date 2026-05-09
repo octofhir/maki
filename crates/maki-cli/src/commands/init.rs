@@ -24,8 +24,13 @@ struct ProjectMetadata {
     status: String,
     version: String,
     publisher_name: String,
-    #[allow(dead_code)]
     publisher_url: String,
+    /// SUSHI 3.10 `releaselabel` config field.
+    release_label: Option<String>,
+    /// SUSHI 3.10 `title` config field.
+    title: Option<String>,
+    /// SUSHI 3.10 `description` config field.
+    description: Option<String>,
 }
 
 impl ProjectMetadata {
@@ -38,18 +43,65 @@ impl ProjectMetadata {
             version: "0.1.0".to_string(),
             publisher_name: "Example Publisher".to_string(),
             publisher_url: "http://example.org".to_string(),
+            release_label: None,
+            title: None,
+            description: None,
             name,
+        }
+    }
+
+    /// Apply CLI `-c key:value` config overrides.
+    ///
+    /// Recognized keys mirror SUSHI 3.10's `sushi init -c` flag:
+    /// `id`, `canonical`, `status`, `version`, `releaselabel`,
+    /// `publisher-name`, `publisher-url`, `name`, `title`, `description`.
+    fn apply_overrides(&mut self, overrides: &[(String, String)]) {
+        for (key, value) in overrides {
+            match key.to_lowercase().as_str() {
+                "id" => self.id = value.clone(),
+                "canonical" => self.canonical = value.clone(),
+                "status" => self.status = value.clone(),
+                "version" => self.version = value.clone(),
+                "releaselabel" | "release-label" => {
+                    self.release_label = Some(value.clone())
+                }
+                "publisher-name" | "publisher" => self.publisher_name = value.clone(),
+                "publisher-url" => self.publisher_url = value.clone(),
+                "name" => self.name = value.clone(),
+                "title" => self.title = Some(value.clone()),
+                "description" => self.description = Some(value.clone()),
+                "fhirversion" | "fhir-version" => self.fhir_version = value.clone(),
+                other => warn!("Unknown init config key '{}'; ignoring", other),
+            }
         }
     }
 }
 
 /// Initialize a new FSH project
-pub async fn init_command(name: Option<String>, default_all: bool) -> Result<()> {
+///
+/// # Arguments
+///
+/// * `name` — optional project name (becomes the directory name)
+/// * `default_all` — true for `--default` or `-a/--auto-initialize`; skips prompts
+/// * `auto_initialize` — true for `-a/--auto-initialize`; logged for parity
+/// * `overrides` — CLI `-c key:value` overrides; applied after defaults
+pub async fn init_command(
+    name: Option<String>,
+    default_all: bool,
+    auto_initialize: bool,
+    overrides: Vec<(String, String)>,
+) -> Result<()> {
     print_header();
 
     // 1. Collect project metadata
-    let metadata = if default_all {
+    let mut metadata = if default_all {
         let proj_name = name.unwrap_or_else(|| "MyIG".to_string());
+        if auto_initialize {
+            info!(
+                "Auto-initializing project '{}' with defaults (-a)",
+                proj_name
+            );
+        }
         println!(
             "📋 Using default values for project '{}'...\n",
             proj_name.bright_cyan()
@@ -58,6 +110,11 @@ pub async fn init_command(name: Option<String>, default_all: bool) -> Result<()>
     } else {
         collect_metadata_interactive(name)?
     };
+
+    // 1b. Apply CLI overrides (`-c key:value`) on top of defaults / interactive answers.
+    if !overrides.is_empty() {
+        metadata.apply_overrides(&overrides);
+    }
 
     // 2. Check if directory exists
     if Path::new(&metadata.name).exists() {
@@ -185,6 +242,9 @@ fn collect_metadata_interactive(name: Option<String>) -> Result<ProjectMetadata>
         version,
         publisher_name,
         publisher_url,
+        release_label: None,
+        title: None,
+        description: None,
     })
 }
 
@@ -198,6 +258,28 @@ fn create_project_structure(meta: &ProjectMetadata) -> Result<()> {
 }
 
 fn generate_maki_config(meta: &ProjectMetadata) -> Result<()> {
+    // SUSHI 3.10's `releaselabel` is encoded as an IG parameter.
+    let parameters = meta.release_label.as_ref().map(|label| {
+        let mut params = std::collections::HashMap::new();
+        params.insert("releaseLabel".to_string(), serde_json::json!(label));
+        params
+    });
+
+    // Build a `Publisher` value that carries both name and (optional) URL.
+    let publisher = if meta.publisher_url.is_empty()
+        || meta.publisher_url == "http://example.org"
+    {
+        Some(maki_core::config::PublisherInfo::String(
+            meta.publisher_name.clone(),
+        ))
+    } else {
+        Some(maki_core::config::PublisherInfo::Object {
+            name: Some(meta.publisher_name.clone()),
+            url: Some(meta.publisher_url.clone()),
+            email: None,
+        })
+    };
+
     // Start with no dependencies - users can add them as needed
     let config = UnifiedConfig {
         schema: Some("https://octofhir.github.io/maki/schema/v1.json".to_string()),
@@ -208,16 +290,14 @@ fn generate_maki_config(meta: &ProjectMetadata) -> Result<()> {
             fhir_version: vec![meta.fhir_version.clone()],
             id: Some(meta.id.clone()),
             name: Some(meta.name.clone()),
-            title: Some(meta.name.clone()),
+            title: Some(meta.title.clone().unwrap_or_else(|| meta.name.clone())),
             version: Some(meta.version.clone()),
             status: Some(meta.status.clone()),
-            publisher: Some(maki_core::config::PublisherInfo::String(
-                meta.publisher_name.clone(),
-            )),
+            publisher,
             experimental: None,
             date: None,
             contact: None,
-            description: None,
+            description: meta.description.clone(),
             use_context: None,
             jurisdiction: None,
             copyright: None,
@@ -232,7 +312,7 @@ fn generate_maki_config(meta: &ProjectMetadata) -> Result<()> {
             resources: None,
             pages: None,
             index_page_content: None,
-            parameters: None,
+            parameters,
             templates: None,
             menu: None,
             fsh_only: None,
@@ -397,22 +477,17 @@ This IG provides...
 }
 
 async fn download_publisher_scripts(project_name: &str) -> Result<()> {
+    // SUSHI 3.19 retired the legacy `_genonce.{sh,bat}` and
+    // `_updatePublisher.{sh,bat}` scripts in favor of the unified
+    // `_build.{sh,bat}` workflow shipped by the HL7 ig-publisher-scripts repo.
     const SCRIPTS: &[(&str, &str)] = &[
         (
-            "_genonce.sh",
-            "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_genonce.sh",
+            "_build.sh",
+            "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_build.sh",
         ),
         (
-            "_genonce.bat",
-            "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_genonce.bat",
-        ),
-        (
-            "_updatePublisher.sh",
-            "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_updatePublisher.sh",
-        ),
-        (
-            "_updatePublisher.bat",
-            "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_updatePublisher.bat",
+            "_build.bat",
+            "https://raw.githubusercontent.com/HL7/ig-publisher-scripts/main/_build.bat",
         ),
     ];
 
