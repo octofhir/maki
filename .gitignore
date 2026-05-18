@@ -32,3 +32,6 @@ Thumbs.db
 
 # FHIR Canonical Manager cache
 .maki/
+
+# Sample IGs for local testing
+/mcode-ig/
