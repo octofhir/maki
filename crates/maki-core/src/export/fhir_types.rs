@@ -100,6 +100,14 @@ pub struct StructureDefinition {
     /// External specification mappings
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mapping: Option<Vec<StructureDefinitionMapping>>,
+
+    /// Catch-all for additional FHIR properties not modelled as typed fields
+    /// (e.g. `contact`, `useContext`, `jurisdiction`, `purpose`, `copyright`,
+    /// `keyword`, `identifier`, …). Populated automatically by serde via
+    /// `#[serde(flatten)]`. Required for SUSHI 3.13 root-caret coverage so
+    /// that arbitrary `^property = value` rules survive a JSON roundtrip.
+    #[serde(flatten)]
+    pub extras: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 impl StructureDefinition {
@@ -133,6 +141,7 @@ impl StructureDefinition {
             snapshot: None,
             differential: None,
             mapping: None,
+            extras: std::collections::BTreeMap::new(),
         }
     }
 

@@ -78,6 +78,25 @@ const UNINHERITED_EXTENSIONS: &[&str] = &[
 ];
 use tracing::{debug, trace, warn};
 
+/// If `resource_json` is a canonical FHIR resource (i.e. has a `url` string
+/// field) AND its `name`, `id`, or `url` matches `type_name`, return the
+/// resource's `url`. Used for in-package canonical lookup across resource
+/// types (StructureDefinition, ValueSet, CodeSystem, ConceptMap, NamingSystem,
+/// Questionnaire, …) — SUSHI 3.14 parity.
+fn canonical_resource_url_if_matches(
+    resource_json: &serde_json::Value,
+    type_name: &str,
+) -> Option<String> {
+    let url = resource_json.get("url").and_then(|v| v.as_str())?;
+    let name = resource_json.get("name").and_then(|v| v.as_str());
+    let id = resource_json.get("id").and_then(|v| v.as_str());
+    if name == Some(type_name) || id == Some(type_name) || url == type_name {
+        Some(url.to_string())
+    } else {
+        None
+    }
+}
+
 /// Convert CamelCase to kebab-case (e.g., "USCorePatient" -> "us-core-patient")
 fn camel_to_kebab(s: &str) -> String {
     let mut result = String::new();
@@ -930,56 +949,82 @@ impl ProfileExporter {
 
     /// Resolve a type name to its canonical URL
     ///
-    /// Resolution order:
-    /// 1. Check local Package for exported StructureDefinitions
-    /// 2. Check alias table
-    /// 3. Query canonical manager
-    /// 4. Try FHIR core canonical URL as fallback
+    /// Resolution order (SUSHI 3.14 parity — covers all canonical resource
+    /// types, not just `StructureDefinition`):
+    /// 1. Check local Package for any resource with a `url` field whose
+    ///    `name`, `id`, or `url` matches `type_name`.
+    /// 2. Check alias table.
+    /// 3. Query canonical manager session.
+    /// 4. Try FHIR core canonical URL formats for the well-known canonical
+    ///    resource types (StructureDefinition, ValueSet, CodeSystem,
+    ///    ConceptMap, NamingSystem, Questionnaire, OperationDefinition,
+    ///    SearchParameter, CapabilityStatement, ImplementationGuide,
+    ///    StructureMap).
+    /// 5. Fallback: try kebab-case variant under StructureDefinition.
     async fn resolve_type_to_canonical(&self, type_name: &str) -> Option<String> {
-        // If already a URL, return as-is
+        // If already a URL, return as-is.
         if type_name.starts_with("http://") || type_name.starts_with("https://") {
             return Some(type_name.to_string());
         }
 
-        // 1. Check local Package for exported StructureDefinitions
+        // 1. Check local Package for any canonical resource by name/id/url.
         {
             let package = self.package.read().await;
-            for (_canonical_url, resource_json) in package.all_resources().iter() {
-                if let Ok(sd) =
-                    serde_json::from_value::<StructureDefinition>((**resource_json).clone())
-                {
-                    // Check if name matches
-                    if sd.name == type_name {
-                        return Some(sd.url.clone());
-                    }
+            for (canonical_url, resource_json) in package.all_resources().iter() {
+                if let Some(url) = canonical_resource_url_if_matches(resource_json, type_name) {
+                    return Some(url);
+                }
+                // Also accept lookup by canonical key as written in package.
+                if canonical_url.as_str() == type_name {
+                    return Some(canonical_url.clone());
                 }
             }
         }
 
-        // 2. Check alias table
+        // 2. Check alias table.
         if let Some(resolved_url) = self.alias_table.resolve(type_name) {
             return Some(resolved_url.to_string());
         }
 
-        // 3. Try canonical manager by name
+        // 3. Query canonical manager by name. Accept any resource that has a
+        //    `url` field — not just StructureDefinition.
         if let Ok(resource) = self.session.resolve(type_name).await
-            && let Ok(sd) =
-                serde_json::from_value::<StructureDefinition>((*resource.content).clone())
+            && let Some(url) = (*resource.content)
+                .get("url")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
         {
-            return Some(sd.url.clone());
+            return Some(url);
         }
 
-        // 4. Try FHIR core canonical URL format
-        let core_candidate = format!("http://hl7.org/fhir/StructureDefinition/{}", type_name);
-        if self
-            .resolve_structure_definition_from_canonical(&core_candidate)
-            .await
-            .is_ok_and(|opt| opt.is_some())
-        {
-            return Some(core_candidate);
+        // 4. Try FHIR core canonical URL formats for well-known canonical
+        //    resource types. We probe StructureDefinition first (most common)
+        //    then the others; first success wins.
+        const CORE_TYPES: &[&str] = &[
+            "StructureDefinition",
+            "ValueSet",
+            "CodeSystem",
+            "ConceptMap",
+            "NamingSystem",
+            "Questionnaire",
+            "OperationDefinition",
+            "SearchParameter",
+            "CapabilityStatement",
+            "ImplementationGuide",
+            "StructureMap",
+        ];
+        for resource_type in CORE_TYPES {
+            let candidate = format!("http://hl7.org/fhir/{}/{}", resource_type, type_name);
+            if let Ok(Some(_)) = self
+                .session
+                .resource_by_type_and_id(resource_type, type_name)
+                .await
+            {
+                return Some(candidate);
+            }
         }
 
-        // 5. Fallback: try kebab-case variant
+        // 5. Fallback: try kebab-case variant under StructureDefinition.
         let kebab_name = camel_to_kebab(type_name);
         if let Ok(Some(resource)) = self
             .session
@@ -1308,16 +1353,9 @@ impl ProfileExporter {
                 Ok(())
             }
             Rule::Mapping(_) => {
-                // Inline `* path -> "target"` rules within a Profile body are not
-                // attached to ElementDefinition.mapping here; FSH spec requires a
-                // matching top-level `Mapping:` definition with `Source:` pointing
-                // at this Profile, which is processed by MappingExporter.
-                warn!(
-                    "Inline Mapping rule inside Profile is not yet attached \
-                     to ElementDefinition.mapping; declare a top-level `Mapping:` \
-                     with `Source: {}` to map elements",
-                    structure_def.name
-                );
+                // Inline `* path -> "target"` rules are applied at orchestrator
+                // level after both ProfileExporter and MappingExporter have run
+                // (see BuildOrchestrator::apply_inline_mapping_rules).
                 Ok(())
             }
             Rule::Path(_) => {
@@ -2609,6 +2647,66 @@ mod tests {
 
     // #[test]
     // fn test_apply_flag_to_element() { ... }
+
+    /// Helper accepts any canonical resource type (SUSHI 3.14): match by
+    /// `name`, `id`, or `url`. Resources without a `url` field never match.
+    #[test]
+    fn canonical_resource_helper_matches_across_types() {
+        use serde_json::json;
+
+        let questionnaire = json!({
+            "resourceType": "Questionnaire",
+            "id": "my-q",
+            "name": "MyQuestionnaire",
+            "url": "http://example.org/Questionnaire/my-q"
+        });
+        assert_eq!(
+            canonical_resource_url_if_matches(&questionnaire, "MyQuestionnaire"),
+            Some("http://example.org/Questionnaire/my-q".to_string())
+        );
+        assert_eq!(
+            canonical_resource_url_if_matches(&questionnaire, "my-q"),
+            Some("http://example.org/Questionnaire/my-q".to_string())
+        );
+        assert_eq!(
+            canonical_resource_url_if_matches(
+                &questionnaire,
+                "http://example.org/Questionnaire/my-q"
+            ),
+            Some("http://example.org/Questionnaire/my-q".to_string())
+        );
+
+        let conceptmap = json!({
+            "resourceType": "ConceptMap",
+            "id": "cm",
+            "name": "MyConceptMap",
+            "url": "http://example.org/ConceptMap/cm"
+        });
+        assert_eq!(
+            canonical_resource_url_if_matches(&conceptmap, "MyConceptMap"),
+            Some("http://example.org/ConceptMap/cm".to_string())
+        );
+
+        let naming = json!({
+            "resourceType": "NamingSystem",
+            "name": "OurOIDs",
+            "url": "http://example.org/NamingSystem/ours"
+        });
+        assert_eq!(
+            canonical_resource_url_if_matches(&naming, "OurOIDs"),
+            Some("http://example.org/NamingSystem/ours".to_string())
+        );
+
+        // No url → never match.
+        let no_url = json!({"resourceType": "Patient", "id": "x", "name": "X"});
+        assert_eq!(canonical_resource_url_if_matches(&no_url, "X"), None);
+
+        // Mismatched name/id/url → no match.
+        assert_eq!(
+            canonical_resource_url_if_matches(&questionnaire, "Other"),
+            None
+        );
+    }
 
     #[test]
     fn test_generate_differential_no_changes() {

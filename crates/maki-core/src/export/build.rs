@@ -227,16 +227,34 @@ pub struct BuildOrchestrator {
     options: BuildOptions,
     config: crate::config::UnifiedConfig,
     deferred_rules: Vec<DeferredRule>,
+    /// SUSHI-compatible diagnostic suppression list (`sushi-ignoreErrors.txt`).
+    /// Loaded once from `options.input_dir` at construction time.
+    ignore_errors: crate::diagnostics::IgnoreErrors,
 }
 
 impl BuildOrchestrator {
     /// Create a new build orchestrator
     pub fn new(config: crate::config::UnifiedConfig, options: BuildOptions) -> Self {
+        let ignore_errors =
+            crate::diagnostics::IgnoreErrors::from_input_dir(&options.input_dir);
+        if !ignore_errors.is_empty() {
+            info!(
+                "Loaded {} sushi-ignoreErrors.txt pattern(s) from {}",
+                ignore_errors.len(),
+                options.input_dir.display()
+            );
+        }
         Self {
             config,
             options,
             deferred_rules: Vec::new(),
+            ignore_errors,
         }
+    }
+
+    /// Access the SUSHI `sushi-ignoreErrors.txt` suppression list.
+    pub fn ignore_errors(&self) -> &crate::diagnostics::IgnoreErrors {
+        &self.ignore_errors
     }
 
     /// Get the build configuration (BuildConfiguration from unified config)
@@ -698,6 +716,13 @@ impl BuildOrchestrator {
             self.export_mappings(session.clone(), package.clone(), &resources, &mut stats)
                 .await?;
         }
+
+        // Step 6c: Apply inline `* path -> "target"` mapping rules from
+        // Profile/Extension bodies to the already-exported StructureDefinitions.
+        // Must run AFTER export_mappings so that StructureDefinition.mapping[]
+        // entries (and thus the candidate identities) are already in place.
+        self.apply_inline_mapping_rules(session.clone(), package.clone(), &resources, &mut stats)
+            .await?;
 
         if !self.deferred_rules.is_empty() {
             if self.options.show_progress {
@@ -2343,6 +2368,197 @@ impl BuildOrchestrator {
                 "Applied Mapping '{}' (Source: {})",
                 mapping_name, source_name
             );
+        }
+
+        Ok(())
+    }
+
+    /// Apply inline `* path -> "target"` mapping rules embedded in
+    /// Profile/Extension bodies onto already-exported StructureDefinitions.
+    ///
+    /// Builds a `Source: -> [identity, ...]` map from top-level `Mapping:`
+    /// definitions, then for each Profile/Extension that contains inline
+    /// mapping rules, locates the exported StructureDefinition and applies
+    /// each inline rule via `MappingExporter::apply_inline_mapping_rules`.
+    async fn apply_inline_mapping_rules(
+        &self,
+        session: Arc<crate::canonical::DefinitionSession>,
+        package: Arc<tokio::sync::RwLock<crate::semantic::Package>>,
+        resources: &ParsedResources,
+        stats: &mut BuildStats,
+    ) -> std::result::Result<(), BuildError> {
+        use crate::cst::ast::Rule;
+        use crate::export::MappingExporter;
+        use crate::export::fhir_types::StructureDefinition;
+        use std::collections::HashMap;
+
+        // Build Source: name -> [identity, ...] map from top-level Mappings.
+        let mut identities_by_source: HashMap<String, Vec<String>> = HashMap::new();
+        for tracked in &resources.mappings {
+            let mapping = &tracked.resource;
+            let Some(source) = mapping.source().and_then(|s| s.value()) else {
+                continue;
+            };
+            let identity = mapping
+                .id()
+                .and_then(|id| id.value())
+                .or_else(|| mapping.name())
+                .unwrap_or_else(|| "<unnamed>".to_string());
+            identities_by_source
+                .entry(source)
+                .or_default()
+                .push(identity);
+        }
+
+        // Quick reject if there's no work to do at all.
+        let any_inline = resources
+            .profiles
+            .iter()
+            .any(|p| p.resource.rules().any(|r| matches!(r, Rule::Mapping(_))))
+            || resources
+                .extensions
+                .iter()
+                .any(|e| e.resource.rules().any(|r| matches!(r, Rule::Mapping(_))));
+        if !any_inline {
+            return Ok(());
+        }
+
+        let mapping_exporter = MappingExporter::new(session, None).await.map_err(|e| {
+            BuildError::ExportError(format!("Failed to create MappingExporter: {}", e))
+        })?;
+
+        // Closure: locate SD by name/id, deserialize, apply rules, write back.
+        async fn apply_for_owner(
+            owner_name: &str,
+            owner_rules: Vec<crate::cst::ast::Rule>,
+            identities_by_source: &HashMap<String, Vec<String>>,
+            mapping_exporter: &MappingExporter,
+            package: &Arc<tokio::sync::RwLock<crate::semantic::Package>>,
+            stats: &mut BuildStats,
+        ) {
+            // Skip if this owner has no inline mapping rules.
+            if !owner_rules.iter().any(|r| matches!(r, Rule::Mapping(_))) {
+                return;
+            }
+
+            let candidates = identities_by_source
+                .get(owner_name)
+                .cloned()
+                .unwrap_or_default();
+
+            // Find SD url for this owner.
+            let url = {
+                let pkg = package.read().await;
+                pkg.all_resources().iter().find_map(|(url, json)| {
+                    if json.get("resourceType").and_then(|v| v.as_str())
+                        == Some("StructureDefinition")
+                        && (json.get("name").and_then(|v| v.as_str()) == Some(owner_name)
+                            || json.get("id").and_then(|v| v.as_str()) == Some(owner_name))
+                    {
+                        Some(url.clone())
+                    } else {
+                        None
+                    }
+                })
+            };
+            let Some(url) = url else {
+                warn!(
+                    "Inline mapping rules in '{}' skipped: StructureDefinition not found in package",
+                    owner_name
+                );
+                stats.errors += 1;
+                return;
+            };
+
+            let json = {
+                let pkg = package.read().await;
+                pkg.all_resources()
+                    .get(&url)
+                    .map(|arc| (**arc).clone())
+            };
+            let Some(json) = json else { return };
+
+            let mut sd: StructureDefinition = match serde_json::from_value(json) {
+                Ok(sd) => sd,
+                Err(e) => {
+                    warn!(
+                        "Failed to deserialize StructureDefinition for inline mapping in '{}': {}",
+                        owner_name, e
+                    );
+                    stats.errors += 1;
+                    return;
+                }
+            };
+
+            match mapping_exporter.apply_inline_mapping_rules(
+                &mut sd,
+                owner_name,
+                owner_rules.iter(),
+                &candidates,
+            ) {
+                Ok(applied) => {
+                    if applied == 0 {
+                        return;
+                    }
+                    debug!("Applied {} inline mapping rule(s) in '{}'", applied, owner_name);
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to apply inline mapping rule(s) in '{}': {}",
+                        owner_name, e
+                    );
+                    stats.errors += 1;
+                    return;
+                }
+            }
+
+            let updated_json = match serde_json::to_value(&sd) {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!(
+                        "Failed to serialize StructureDefinition after inline mappings in '{}': {}",
+                        owner_name, e
+                    );
+                    stats.errors += 1;
+                    return;
+                }
+            };
+            let mut pkg = package.write().await;
+            pkg.add_resource(url, updated_json);
+        }
+
+        for tracked in &resources.profiles {
+            let profile = &tracked.resource;
+            let Some(name) = profile.name() else {
+                continue;
+            };
+            let rules: Vec<_> = profile.rules().collect();
+            apply_for_owner(
+                &name,
+                rules,
+                &identities_by_source,
+                &mapping_exporter,
+                &package,
+                stats,
+            )
+            .await;
+        }
+
+        for tracked in &resources.extensions {
+            let extension = &tracked.resource;
+            let Some(name) = extension.name() else {
+                continue;
+            };
+            let rules: Vec<_> = extension.rules().collect();
+            apply_for_owner(
+                &name,
+                rules,
+                &identities_by_source,
+                &mapping_exporter,
+                &package,
+                stats,
+            )
+            .await;
         }
 
         Ok(())

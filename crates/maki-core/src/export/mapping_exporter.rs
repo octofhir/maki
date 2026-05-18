@@ -202,8 +202,63 @@ impl MappingExporter {
         Ok(())
     }
 
+    /// Apply inline `* path -> "target"` mapping rules from a Profile/Extension/
+    /// Logical/Resource body to an already-exported StructureDefinition.
+    ///
+    /// FSH spec allows mapping rules to appear directly inside a Profile/
+    /// Extension/Logical/Resource body. The identity of the resulting
+    /// `ElementDefinition.mapping` entry is inferred by looking up top-level
+    /// `Mapping:` definitions whose `Source:` matches `source_name`:
+    ///
+    /// - If exactly one match, that Mapping's id is used.
+    /// - If multiple matches, the first id is used and a warning is emitted
+    ///   (FSH spec is silent on disambiguation; SUSHI is similarly best-effort).
+    /// - If zero matches, the inline rule is dropped with a warning.
+    ///
+    /// Returns the number of inline rules applied.
+    pub fn apply_inline_mapping_rules<'a>(
+        &self,
+        structure_def: &mut StructureDefinition,
+        source_name: &str,
+        rules: impl IntoIterator<Item = &'a Rule>,
+        candidate_identities: &[String],
+    ) -> Result<usize, ExportError> {
+        let mut applied = 0usize;
+        for rule in rules {
+            let Rule::Mapping(mapping_rule) = rule else {
+                continue;
+            };
+            let identity = match candidate_identities {
+                [] => {
+                    tracing::warn!(
+                        "Inline mapping rule in '{}' has no matching top-level `Mapping:` \
+                         with `Source: {}`; rule is dropped",
+                        structure_def.name,
+                        source_name
+                    );
+                    continue;
+                }
+                [single] => single.as_str(),
+                [first, ..] => {
+                    tracing::warn!(
+                        "Inline mapping rule in '{}' is ambiguous: multiple top-level \
+                         `Mapping:` definitions have `Source: {}` ({}); using identity '{}'",
+                        structure_def.name,
+                        source_name,
+                        candidate_identities.join(", "),
+                        first
+                    );
+                    first.as_str()
+                }
+            };
+            self.apply_mapping_rule(structure_def, mapping_rule, identity)?;
+            applied += 1;
+        }
+        Ok(applied)
+    }
+
     /// Apply a single mapping rule to an element
-    fn apply_mapping_rule(
+    pub fn apply_mapping_rule(
         &self,
         structure_def: &mut StructureDefinition,
         mapping_rule: &crate::cst::ast::MappingRule,
@@ -393,5 +448,152 @@ Target: "HL7 V2 PID segment"
             status_mappings[0].comment,
             Some("Observation result status".to_string())
         );
+    }
+
+    /// Inline `* path -> "target"` rules inside a Profile body should resolve
+    /// their identity from a top-level `Mapping:` whose `Source:` matches the
+    /// profile and emit `ElementDefinition.mapping` entries.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_apply_inline_mapping_rules_single_match() {
+        let source = r#"
+Profile: TestPatient
+Parent: Patient
+* name MS
+* name -> "PID-5"
+* gender -> "PID-8" "HL7 V2 PID-8 administrative sex"
+
+Mapping: PatientToV2
+Id: patient-to-v2
+Source: TestPatient
+Target: "HL7 V2 PID segment"
+"#;
+
+        let (syntax, _lexer_errors, _errors) = parse_fsh(source);
+        let doc = Document::cast(syntax).expect("Expected document");
+        let profile = doc.profiles().next().expect("Expected profile");
+
+        let exporter = create_test_exporter();
+
+        // Pre-populate SD with elements that the rules will target
+        let mut sd = StructureDefinition::new(
+            "http://example.org/StructureDefinition/TestPatient".to_string(),
+            "TestPatient".to_string(),
+            "Patient".to_string(),
+            StructureDefinitionKind::Resource,
+        );
+        sd.differential = Some(StructureDefinitionDifferential {
+            element: vec![
+                crate::export::fhir_types::ElementDefinition::new("name".to_string()),
+                crate::export::fhir_types::ElementDefinition::new("gender".to_string()),
+            ],
+        });
+
+        let rules: Vec<_> = profile.rules().collect();
+        let candidates = vec!["patient-to-v2".to_string()];
+        let applied = exporter
+            .apply_inline_mapping_rules(&mut sd, "TestPatient", rules.iter(), &candidates)
+            .expect("inline mapping rules apply");
+        assert_eq!(applied, 2);
+
+        let diff = sd.differential.as_ref().unwrap();
+        let name_elem = diff.element.iter().find(|e| e.path == "name").unwrap();
+        let name_mappings = name_elem.mapping.as_ref().unwrap();
+        assert_eq!(name_mappings.len(), 1);
+        assert_eq!(name_mappings[0].identity, "patient-to-v2");
+        assert_eq!(name_mappings[0].map, "PID-5");
+
+        let gender_elem = diff.element.iter().find(|e| e.path == "gender").unwrap();
+        let gender_mappings = gender_elem.mapping.as_ref().unwrap();
+        assert_eq!(gender_mappings.len(), 1);
+        assert_eq!(gender_mappings[0].identity, "patient-to-v2");
+        assert_eq!(gender_mappings[0].map, "PID-8");
+        assert_eq!(
+            gender_mappings[0].comment,
+            Some("HL7 V2 PID-8 administrative sex".to_string())
+        );
+    }
+
+    /// Inline rules with no matching top-level Mapping should be dropped (no
+    /// element mappings emitted), and the helper should return Ok(0).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_apply_inline_mapping_rules_no_match_drops() {
+        let source = r#"
+Profile: OrphanProfile
+Parent: Patient
+* name -> "PID-5"
+"#;
+        let (syntax, _lexer_errors, _errors) = parse_fsh(source);
+        let doc = Document::cast(syntax).expect("Expected document");
+        let profile = doc.profiles().next().expect("Expected profile");
+
+        let exporter = create_test_exporter();
+        let mut sd = StructureDefinition::new(
+            "http://example.org/StructureDefinition/OrphanProfile".to_string(),
+            "OrphanProfile".to_string(),
+            "Patient".to_string(),
+            StructureDefinitionKind::Resource,
+        );
+        sd.differential = Some(StructureDefinitionDifferential {
+            element: vec![crate::export::fhir_types::ElementDefinition::new(
+                "name".to_string(),
+            )],
+        });
+
+        let rules: Vec<_> = profile.rules().collect();
+        let candidates: Vec<String> = vec![];
+        let applied = exporter
+            .apply_inline_mapping_rules(&mut sd, "OrphanProfile", rules.iter(), &candidates)
+            .expect("apply ok");
+        assert_eq!(applied, 0);
+
+        let diff = sd.differential.as_ref().unwrap();
+        let name_elem = diff.element.iter().find(|e| e.path == "name").unwrap();
+        assert!(name_elem.mapping.is_none());
+    }
+
+    /// Inline rules with multiple matching top-level Mappings should pick the
+    /// first identity and continue (best-effort, mirroring SUSHI).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_apply_inline_mapping_rules_ambiguous_picks_first() {
+        let source = r#"
+Profile: AmbiguousProfile
+Parent: Patient
+* name -> "PID-5"
+"#;
+        let (syntax, _lexer_errors, _errors) = parse_fsh(source);
+        let doc = Document::cast(syntax).expect("Expected document");
+        let profile = doc.profiles().next().expect("Expected profile");
+
+        let exporter = create_test_exporter();
+        let mut sd = StructureDefinition::new(
+            "http://example.org/StructureDefinition/AmbiguousProfile".to_string(),
+            "AmbiguousProfile".to_string(),
+            "Patient".to_string(),
+            StructureDefinitionKind::Resource,
+        );
+        sd.differential = Some(StructureDefinitionDifferential {
+            element: vec![crate::export::fhir_types::ElementDefinition::new(
+                "name".to_string(),
+            )],
+        });
+
+        let rules: Vec<_> = profile.rules().collect();
+        let candidates = vec!["v2-mapping".to_string(), "cda-mapping".to_string()];
+        let applied = exporter
+            .apply_inline_mapping_rules(&mut sd, "AmbiguousProfile", rules.iter(), &candidates)
+            .expect("apply ok");
+        assert_eq!(applied, 1);
+
+        let name_elem = sd
+            .differential
+            .as_ref()
+            .unwrap()
+            .element
+            .iter()
+            .find(|e| e.path == "name")
+            .unwrap();
+        let m = name_elem.mapping.as_ref().unwrap();
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].identity, "v2-mapping");
     }
 }

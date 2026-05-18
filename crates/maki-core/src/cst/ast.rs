@@ -107,6 +107,70 @@ fn child_of_kind(parent: &FshSyntaxNode, kind: FshSyntaxKind) -> Option<FshSynta
     parent.children().find(|n| n.kind() == kind)
 }
 
+/// Returns true for syntax kinds that bound a "definition" (Profile / Extension
+/// / ValueSet / CodeSystem / Instance / Mapping / Logical / Resource / RuleSet
+/// / Invariant). Used as the outer scope when resolving FSH indented-rule
+/// path inheritance.
+fn is_definition_kind(kind: FshSyntaxKind) -> bool {
+    matches!(
+        kind,
+        FshSyntaxKind::Profile
+            | FshSyntaxKind::Extension
+            | FshSyntaxKind::ValueSet
+            | FshSyntaxKind::CodeSystem
+            | FshSyntaxKind::Instance
+            | FshSyntaxKind::Mapping
+            | FshSyntaxKind::Logical
+            | FshSyntaxKind::Resource
+            | FshSyntaxKind::RuleSet
+            | FshSyntaxKind::Invariant
+    )
+}
+
+/// Compute the indentation column of the line that contains `node`'s start
+/// byte. The column equals the count of leading space/tab characters on that
+/// line — i.e., the column of the first non-whitespace character.
+///
+/// FSH indented-rule path inheritance compares the *rule line's* indent, not
+/// the column of the path text. A rule like `* #alpha ^designation = ...`
+/// reports column 0 (the `*`) regardless of where `^designation` lands within
+/// the line.
+fn column_of(node: &FshSyntaxNode) -> usize {
+    let root = node.ancestors().last().unwrap_or_else(|| node.clone());
+    let text = root.text().to_string();
+    let offset: usize = node.text_range().start().into();
+    let cap = offset.min(text.len());
+    let prefix = &text[..cap];
+    let line_start = prefix.rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let line_text = &text[line_start..];
+    line_text
+        .chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .count()
+}
+
+/// Join an inherited path prefix with a literal child path per FSH rule:
+/// - leading `^` (caret-on-parent-element) → space-joined
+/// - leading `[` (slice/extension reference) → directly concatenated
+/// - leading `.` → directly concatenated
+/// - otherwise → dot-joined
+fn join_inherited_path(prefix: &str, literal: &str) -> String {
+    let prefix = prefix.trim();
+    let literal = literal.trim();
+    if prefix.is_empty() {
+        return literal.to_string();
+    }
+    if literal.is_empty() {
+        return prefix.to_string();
+    }
+    let first = literal.chars().next().unwrap();
+    match first {
+        '^' => format!("{} {}", prefix, literal),
+        '[' | '.' => format!("{}{}", prefix, literal),
+        _ => format!("{}.{}", prefix, literal),
+    }
+}
+
 /// Helper function to find first token of a specific kind
 fn token_of_kind(parent: &FshSyntaxNode, kind: FshSyntaxKind) -> Option<FshSyntaxToken> {
     parent
@@ -152,17 +216,26 @@ fn get_clause_text_after_colon(node: &FshSyntaxNode) -> Option<String> {
     }
 }
 
-/// Helper function to get string literal text (without quotes)
+/// Helper function to get string literal text (without quotes).
+///
+/// Handles both regular `"..."` and triple-quoted `"""..."""` (FSH §Strings,
+/// SUSHI 3.18). Triple quotes are stripped first; if the token doesn't look
+/// triple-quoted, falls back to the regular single-quote pair.
 fn get_string_text(node: &FshSyntaxNode) -> Option<String> {
-    token_of_kind(node, FshSyntaxKind::String).map(|t| {
-        let text = t.text();
-        // Remove surrounding quotes
-        if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
-            text[1..text.len() - 1].to_string()
-        } else {
-            text.to_string()
-        }
-    })
+    token_of_kind(node, FshSyntaxKind::String).map(|t| strip_string_quotes(t.text()))
+}
+
+/// Strip the surrounding quote delimiters from a string literal token.
+/// Recognises `"""…"""` (multiline) before `"…"` to avoid leaving stray
+/// quotes when only the outer pair is removed.
+pub(crate) fn strip_string_quotes(text: &str) -> String {
+    if text.len() >= 6 && text.starts_with("\"\"\"") && text.ends_with("\"\"\"") {
+        return text[3..text.len() - 3].to_string();
+    }
+    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
+        return text[1..text.len() - 1].to_string();
+    }
+    text.to_string()
 }
 
 // ============================================================================
@@ -1190,14 +1263,9 @@ impl Alias {
                         break;
                     }
 
-                    // Handle string literals specially
+                    // Handle string literals specially (handles triple-quoted)
                     if token.kind() == FshSyntaxKind::String {
-                        let text = token.text();
-                        if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
-                            return Some(text[1..text.len() - 1].to_string());
-                        } else {
-                            return Some(text.to_string());
-                        }
+                        return Some(strip_string_quotes(token.text()));
                     }
 
                     // Collect all other tokens
@@ -2637,13 +2705,7 @@ impl AddElementRule {
             {
                 string_count += 1;
                 if string_count == 2 {
-                    let text = token.text();
-                    // Remove surrounding quotes
-                    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
-                        return Some(text[1..text.len() - 1].to_string());
-                    } else {
-                        return Some(text.to_string());
-                    }
+                    return Some(strip_string_quotes(token.text()));
                 }
             }
         }
@@ -2770,12 +2832,7 @@ impl AddCRElementRule {
             {
                 string_count += 1;
                 if string_count == 2 {
-                    let text = token.text();
-                    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
-                        return Some(text[1..text.len() - 1].to_string());
-                    } else {
-                        return Some(text.to_string());
-                    }
+                    return Some(strip_string_quotes(token.text()));
                 }
             }
         }
@@ -2847,13 +2904,7 @@ impl MappingRule {
             {
                 string_count += 1;
                 if string_count == 2 {
-                    let text = token.text();
-                    // Remove surrounding quotes
-                    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
-                        return Some(text[1..text.len() - 1].to_string());
-                    } else {
-                        return Some(text.to_string());
-                    }
+                    return Some(strip_string_quotes(token.text()));
                 }
             }
         }
@@ -3306,9 +3357,86 @@ impl AstNode for Path {
 }
 
 impl Path {
-    /// Get the full path as a string
-    pub fn as_string(&self) -> String {
+    /// Get the literal path text without applying indented-rule inheritance.
+    ///
+    /// FSH lets indented `*`-rules inherit the path of the previous less-
+    /// indented rule (`code.coding ^slicing.* = ...` cascades). For semantic
+    /// uses prefer [`Path::as_string`], which prepends the inherited prefix.
+    /// `as_string_literal` returns only the text actually written at this
+    /// `Path` node — useful for formatters and round-trip checks.
+    pub fn as_string_literal(&self) -> String {
         self.syntax.text().to_string().trim().to_string()
+    }
+
+    /// Get the full path as a string, applying FSH indented-rule path
+    /// inheritance.
+    ///
+    /// FSH spec §Rules: a `*`-rule whose `*` column is strictly greater than
+    /// the most recent less-indented rule inherits that rule's path as a
+    /// prefix. For example,
+    /// ```fsh
+    /// * code.coding ^slicing.discriminator[+].type = #pattern
+    ///   * ^slicing.discriminator[=].path = "system"
+    /// ```
+    /// resolves the second rule's path to
+    /// `code.coding ^slicing.discriminator[=].path`.
+    ///
+    /// Inheritance joins prefix and literal with `.`, except when the literal
+    /// starts with `^` (caret rule on parent's element — joined with a space)
+    /// or `[` (slice/extension reference — joined directly).
+    pub fn as_string(&self) -> String {
+        let literal = self.as_string_literal();
+        // Code-rule paths (`#code`) participate in CodeSystem concept
+        // hierarchy via a separate mechanism, not path inheritance. Returning
+        // the literal here keeps `* #parent\n  * #child` producing two flat
+        // concepts rather than a fictitious `#parent.#child` code.
+        if literal.starts_with('#') {
+            return literal;
+        }
+        match self.find_inheritable_parent() {
+            Some(parent) => join_inherited_path(&parent.as_string(), &literal),
+            None => literal,
+        }
+    }
+
+    /// Locate the nearest preceding outer-level `Path` (a direct child of the
+    /// enclosing definition) whose line indent is strictly less than this
+    /// path's. Only outer-level element paths participate in inheritance; the
+    /// caret paths nested inside `CaretValueRule` / `CodeCaretValueRule` are
+    /// not candidates, since they are themselves inheriting from the outer
+    /// element path.
+    fn find_inheritable_parent(&self) -> Option<Path> {
+        let definition = self
+            .syntax
+            .ancestors()
+            .find(|n| is_definition_kind(n.kind()))?;
+
+        let my_offset: usize = self.syntax.text_range().start().into();
+        let my_col = column_of(&self.syntax);
+        if my_col == 0 {
+            // Definitively top-level — cannot inherit.
+            return None;
+        }
+
+        let candidates: Vec<FshSyntaxNode> = definition
+            .children()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .filter(|n| {
+                let off: usize = n.text_range().start().into();
+                off < my_offset
+            })
+            // Skip code-rule paths (`#code`) — they belong to CodeSystem
+            // concept hierarchy and do not parent element-level rules.
+            .filter(|n| !n.text().to_string().trim_start().starts_with('#'))
+            .collect();
+
+        for candidate in candidates.into_iter().rev() {
+            let col = column_of(&candidate);
+            if col < my_col {
+                return Path::cast(candidate);
+            }
+        }
+        None
     }
 
     /// Get path segments as structured PathSegment nodes
@@ -3843,5 +3971,248 @@ impl NameValue {
     /// Check if this is a system#code format
     pub fn is_system_code(&self) -> bool {
         self.code().is_some()
+    }
+}
+
+// ============================================================================
+// Tests — indented rule path inheritance (FSH spec §Rules)
+// ============================================================================
+
+#[cfg(test)]
+mod path_inheritance_tests {
+    use super::*;
+    use crate::cst::parse_fsh;
+
+    /// Collect every Path AST node within `doc`, in source order.
+    fn all_paths(doc: &Document) -> Vec<Path> {
+        doc.syntax()
+            .descendants()
+            .filter(|n| n.kind() == FshSyntaxKind::Path)
+            .filter_map(Path::cast)
+            .collect()
+    }
+
+    #[test]
+    fn caret_chain_inherits_parent_path() {
+        let src = "\
+Profile: Foo
+Parent: Patient
+* code.coding ^slicing.discriminator[+].type = #pattern
+  * ^slicing.discriminator[=].path = \"system\"
+  * ^slicing.rules = #open
+";
+        let (syntax, _, _) = parse_fsh(src);
+        let doc = Document::cast(syntax).unwrap();
+        let paths = all_paths(&doc);
+
+        // First Path inside the Profile body is `code.coding`.
+        // Indented Paths come after; check resolution.
+        let resolved: Vec<String> = paths.iter().map(|p| p.as_string()).collect();
+
+        assert!(
+            resolved
+                .iter()
+                .any(|s| s == "code.coding ^slicing.discriminator[=].path"),
+            "expected inherited slicing.discriminator path, got {:?}",
+            resolved
+        );
+        assert!(
+            resolved.iter().any(|s| s == "code.coding ^slicing.rules"),
+            "expected inherited slicing.rules path, got {:?}",
+            resolved
+        );
+    }
+
+    #[test]
+    fn dotted_inheritance_joins_with_dot() {
+        let src = "\
+Profile: Bar
+Parent: Patient
+* code MS
+  * coding 1..*
+";
+        let (syntax, _, _) = parse_fsh(src);
+        let doc = Document::cast(syntax).unwrap();
+        let paths = all_paths(&doc);
+        let resolved: Vec<String> = paths.iter().map(|p| p.as_string()).collect();
+
+        // Indented `coding` should resolve to `code.coding`.
+        assert!(
+            resolved.iter().any(|s| s == "code.coding"),
+            "expected dotted-inherited path, got {:?}",
+            resolved
+        );
+    }
+
+    #[test]
+    fn unindented_rule_keeps_literal_path() {
+        let src = "\
+Profile: Baz
+Parent: Patient
+* code MS
+* status MS
+";
+        let (syntax, _, _) = parse_fsh(src);
+        let doc = Document::cast(syntax).unwrap();
+        let paths = all_paths(&doc);
+
+        let resolved: Vec<String> = paths.iter().map(|p| p.as_string()).collect();
+
+        // Both rules are at the same column — neither inherits.
+        assert!(resolved.iter().any(|s| s == "code"));
+        assert!(resolved.iter().any(|s| s == "status"));
+        assert!(
+            !resolved.iter().any(|s| s == "code.status"),
+            "siblings must not inherit each other: {:?}",
+            resolved
+        );
+    }
+
+    #[test]
+    fn indexed_inheritance_with_assignment() {
+        let src = "\
+Profile: Obs
+Parent: Observation
+* code MS
+  * coding[+].system = \"http://loinc.org\"
+";
+        let (syntax, _, _) = parse_fsh(src);
+        let doc = Document::cast(syntax).unwrap();
+        let resolved: Vec<String> = all_paths(&doc).iter().map(|p| p.as_string()).collect();
+
+        assert!(
+            resolved
+                .iter()
+                .any(|s| s == "code.coding[+].system"),
+            "expected indexed inheritance to dot-join, got {:?}",
+            resolved
+        );
+    }
+
+    #[test]
+    fn codesystem_concepts_do_not_inherit() {
+        let src = "\
+CodeSystem: Hierarchy
+* #parent \"Parent\"
+  * #child \"Child\"
+";
+        let (syntax, _, _) = parse_fsh(src);
+        let doc = Document::cast(syntax).unwrap();
+        let resolved: Vec<String> = all_paths(&doc).iter().map(|p| p.as_string()).collect();
+
+        // Concept paths must NOT chain via path inheritance — the codesystem
+        // hierarchy uses a separate parent/child mechanism.
+        assert!(
+            !resolved.iter().any(|s| s.contains("#parent.#child")
+                || s.contains("#parent #child")),
+            "concept paths must stay flat, got {:?}",
+            resolved
+        );
+    }
+
+    /// SUSHI 3.18: invariant `Expression:` accepts triple-quoted multiline
+    /// string. AST helper must strip the outer `"""` triplet, not just one
+    /// pair of quotes.
+    #[test]
+    fn invariant_expression_accepts_triple_quoted() {
+        use crate::cst::ast::Invariant;
+        let src = "\
+Invariant: us-core-1
+Description: \"Patient must have name or identifier\"
+Severity: #error
+Expression: \"\"\"
+name.exists()
+or identifier.exists()
+\"\"\"
+";
+        let (syntax, _, _) = parse_fsh(src);
+        let doc = Document::cast(syntax).unwrap();
+        let inv: Invariant = doc
+            .syntax()
+            .descendants()
+            .filter_map(Invariant::cast)
+            .next()
+            .expect("invariant present");
+        let expr = inv
+            .expression()
+            .and_then(|e| e.value())
+            .expect("expression value");
+        // Outer triple-quotes stripped; inner content preserved verbatim.
+        assert!(expr.contains("name.exists()"), "got: {:?}", expr);
+        assert!(expr.contains("identifier.exists()"), "got: {:?}", expr);
+        assert!(!expr.starts_with('"'), "leading quote not stripped: {:?}", expr);
+        assert!(!expr.ends_with('"'), "trailing quote not stripped: {:?}", expr);
+    }
+
+    /// SUSHI 3.18: mapping rule `* path -> "target" "comment"` accepts a
+    /// triple-quoted comment string.
+    #[test]
+    fn mapping_rule_accepts_triple_quoted_comment() {
+        use crate::cst::ast::Mapping;
+        let src = "\
+Mapping: PatToV2
+Source: Patient
+Target: \"HL7 V2 PID\"
+* name -> \"PID-5\" \"\"\"Multi-line\nfamily name mapping\"\"\"
+";
+        let (syntax, _, _) = parse_fsh(src);
+        let doc = Document::cast(syntax).unwrap();
+        let mapping: Mapping = doc.mappings().next().expect("mapping present");
+        let rule = mapping.rules().next().expect("rule present");
+        let mr = match rule {
+            crate::cst::ast::Rule::Mapping(m) => m,
+            other => panic!("expected MappingRule, got {:?}", other.syntax().kind()),
+        };
+        let comment = mr.comment().expect("comment present");
+        assert!(
+            comment.contains("Multi-line") && comment.contains("family name"),
+            "got: {:?}",
+            comment
+        );
+        assert!(!comment.starts_with('"'), "leading quotes not stripped: {:?}", comment);
+        assert!(!comment.ends_with('"'), "trailing quotes not stripped: {:?}", comment);
+    }
+
+    /// Triple-quoted `Description:` survives lexer + parser + AST round-trip.
+    #[test]
+    fn description_clause_accepts_triple_quoted() {
+        let src = "\
+Profile: Foo
+Parent: Patient
+Description: \"\"\"
+This profile constrains
+Patient to require name.
+\"\"\"
+";
+        let (syntax, _, _) = parse_fsh(src);
+        let doc = Document::cast(syntax).unwrap();
+        let prof = doc.profiles().next().expect("profile");
+        let desc = prof
+            .description()
+            .and_then(|d| d.value())
+            .expect("description value");
+        assert!(desc.contains("constrains"));
+        assert!(desc.contains("Patient to require name"));
+        assert!(!desc.starts_with('"'));
+        assert!(!desc.ends_with('"'));
+    }
+
+    #[test]
+    fn literal_remains_accessible_via_as_string_literal() {
+        let src = "\
+Profile: Qux
+Parent: Patient
+* code MS
+  * coding 1..*
+";
+        let (syntax, _, _) = parse_fsh(src);
+        let doc = Document::cast(syntax).unwrap();
+        let literals: Vec<String> = all_paths(&doc)
+            .iter()
+            .map(|p| p.as_string_literal())
+            .collect();
+
+        // Literal of indented `coding` is just `coding`, not `code.coding`.
+        assert!(literals.iter().any(|s| s == "coding"));
     }
 }

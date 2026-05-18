@@ -1957,13 +1957,7 @@ impl ValueSetExporter {
             if let rowan::NodeOrToken::Token(token) = child
                 && token.kind() == FshSyntaxKind::String
             {
-                let text = token.text();
-                // Remove surrounding quotes
-                if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
-                    return Some(text[1..text.len() - 1].to_string());
-                } else {
-                    return Some(text.to_string());
-                }
+                return Some(crate::cst::ast::strip_string_quotes(token.text()));
             }
         }
 

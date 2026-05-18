@@ -63,6 +63,8 @@ pub async fn lint_command(
     } else {
         Path::new(".")
     };
+    // Snapshot to an owned PathBuf so we can keep it past `paths` moves below.
+    let ignore_search_dir: PathBuf = start_path.to_path_buf();
 
     // Load configuration and track what was found
     let (mut config, config_source) = if let Some(path) = config_path.clone() {
@@ -337,25 +339,43 @@ pub async fn lint_command(
         progress_reporter.finish("Linting");
     }
 
-    // Collect diagnostics and build summary
+    // Collect diagnostics
     let mut all_diagnostics = Vec::new();
     let mut summary = LintSummary::new();
     summary.files_checked = results.len();
+    let mut collection_errors = 0usize;
 
     for result in results {
         if let Some(error) = result.error {
             error!("Error processing {}: {}", result.file_path.display(), error);
-            summary.errors += 1;
+            collection_errors += 1;
         } else {
-            for diagnostic in &result.diagnostics {
-                match diagnostic.severity {
-                    maki_core::Severity::Error => summary.errors += 1,
-                    maki_core::Severity::Warning => summary.warnings += 1,
-                    maki_core::Severity::Info => summary.info += 1,
-                    maki_core::Severity::Hint => summary.hints += 1,
-                }
-            }
             all_diagnostics.extend(result.diagnostics);
+        }
+    }
+
+    // SUSHI parity (v3.17): drop diagnostics matching `sushi-ignoreErrors.txt`
+    // patterns from the input directory before further processing.
+    let ignore = maki_core::IgnoreErrors::from_input_dir(&ignore_search_dir);
+    if !ignore.is_empty() {
+        let (kept, suppressed) = ignore.filter(all_diagnostics);
+        all_diagnostics = kept;
+        if suppressed > 0 {
+            info!(
+                "Suppressed {} diagnostic(s) via sushi-ignoreErrors.txt",
+                suppressed
+            );
+        }
+    }
+
+    // Now build the severity summary on the (post-filter) set.
+    summary.errors = collection_errors;
+    for diagnostic in &all_diagnostics {
+        match diagnostic.severity {
+            maki_core::Severity::Error => summary.errors += 1,
+            maki_core::Severity::Warning => summary.warnings += 1,
+            maki_core::Severity::Info => summary.info += 1,
+            maki_core::Severity::Hint => summary.hints += 1,
         }
     }
 

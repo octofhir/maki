@@ -50,8 +50,8 @@ pub use console::{Color, Console};
 pub use diagnostics::{
     Advices, Applicability, CodeSuggestion, DefaultDiagnosticCollector, DefaultOutputFormatter,
     Diagnostic, DiagnosticCategory, DiagnosticCollector, DiagnosticFormatter,
-    DiagnosticOutputFormatter, DiagnosticRenderer, DiffRenderer, Label, ListAdvice, Location,
-    LogAdvice, LogCategory, OutputFormat, Severity, SourceMap, Visit,
+    DiagnosticOutputFormatter, DiagnosticRenderer, DiffRenderer, IgnoreErrors, Label, ListAdvice,
+    Location, LogAdvice, LogCategory, OutputFormat, Severity, SourceMap, Visit,
 };
 pub use discovery::{
     DefaultFileDiscovery, FileChangeEvent, FileChangeKind, FileDiscovery, FileWatcher,

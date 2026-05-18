@@ -1314,6 +1314,7 @@ Parent: Patient
             }),
             differential: None,
             mapping: None,
+            extras: std::collections::BTreeMap::new(),
         };
 
         let min = find_element_min_cardinality(&sd, "name");
@@ -1345,6 +1346,7 @@ Parent: Patient
             snapshot: None,
             differential: None,
             mapping: None,
+            extras: std::collections::BTreeMap::new(),
         };
 
         let min = find_element_min_cardinality(&sd, "nonexistent");

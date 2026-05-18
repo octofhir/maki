@@ -463,33 +463,48 @@ impl RuleProcessor {
 
     /// Resolve a type name to its canonical URL
     ///
+    /// SUSHI 3.14 parity — covers all canonical resource types, not just
+    /// `StructureDefinition`.
+    ///
     /// Resolution order:
-    /// 1. Check if already a URL
-    /// 2. Try canonical manager by name
-    /// 3. Try FHIR core canonical URL format
+    /// 1. Already a URL → return as-is.
+    /// 2. Canonical manager: any resource with a `url` field.
+    /// 3. FHIR core canonical URL formats for the well-known canonical
+    ///    resource types.
     async fn resolve_type_to_canonical(&self, type_name: &str) -> Option<String> {
-        // If already a URL, return as-is
         if type_name.starts_with("http://") || type_name.starts_with("https://") {
             return Some(type_name.to_string());
         }
 
-        // Try canonical manager by name
+        // Resolve via canonical manager — accept any resource that has `url`.
         if let Ok(resource) = self.canonical_session.resolve(type_name).await
-            && let Ok(sd) =
-                serde_json::from_value::<StructureDefinition>((*resource.content).clone())
+            && let Some(url) = (*resource.content)
+                .get("url")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
         {
-            return Some(sd.url.clone());
+            return Some(url);
         }
 
-        // Try FHIR core canonical URL format
-        let core_candidate = format!("http://hl7.org/fhir/StructureDefinition/{}", type_name);
-        if self
-            .canonical_session
-            .resolve(&core_candidate)
-            .await
-            .is_ok()
-        {
-            return Some(core_candidate);
+        // Probe FHIR core canonical URL formats per resource type.
+        const CORE_TYPES: &[&str] = &[
+            "StructureDefinition",
+            "ValueSet",
+            "CodeSystem",
+            "ConceptMap",
+            "NamingSystem",
+            "Questionnaire",
+            "OperationDefinition",
+            "SearchParameter",
+            "CapabilityStatement",
+            "ImplementationGuide",
+            "StructureMap",
+        ];
+        for resource_type in CORE_TYPES {
+            let candidate = format!("http://hl7.org/fhir/{}/{}", resource_type, type_name);
+            if self.canonical_session.resolve(&candidate).await.is_ok() {
+                return Some(candidate);
+            }
         }
 
         None

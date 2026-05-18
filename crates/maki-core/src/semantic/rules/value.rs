@@ -170,13 +170,19 @@ fn parse_assignment_path(path: &str) -> Result<Vec<PathSegment>> {
 
     for part in path.split('.') {
         if let Some(bracket_pos) = part.find('[') {
-            // Array element: name[index]
+            // Array element: name[index] | name[+] | name[=]
             let name = part[..bracket_pos].to_string();
             let index_str = &part[bracket_pos + 1..part.len() - 1];
-            let index = index_str.parse::<usize>().map_err(|_| {
-                ValueRuleError::PathError(format!("Invalid array index: {}", index_str))
-            })?;
-            segments.push(PathSegment::ArrayElement { name, index });
+            match index_str {
+                "+" => segments.push(PathSegment::ArrayAppend { name }),
+                "=" => segments.push(PathSegment::ArrayCurrent { name }),
+                idx => {
+                    let index = idx.parse::<usize>().map_err(|_| {
+                        ValueRuleError::PathError(format!("Invalid array index: {}", idx))
+                    })?;
+                    segments.push(PathSegment::ArrayElement { name, index });
+                }
+            }
         } else {
             // Simple property
             segments.push(PathSegment::Property(part.to_string()));
@@ -190,6 +196,10 @@ fn parse_assignment_path(path: &str) -> Result<Vec<PathSegment>> {
 enum PathSegment {
     Property(String),
     ArrayElement { name: String, index: usize },
+    /// `[+]` — append a fresh element at the end of the named array.
+    ArrayAppend { name: String },
+    /// `[=]` — refer to the most recently appended/added element (last index).
+    ArrayCurrent { name: String },
 }
 
 fn navigate_to_path<'a>(
@@ -239,6 +249,52 @@ fn navigate_to_path<'a>(
                 }
                 current = &mut arr_vec[*index];
             }
+            PathSegment::ArrayAppend { name } => {
+                if !current.is_object() {
+                    return Err(ValueRuleError::PathError(format!(
+                        "Cannot navigate property '{}' on non-object",
+                        name
+                    )));
+                }
+                let obj = current.as_object_mut().unwrap();
+                let arr = obj
+                    .entry(name.clone())
+                    .or_insert_with(|| JsonValue::Array(Vec::new()));
+                if !arr.is_array() {
+                    return Err(ValueRuleError::PathError(format!(
+                        "Property '{}' is not an array",
+                        name
+                    )));
+                }
+                let arr_vec = arr.as_array_mut().unwrap();
+                arr_vec.push(JsonValue::Object(serde_json::Map::new()));
+                let last = arr_vec.len() - 1;
+                current = &mut arr_vec[last];
+            }
+            PathSegment::ArrayCurrent { name } => {
+                if !current.is_object() {
+                    return Err(ValueRuleError::PathError(format!(
+                        "Cannot navigate property '{}' on non-object",
+                        name
+                    )));
+                }
+                let obj = current.as_object_mut().unwrap();
+                let arr = obj
+                    .entry(name.clone())
+                    .or_insert_with(|| JsonValue::Array(Vec::new()));
+                if !arr.is_array() {
+                    return Err(ValueRuleError::PathError(format!(
+                        "Property '{}' is not an array",
+                        name
+                    )));
+                }
+                let arr_vec = arr.as_array_mut().unwrap();
+                if arr_vec.is_empty() {
+                    arr_vec.push(JsonValue::Object(serde_json::Map::new()));
+                }
+                let last = arr_vec.len() - 1;
+                current = &mut arr_vec[last];
+            }
         }
     }
 
@@ -259,37 +315,114 @@ fn convert_fsh_value_to_json(value: &FshValue) -> Result<JsonValue> {
     })
 }
 
+/// Apply a root-level caret rule (`^property = value`) to a StructureDefinition.
+///
+/// SUSHI 3.13 parity — accepts any property of the StructureDefinition,
+/// including nested paths (`^contact[0].name = "..."`), array append
+/// (`^extension[+].url = "..."`), and array-current (`^contact[=].name`).
+///
+/// Strategy: known scalar fields take a fast path that mutates the typed
+/// `StructureDefinition` directly (also covers fields not yet in our struct
+/// like `title` / `date` / `purpose` / `copyright` etc. via JSON roundtrip).
+/// Unknown / nested properties fall through to a JSON roundtrip that uses the
+/// same path navigator as `AssignmentRule`. This drops the previous
+/// "Skipping unsupported root caret" trace for arbitrary FHIR canonical
+/// properties.
 fn apply_root_caret(sd: &mut StructureDefinition, property: &str, value: &FshValue) -> Result<()> {
-    match property {
-        "status" => {
-            if let FshValue::Code(status) = value {
-                sd.status = status.clone();
+    // Fast path: pure scalar properties on fields the typed struct exposes.
+    if !property.contains('.') && !property.contains('[') {
+        match property {
+            "status" => {
+                if let FshValue::Code(s) = value {
+                    sd.status = s.clone();
+                    return Ok(());
+                }
             }
-        }
-        "version" => {
-            if let FshValue::String(version) = value {
-                sd.version = Some(version.clone());
+            "version" => {
+                if let FshValue::String(s) = value {
+                    sd.version = Some(s.clone());
+                    return Ok(());
+                }
             }
-        }
-        "experimental" => {
-            if let FshValue::Boolean(exp) = value {
-                sd.experimental = Some(*exp);
+            "experimental" => {
+                if let FshValue::Boolean(b) = value {
+                    sd.experimental = Some(*b);
+                    return Ok(());
+                }
             }
-        }
-        "publisher" => {
-            if let FshValue::String(pub_) = value {
-                sd.publisher = Some(pub_.clone());
+            "publisher" => {
+                if let FshValue::String(s) = value {
+                    sd.publisher = Some(s.clone());
+                    return Ok(());
+                }
             }
-        }
-        "description" => {
-            if let FshValue::String(desc) = value {
-                sd.description = Some(desc.clone());
+            "description" => {
+                if let FshValue::String(s) = value {
+                    sd.description = Some(s.clone());
+                    return Ok(());
+                }
             }
-        }
-        _ => {
-            trace!("Skipping unsupported root caret: {}", property);
+            "title" => {
+                if let FshValue::String(s) = value {
+                    sd.title = Some(s.clone());
+                    return Ok(());
+                }
+            }
+            "date" => {
+                if let FshValue::String(s) = value {
+                    sd.date = Some(s.clone());
+                    return Ok(());
+                }
+            }
+            "fhirVersion" => {
+                if let FshValue::String(s) = value {
+                    sd.fhir_version = Some(s.clone());
+                    return Ok(());
+                }
+                if let FshValue::Code(s) = value {
+                    sd.fhir_version = Some(s.clone());
+                    return Ok(());
+                }
+            }
+            "abstract" => {
+                if let FshValue::Boolean(b) = value {
+                    sd.is_abstract = *b;
+                    return Ok(());
+                }
+            }
+            "url" => {
+                if let FshValue::String(s) = value {
+                    sd.url = s.clone();
+                    return Ok(());
+                }
+            }
+            "name" => {
+                if let FshValue::String(s) = value {
+                    sd.name = s.clone();
+                    return Ok(());
+                }
+            }
+            _ => {}
         }
     }
+
+    // General path: serialize → navigate → assign → deserialize. Covers
+    // properties not on our typed struct (purpose, copyright, contact,
+    // useContext, jurisdiction, identifier, keyword, etc.) and nested /
+    // indexed paths like `contact[0].name` or `extension[+].url`.
+    let mut json = serde_json::to_value(&*sd).map_err(|e| {
+        ValueRuleError::ConversionError(format!("Failed to serialize StructureDefinition: {}", e))
+    })?;
+    let segments = parse_assignment_path(property)?;
+    let target = navigate_to_path(&mut json, &segments)?;
+    *target = convert_fsh_value_to_json(value)?;
+    *sd = serde_json::from_value(json).map_err(|e| {
+        ValueRuleError::ConversionError(format!(
+            "Failed to deserialize StructureDefinition after applying caret '{}': {}",
+            property, e
+        ))
+    })?;
+    trace!("Applied root caret '{}' via JSON roundtrip", property);
     Ok(())
 }
 
@@ -351,6 +484,7 @@ mod tests {
                 element: Vec::new(),
             }),
             mapping: None,
+            extras: std::collections::BTreeMap::new(),
         }
     }
 
@@ -416,6 +550,126 @@ mod tests {
         let result = apply_caret_rule(&mut sd, &rule);
         assert!(result.is_ok());
         assert_eq!(sd.version, Some("2.0.0".to_string()));
+    }
+
+    /// SUSHI 3.13: every scalar SD field accessible via root caret.
+    #[test]
+    fn test_caret_rule_root_scalars_expanded() {
+        let mut sd = create_test_sd();
+
+        let cases: Vec<(&str, FshValue, fn(&StructureDefinition) -> Option<String>)> = vec![
+            (
+                "title",
+                FshValue::String("My Title".into()),
+                |s| s.title.clone(),
+            ),
+            (
+                "date",
+                FshValue::String("2026-01-01".into()),
+                |s| s.date.clone(),
+            ),
+            (
+                "publisher",
+                FshValue::String("Acme".into()),
+                |s| s.publisher.clone(),
+            ),
+            (
+                "fhirVersion",
+                FshValue::Code("4.0.1".into()),
+                |s| s.fhir_version.clone(),
+            ),
+        ];
+
+        for (prop, val, getter) in cases {
+            apply_caret_rule(
+                &mut sd,
+                &CaretValueRule {
+                    path: String::new(),
+                    property: prop.to_string(),
+                    value: val,
+                },
+            )
+            .expect("apply ok");
+            assert!(
+                getter(&sd).is_some(),
+                "scalar `{}` not set on StructureDefinition",
+                prop
+            );
+        }
+    }
+
+    /// `^abstract = true` flips the boolean field on the typed struct.
+    #[test]
+    fn test_caret_rule_abstract_bool() {
+        let mut sd = create_test_sd();
+        apply_caret_rule(
+            &mut sd,
+            &CaretValueRule {
+                path: String::new(),
+                property: "abstract".to_string(),
+                value: FshValue::Boolean(true),
+            },
+        )
+        .unwrap();
+        assert!(sd.is_abstract);
+    }
+
+    /// SUSHI 3.13: nested root caret like `^contact[0].name = "..."` survives
+    /// the JSON roundtrip and lands in the serialised StructureDefinition.
+    #[test]
+    fn test_caret_rule_root_nested_path() {
+        let mut sd = create_test_sd();
+        apply_caret_rule(
+            &mut sd,
+            &CaretValueRule {
+                path: String::new(),
+                property: "contact[0].name".to_string(),
+                value: FshValue::String("Maintenance Contact".to_string()),
+            },
+        )
+        .unwrap();
+        let json = serde_json::to_value(&sd).unwrap();
+        let name = json
+            .get("contact")
+            .and_then(|c| c.as_array())
+            .and_then(|a| a.first())
+            .and_then(|c| c.get("name"))
+            .and_then(|n| n.as_str());
+        assert_eq!(name, Some("Maintenance Contact"));
+    }
+
+    /// `^extension[+].url` appends a fresh extension element via [+].
+    #[test]
+    fn test_caret_rule_root_array_append() {
+        let mut sd = create_test_sd();
+        apply_caret_rule(
+            &mut sd,
+            &CaretValueRule {
+                path: String::new(),
+                property: "extension[+].url".to_string(),
+                value: FshValue::String("http://example.org/ext-1".to_string()),
+            },
+        )
+        .unwrap();
+        apply_caret_rule(
+            &mut sd,
+            &CaretValueRule {
+                path: String::new(),
+                property: "extension[+].url".to_string(),
+                value: FshValue::String("http://example.org/ext-2".to_string()),
+            },
+        )
+        .unwrap();
+        let exts = sd.extension.as_ref().expect("extensions present");
+        assert_eq!(exts.len(), 2);
+        assert_eq!(
+            exts[0].get("url").and_then(|u| u.as_str()),
+            Some("http://example.org/ext-1")
+        );
+        assert_eq!(
+            exts[1].get("url").and_then(|u| u.as_str()),
+            Some("http://example.org/ext-2")
+        );
     }
 
     #[test]

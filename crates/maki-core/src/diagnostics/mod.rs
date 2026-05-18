@@ -7,11 +7,13 @@
 //! - Multiple output formats (text, JSON)
 
 pub mod diff;
+pub mod ignore;
 pub mod renderer;
 pub mod types;
 
 // Re-export new renderers
 pub use diff::DiffRenderer;
+pub use ignore::IgnoreErrors;
 pub use renderer::{DiagnosticRenderer, OutputFormat};
 
 // Re-export all types from types module for backward compatibility
