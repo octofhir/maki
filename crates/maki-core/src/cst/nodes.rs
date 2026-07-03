@@ -144,10 +144,6 @@ impl AsRef<rowan::SyntaxNode<FshLanguage>> for FshSyntaxNode {
     }
 }
 
-// SAFETY: Rowan nodes are immutable after creation and use Arc internally
-unsafe impl Send for FshSyntaxNode {}
-unsafe impl Sync for FshSyntaxNode {}
-
 /// A token in the FSH concrete syntax tree
 ///
 /// Tokens are the leaf nodes of the tree and contain actual source text.

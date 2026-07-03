@@ -179,7 +179,7 @@ pub trait RuleEngine {
     fn execute_rules<'a>(
         &'a self,
         model: &'a SemanticModel,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Vec<Diagnostic>> + Send + 'a>>;
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Vec<Diagnostic>> + 'a>>;
 
     /// Get all loaded rules
     fn get_rules(&self) -> &[CompiledRule];

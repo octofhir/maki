@@ -868,7 +868,7 @@ impl RuleEngineTrait for DefaultRuleEngine {
     fn execute_rules<'a>(
         &'a self,
         model: &'a SemanticModel,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Vec<Diagnostic>> + Send + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Vec<Diagnostic>> + 'a>> {
         Box::pin(self.execute_rules_impl(model))
     }
 
