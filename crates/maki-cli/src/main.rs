@@ -514,10 +514,7 @@ async fn async_main() -> Result<()> {
         3 => "maki=debug", // Debug on -vvv
         _ => "maki=trace", // Trace on -vvvv+
     };
-    unsafe {
-        std::env::set_var("RUST_LOG", log_level);
-    }
-    init_tracing();
+    init_tracing(log_level);
 
     // Set thread pool size if specified
     if let Some(threads) = cli.threads

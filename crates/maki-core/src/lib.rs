@@ -83,10 +83,13 @@ pub use semantic::{
 };
 
 /// Initialize the tracing subscriber for logging
-pub fn init_tracing() {
+pub fn init_tracing(default_filter: &str) {
     use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("maki=info"));
+    // Honor an explicit RUST_LOG if the user exported one; otherwise use the
+    // caller-provided filter (e.g. derived from CLI verbosity). This avoids
+    // mutating the process environment just to configure the subscriber.
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
 
     tracing_subscriber::registry()
         .with(filter)
