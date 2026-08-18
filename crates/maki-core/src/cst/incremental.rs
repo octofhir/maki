@@ -231,7 +231,7 @@ impl IncrementalUpdater {
 
         // Sort edits by position (reverse order for easier application)
         let mut sorted_edits = edits.to_vec();
-        sorted_edits.sort_by(|a, b| b.range.start().cmp(&a.range.start()));
+        sorted_edits.sort_by_key(|e| std::cmp::Reverse(e.range.start()));
 
         // Apply edits one by one
         let mut current_cst = cst.clone();
@@ -450,7 +450,7 @@ impl EditUtils {
         }
 
         let mut sorted_edits = edits.to_vec();
-        sorted_edits.sort_by(|a, b| a.range.start().cmp(&b.range.start()));
+        sorted_edits.sort_by_key(|e| e.range.start());
 
         let mut merged = Vec::new();
         let mut current = sorted_edits[0].clone();

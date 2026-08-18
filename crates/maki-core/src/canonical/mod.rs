@@ -1501,7 +1501,7 @@ mod tests {
         let index_json = serde_json::json!({
             "index-version": "1.0",
             "files": {
-                "package/StructureDefinition-Example.json": {
+                "StructureDefinition-Example.json": {
                     "resourceType": "StructureDefinition",
                     "id": "Example",
                     "url": "http://example.org/fhir/StructureDefinition/Example",

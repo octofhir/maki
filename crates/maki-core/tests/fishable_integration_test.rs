@@ -39,14 +39,14 @@ fn build_test_package() -> Vec<u8> {
     let index_json = serde_json::json!({
         "index-version": "1.0",
         "files": {
-            "package/StructureDefinition-TestProfile.json": {
+            "StructureDefinition-TestProfile.json": {
                 "resourceType": "StructureDefinition",
                 "id": "TestProfile",
                 "url": "http://test.org/fhir/StructureDefinition/TestProfile",
                 "version": "1.0.0",
                 "kind": "resource"
             },
-            "package/ValueSet-TestValueSet.json": {
+            "ValueSet-TestValueSet.json": {
                 "resourceType": "ValueSet",
                 "id": "TestValueSet",
                 "url": "http://test.org/fhir/ValueSet/TestValueSet",

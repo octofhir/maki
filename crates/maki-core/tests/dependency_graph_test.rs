@@ -1,3 +1,6 @@
+// Rowan CST nodes are `!Send`/`!Sync`; `Arc` is used for single-threaded sharing.
+#![allow(clippy::arc_with_non_send_sync)]
+
 //! Integration tests for dependency graph construction and analysis
 
 use maki_core::cst::parse_fsh;

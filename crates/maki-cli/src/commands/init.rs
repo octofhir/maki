@@ -62,9 +62,7 @@ impl ProjectMetadata {
                 "canonical" => self.canonical = value.clone(),
                 "status" => self.status = value.clone(),
                 "version" => self.version = value.clone(),
-                "releaselabel" | "release-label" => {
-                    self.release_label = Some(value.clone())
-                }
+                "releaselabel" | "release-label" => self.release_label = Some(value.clone()),
                 "publisher-name" | "publisher" => self.publisher_name = value.clone(),
                 "publisher-url" => self.publisher_url = value.clone(),
                 "name" => self.name = value.clone(),
@@ -266,9 +264,7 @@ fn generate_maki_config(meta: &ProjectMetadata) -> Result<()> {
     });
 
     // Build a `Publisher` value that carries both name and (optional) URL.
-    let publisher = if meta.publisher_url.is_empty()
-        || meta.publisher_url == "http://example.org"
-    {
+    let publisher = if meta.publisher_url.is_empty() || meta.publisher_url == "http://example.org" {
         Some(maki_core::config::PublisherInfo::String(
             meta.publisher_name.clone(),
         ))

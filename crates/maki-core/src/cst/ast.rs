@@ -1912,9 +1912,7 @@ impl Rule {
             FshSyntaxKind::OnlyRule => OnlyRule::cast(node).map(Rule::Only),
             FshSyntaxKind::ObeysRule => ObeysRule::cast(node).map(Rule::Obeys),
             FshSyntaxKind::AddElementRule => AddElementRule::cast(node).map(Rule::AddElement),
-            FshSyntaxKind::AddCRElementRule => {
-                AddCRElementRule::cast(node).map(Rule::AddCRElement)
-            }
+            FshSyntaxKind::AddCRElementRule => AddCRElementRule::cast(node).map(Rule::AddCRElement),
             FshSyntaxKind::MappingRule => MappingRule::cast(node).map(Rule::Mapping),
             FshSyntaxKind::CaretValueRule => CaretValueRule::cast(node).map(Rule::CaretValue),
             FshSyntaxKind::CodeCaretValueRule => {
@@ -2615,17 +2613,13 @@ impl AddElementRule {
         for child in self.syntax.children_with_tokens() {
             if let Some(token) = child.as_token() {
                 match token.kind() {
-                    FshSyntaxKind::Integer => {
-                        if parts.len() == 1 {
-                            parts.push(token.text().trim().to_string());
-                            break;
-                        }
+                    FshSyntaxKind::Integer if parts.len() == 1 => {
+                        parts.push(token.text().trim().to_string());
+                        break;
                     }
-                    FshSyntaxKind::Asterisk => {
-                        if parts.len() == 1 {
-                            parts.push("*".to_string());
-                            break;
-                        }
+                    FshSyntaxKind::Asterisk if parts.len() == 1 => {
+                        parts.push("*".to_string());
+                        break;
                     }
                     _ => {}
                 }
@@ -2766,17 +2760,13 @@ impl AddCRElementRule {
         for child in self.syntax.children_with_tokens() {
             if let Some(token) = child.as_token() {
                 match token.kind() {
-                    FshSyntaxKind::Integer => {
-                        if parts.len() == 1 {
-                            parts.push(token.text().trim().to_string());
-                            break;
-                        }
+                    FshSyntaxKind::Integer if parts.len() == 1 => {
+                        parts.push(token.text().trim().to_string());
+                        break;
                     }
-                    FshSyntaxKind::Asterisk => {
-                        if parts.len() == 1 {
-                            parts.push("*".to_string());
-                            break;
-                        }
+                    FshSyntaxKind::Asterisk if parts.len() == 1 => {
+                        parts.push("*".to_string());
+                        break;
                     }
                     _ => {}
                 }
@@ -4081,9 +4071,7 @@ Parent: Observation
         let resolved: Vec<String> = all_paths(&doc).iter().map(|p| p.as_string()).collect();
 
         assert!(
-            resolved
-                .iter()
-                .any(|s| s == "code.coding[+].system"),
+            resolved.iter().any(|s| s == "code.coding[+].system"),
             "expected indexed inheritance to dot-join, got {:?}",
             resolved
         );
@@ -4103,8 +4091,9 @@ CodeSystem: Hierarchy
         // Concept paths must NOT chain via path inheritance — the codesystem
         // hierarchy uses a separate parent/child mechanism.
         assert!(
-            !resolved.iter().any(|s| s.contains("#parent.#child")
-                || s.contains("#parent #child")),
+            !resolved
+                .iter()
+                .any(|s| s.contains("#parent.#child") || s.contains("#parent #child")),
             "concept paths must stay flat, got {:?}",
             resolved
         );
@@ -4140,8 +4129,16 @@ or identifier.exists()
         // Outer triple-quotes stripped; inner content preserved verbatim.
         assert!(expr.contains("name.exists()"), "got: {:?}", expr);
         assert!(expr.contains("identifier.exists()"), "got: {:?}", expr);
-        assert!(!expr.starts_with('"'), "leading quote not stripped: {:?}", expr);
-        assert!(!expr.ends_with('"'), "trailing quote not stripped: {:?}", expr);
+        assert!(
+            !expr.starts_with('"'),
+            "leading quote not stripped: {:?}",
+            expr
+        );
+        assert!(
+            !expr.ends_with('"'),
+            "trailing quote not stripped: {:?}",
+            expr
+        );
     }
 
     /// SUSHI 3.18: mapping rule `* path -> "target" "comment"` accepts a
@@ -4169,8 +4166,16 @@ Target: \"HL7 V2 PID\"
             "got: {:?}",
             comment
         );
-        assert!(!comment.starts_with('"'), "leading quotes not stripped: {:?}", comment);
-        assert!(!comment.ends_with('"'), "trailing quotes not stripped: {:?}", comment);
+        assert!(
+            !comment.starts_with('"'),
+            "leading quotes not stripped: {:?}",
+            comment
+        );
+        assert!(
+            !comment.ends_with('"'),
+            "trailing quotes not stripped: {:?}",
+            comment
+        );
     }
 
     /// Triple-quoted `Description:` survives lexer + parser + AST round-trip.

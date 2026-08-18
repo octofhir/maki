@@ -155,7 +155,11 @@ impl FileOrganizer {
     /// let exportables: Vec<Box<dyn Exportable + Send + Sync>> = vec![Box::new(profile)];
     /// organizer.organize(&exportables, Path::new("output")).unwrap();
     /// ```
-    pub fn organize(&self, exportables: &[Box<dyn Exportable + Send + Sync>], output_dir: &Path) -> Result<()> {
+    pub fn organize(
+        &self,
+        exportables: &[Box<dyn Exportable + Send + Sync>],
+        output_dir: &Path,
+    ) -> Result<()> {
         match self.strategy {
             OrganizationStrategy::FilePerDefinition => {
                 self.organize_per_definition(exportables, output_dir)
@@ -524,7 +528,8 @@ mod tests {
         let profile1 = ExportableProfile::new("Profile1".to_string(), "Patient".to_string());
         let profile2 = ExportableProfile::new("Profile2".to_string(), "Observation".to_string());
 
-        let exportables: Vec<Box<dyn Exportable + Send + Sync>> = vec![Box::new(profile1), Box::new(profile2)];
+        let exportables: Vec<Box<dyn Exportable + Send + Sync>> =
+            vec![Box::new(profile1), Box::new(profile2)];
 
         organizer.organize(&exportables, output_dir).unwrap();
 
@@ -609,7 +614,8 @@ mod tests {
         let profile1 = ExportableProfile::new("Profile1".to_string(), "Patient".to_string());
         let profile2 = ExportableProfile::new("Profile2".to_string(), "Observation".to_string());
 
-        let exportables: Vec<Box<dyn Exportable + Send + Sync>> = vec![Box::new(profile1), Box::new(profile2)];
+        let exportables: Vec<Box<dyn Exportable + Send + Sync>> =
+            vec![Box::new(profile1), Box::new(profile2)];
 
         organizer.organize(&exportables, output_dir).unwrap();
 

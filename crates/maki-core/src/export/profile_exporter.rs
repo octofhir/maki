@@ -2176,14 +2176,13 @@ impl ProfileExporter {
                 }
                 other => other
                     .parse::<usize>()
-                    .map(|n| {
+                    .inspect(|&n| {
                         while disc_vec.len() <= n {
                             disc_vec.push(ElementDefinitionSlicingDiscriminator {
                                 discriminator_type: String::new(),
                                 path: String::new(),
                             });
                         }
-                        n
                     })
                     .unwrap_or(disc_vec.len().saturating_sub(1)),
             };

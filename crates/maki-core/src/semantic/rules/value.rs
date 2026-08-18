@@ -195,11 +195,18 @@ fn parse_assignment_path(path: &str) -> Result<Vec<PathSegment>> {
 #[derive(Debug)]
 enum PathSegment {
     Property(String),
-    ArrayElement { name: String, index: usize },
+    ArrayElement {
+        name: String,
+        index: usize,
+    },
     /// `[+]` — append a fresh element at the end of the named array.
-    ArrayAppend { name: String },
+    ArrayAppend {
+        name: String,
+    },
     /// `[=]` — refer to the most recently appended/added element (last index).
-    ArrayCurrent { name: String },
+    ArrayCurrent {
+        name: String,
+    },
 }
 
 fn navigate_to_path<'a>(
@@ -458,6 +465,13 @@ fn apply_element_caret(
 mod tests {
     use super::*;
 
+    /// A caret-rule test case: field name, value to set, and accessor for the result.
+    type ScalarCase = (
+        &'static str,
+        FshValue,
+        fn(&StructureDefinition) -> Option<String>,
+    );
+
     fn create_test_sd() -> StructureDefinition {
         StructureDefinition {
             resource_type: "StructureDefinition".to_string(),
@@ -557,27 +571,19 @@ mod tests {
     fn test_caret_rule_root_scalars_expanded() {
         let mut sd = create_test_sd();
 
-        let cases: Vec<(&str, FshValue, fn(&StructureDefinition) -> Option<String>)> = vec![
-            (
-                "title",
-                FshValue::String("My Title".into()),
-                |s| s.title.clone(),
-            ),
-            (
-                "date",
-                FshValue::String("2026-01-01".into()),
-                |s| s.date.clone(),
-            ),
-            (
-                "publisher",
-                FshValue::String("Acme".into()),
-                |s| s.publisher.clone(),
-            ),
-            (
-                "fhirVersion",
-                FshValue::Code("4.0.1".into()),
-                |s| s.fhir_version.clone(),
-            ),
+        let cases: Vec<ScalarCase> = vec![
+            ("title", FshValue::String("My Title".into()), |s| {
+                s.title.clone()
+            }),
+            ("date", FshValue::String("2026-01-01".into()), |s| {
+                s.date.clone()
+            }),
+            ("publisher", FshValue::String("Acme".into()), |s| {
+                s.publisher.clone()
+            }),
+            ("fhirVersion", FshValue::Code("4.0.1".into()), |s| {
+                s.fhir_version.clone()
+            }),
         ];
 
         for (prop, val, getter) in cases {

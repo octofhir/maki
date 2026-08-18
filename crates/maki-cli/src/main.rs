@@ -136,7 +136,11 @@ enum Commands {
 
         /// Fully scripted initialization: equivalent to `--default` plus
         /// non-interactive script download.
-        #[arg(short = 'a', long = "auto-initialize", help = "Auto-initialize with defaults")]
+        #[arg(
+            short = 'a',
+            long = "auto-initialize",
+            help = "Auto-initialize with defaults"
+        )]
         auto_initialize: bool,
 
         /// Override configuration values (e.g., -c canonical:http://example.org/fhir)

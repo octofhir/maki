@@ -273,11 +273,7 @@ impl UnifiedConfig {
             }
         }
         for (old_id, new_id, new_dep) in redirects {
-            tracing::info!(
-                "SUSHI 3.19: redirecting legacy '{}' → '{}'",
-                old_id,
-                new_id
-            );
+            tracing::info!("SUSHI 3.19: redirecting legacy '{}' → '{}'", old_id, new_id);
             deps.remove(&old_id);
             deps.insert(new_id, new_dep);
         }

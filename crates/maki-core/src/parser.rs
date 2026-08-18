@@ -116,6 +116,9 @@ impl CachedFshParser {
         })
     }
 
+    // Rowan's CST nodes are intentionally `!Send`/`!Sync`; the `Arc` here is only
+    // for cheap shared ownership of cached parse results within a single thread.
+    #[allow(clippy::arc_with_non_send_sync)]
     pub fn parse_with_cache(&mut self, content: &str) -> Result<Arc<ParseResult>> {
         if !self.config.enable_cache {
             return Ok(Arc::new(self.parser.parse(content)?));

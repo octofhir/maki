@@ -34,7 +34,10 @@ impl<'a> StructureDefinitionProcessor<'a> {
     }
 
     /// Process a StructureDefinition into an Exportable
-    pub async fn process(&self, sd: &StructureDefinition) -> Result<Box<dyn Exportable + Send + Sync>> {
+    pub async fn process(
+        &self,
+        sd: &StructureDefinition,
+    ) -> Result<Box<dyn Exportable + Send + Sync>> {
         let def_type = self.determine_type(sd)?;
 
         debug!(

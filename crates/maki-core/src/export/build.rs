@@ -235,8 +235,7 @@ pub struct BuildOrchestrator {
 impl BuildOrchestrator {
     /// Create a new build orchestrator
     pub fn new(config: crate::config::UnifiedConfig, options: BuildOptions) -> Self {
-        let ignore_errors =
-            crate::diagnostics::IgnoreErrors::from_input_dir(&options.input_dir);
+        let ignore_errors = crate::diagnostics::IgnoreErrors::from_input_dir(&options.input_dir);
         if !ignore_errors.is_empty() {
             info!(
                 "Loaded {} sushi-ignoreErrors.txt pattern(s) from {}",
@@ -2276,10 +2275,7 @@ impl BuildOrchestrator {
             let source_name = match mapping.source().and_then(|s| s.value()) {
                 Some(s) => s,
                 None => {
-                    warn!(
-                        "Mapping '{}' has no Source clause; skipping",
-                        mapping_name
-                    );
+                    warn!("Mapping '{}' has no Source clause; skipping", mapping_name);
                     stats.errors += 1;
                     continue;
                 }
@@ -2288,19 +2284,17 @@ impl BuildOrchestrator {
             // Find the canonical URL of the source StructureDefinition in the package
             let source_url = {
                 let pkg = package.read().await;
-                pkg.all_resources()
-                    .iter()
-                    .find_map(|(url, json)| {
-                        if json.get("resourceType").and_then(|v| v.as_str())
-                            == Some("StructureDefinition")
-                            && (json.get("name").and_then(|v| v.as_str()) == Some(&source_name)
-                                || json.get("id").and_then(|v| v.as_str()) == Some(&source_name))
-                        {
-                            Some(url.clone())
-                        } else {
-                            None
-                        }
-                    })
+                pkg.all_resources().iter().find_map(|(url, json)| {
+                    if json.get("resourceType").and_then(|v| v.as_str())
+                        == Some("StructureDefinition")
+                        && (json.get("name").and_then(|v| v.as_str()) == Some(&source_name)
+                            || json.get("id").and_then(|v| v.as_str()) == Some(&source_name))
+                    {
+                        Some(url.clone())
+                    } else {
+                        None
+                    }
+                })
             };
 
             let Some(source_url) = source_url else {
@@ -2472,9 +2466,7 @@ impl BuildOrchestrator {
 
             let json = {
                 let pkg = package.read().await;
-                pkg.all_resources()
-                    .get(&url)
-                    .map(|arc| (**arc).clone())
+                pkg.all_resources().get(&url).map(|arc| (**arc).clone())
             };
             let Some(json) = json else { return };
 
@@ -2500,7 +2492,10 @@ impl BuildOrchestrator {
                     if applied == 0 {
                         return;
                     }
-                    debug!("Applied {} inline mapping rule(s) in '{}'", applied, owner_name);
+                    debug!(
+                        "Applied {} inline mapping rule(s) in '{}'",
+                        applied, owner_name
+                    );
                 }
                 Err(e) => {
                     warn!(

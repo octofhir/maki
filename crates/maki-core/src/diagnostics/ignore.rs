@@ -85,9 +85,9 @@ impl IgnoreErrors {
             return false;
         }
         let code = diag.code.as_deref().unwrap_or("");
-        self.patterns.iter().any(|p| {
-            p.is_match(&diag.rule_id) || p.is_match(code) || p.is_match(&diag.message)
-        })
+        self.patterns
+            .iter()
+            .any(|p| p.is_match(&diag.rule_id) || p.is_match(code) || p.is_match(&diag.message))
     }
 
     /// True if any pattern matches the raw text (used for unstructured
@@ -170,7 +170,11 @@ mod tests {
              cardinality .* invalid\n",
         );
 
-        assert!(s.matches(&diag("naming-convention", None, "Identifier should be PascalCase")));
+        assert!(s.matches(&diag(
+            "naming-convention",
+            None,
+            "Identifier should be PascalCase"
+        )));
         assert!(s.matches(&diag("other", Some("FSH0001"), "anything")));
         assert!(s.matches(&diag("other", None, "cardinality 0..3 invalid here")));
         assert!(!s.matches(&diag("other", Some("FSH9999"), "untouched")));

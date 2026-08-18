@@ -517,7 +517,7 @@ impl DefaultAutofixEngine {
 
         // Sort fixes for optimal application (reverse order by offset)
         let mut sorted_fixes: Vec<_> = fixes.iter().collect();
-        sorted_fixes.sort_by(|a, b| b.location.offset.cmp(&a.location.offset));
+        sorted_fixes.sort_by_key(|f| std::cmp::Reverse(f.location.offset));
 
         // Apply fixes to content
         let mut modified_content = original_content.clone();
@@ -694,7 +694,7 @@ impl AutofixEngine for DefaultAutofixEngine {
 
         // Sort fixes for optimal application (reverse order by offset)
         let mut sorted_fixes: Vec<_> = fixes_to_apply.iter().collect();
-        sorted_fixes.sort_by(|a, b| b.location.offset.cmp(&a.location.offset));
+        sorted_fixes.sort_by_key(|f| std::cmp::Reverse(f.location.offset));
 
         // Apply fixes to content
         let mut modified_content = original_content.clone();
@@ -1393,7 +1393,7 @@ impl FixStatistics {
         if !self.by_rule.is_empty() {
             println!("\n📋 By Rule:");
             let mut rules: Vec<_> = self.by_rule.iter().collect();
-            rules.sort_by(|a, b| b.1.applied.cmp(&a.1.applied));
+            rules.sort_by_key(|r| std::cmp::Reverse(r.1.applied));
 
             for (rule_id, stats) in rules {
                 let safety_icon = if stats.is_safe { "✅" } else { "⚠️" };

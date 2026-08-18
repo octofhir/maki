@@ -319,11 +319,7 @@ impl ProgressReporter {
         }
 
         self.current = current;
-        let percentage = if self.total > 0 {
-            (current * 100) / self.total
-        } else {
-            0
-        };
+        let percentage = (current * 100).checked_div(self.total).unwrap_or(0);
 
         eprint!("\r{} [{}/{}] {}%", message, current, self.total, percentage);
 

@@ -43,6 +43,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # When called from the release workflow the version bump has already
+          # been pushed to main, so build from main rather than the stale SHA
+          # that triggered the run.
+          ref: ${{ inputs.version != '' && 'main' || github.ref }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -114,6 +119,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version != '' && 'main' || github.ref }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -163,8 +170,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ inputs.version || github.ref_name }}
-          name: Release v${{ inputs.version || github.ref_name }}
+          tag_name: ${{ inputs.version != '' && format('v{0}', inputs.version) || github.ref_name }}
+          name: Release ${{ inputs.version != '' && format('v{0}', inputs.version) || github.ref_name }}
           files: |
             release/*
           body_path: release_notes.txt

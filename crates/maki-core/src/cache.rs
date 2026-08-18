@@ -198,6 +198,8 @@ impl ParseResultCache {
     }
 
     /// Cache a parse result with its content hash
+    // Rowan's CST nodes are `!Send`/`!Sync`; the `Arc` is single-threaded shared ownership.
+    #[allow(clippy::arc_with_non_send_sync)]
     pub fn insert(&self, content_hash: ContentHash, parse_result: ParseResult) {
         self.cache.insert(content_hash, Arc::new(parse_result));
     }
