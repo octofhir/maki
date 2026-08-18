@@ -166,7 +166,7 @@ impl<'a> StructureDefinitionProcessor<'a> {
         debug!(
             "Created ExportableProfile '{}' with parent '{}'",
             profile.name(),
-            &profile.parent
+            profile.parent
         );
 
         Ok(profile)

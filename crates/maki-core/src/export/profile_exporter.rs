@@ -616,7 +616,7 @@ impl ProfileExporter {
         // This allows child profiles to find parent profiles exported earlier in the same build
         {
             let package = self.package.read().await;
-            for (_canonical_url, resource_json) in package.all_resources().iter() {
+            for resource_json in package.all_resources().values() {
                 if let Ok(sd) =
                     serde_json::from_value::<StructureDefinition>((**resource_json).clone())
                 {
@@ -1173,7 +1173,7 @@ impl ProfileExporter {
         // 2. Check local Package for exported ValueSets
         {
             let package = self.package.read().await;
-            for (_canonical_url, resource_json) in package.all_resources().iter() {
+            for resource_json in package.all_resources().values() {
                 // Try to parse as ValueSet
                 if let Some(resource_type) =
                     resource_json.get("resourceType").and_then(|v| v.as_str())
