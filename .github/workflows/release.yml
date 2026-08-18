@@ -71,6 +71,9 @@ jobs:
           # Update version in all crate Cargo.toml files
           find crates -name "Cargo.toml" -exec sed -i "0,/^version = \".*\"/s//version = \"$NEW_VERSION\"/" {} \;
 
+          # Refresh the tracked lockfile so it carries the new member versions
+          cargo update --workspace --offline
+
           # Update CHANGELOG if notes provided
           if [ -n "${{ inputs.changelog_notes }}" ]; then
             DATE=$(date +%Y-%m-%d)
@@ -84,7 +87,7 @@ jobs:
 
       - name: Commit version bump
         run: |
-          git add Cargo.toml crates/*/Cargo.toml CHANGELOG.md
+          git add Cargo.toml Cargo.lock crates/*/Cargo.toml CHANGELOG.md
           git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }} [ci skip]"
           git push origin main
 

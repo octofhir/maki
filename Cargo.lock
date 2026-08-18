@@ -2110,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "maki-bench"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "criterion",
  "maki-core",
@@ -2121,7 +2121,7 @@ dependencies = [
 
 [[package]]
 name = "maki-cli"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2153,7 +2153,7 @@ dependencies = [
 
 [[package]]
 name = "maki-core"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "ariadne",
@@ -2198,7 +2198,7 @@ dependencies = [
 
 [[package]]
 name = "maki-decompiler"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2220,7 +2220,7 @@ dependencies = [
 
 [[package]]
 name = "maki-devtools"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -2238,7 +2238,7 @@ dependencies = [
 
 [[package]]
 name = "maki-formatter"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "insta",
@@ -2251,7 +2251,7 @@ dependencies = [
 
 [[package]]
 name = "maki-integration-tests"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2266,7 +2266,7 @@ dependencies = [
 
 [[package]]
 name = "maki-lsp"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "maki-core",
@@ -2282,7 +2282,7 @@ dependencies = [
 
 [[package]]
 name = "maki-rules"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "glob",
@@ -2305,7 +2305,7 @@ dependencies = [
 
 [[package]]
 name = "maki-test"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "maki-core",
