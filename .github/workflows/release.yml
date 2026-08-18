@@ -72,7 +72,7 @@ jobs:
           find crates -name "Cargo.toml" -exec sed -i "0,/^version = \".*\"/s//version = \"$NEW_VERSION\"/" {} \;
 
           # Refresh the tracked lockfile so it carries the new member versions
-          cargo update --workspace --offline
+          cargo update --workspace
 
           # Update CHANGELOG if notes provided
           if [ -n "${{ inputs.changelog_notes }}" ]; then
