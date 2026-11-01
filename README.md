@@ -1,11 +1,13 @@
-# MAKI - FSH Toolchain
+<p align="center"><img src=".github/banner.png" alt="octo/maki — FHIR Shorthand, built, linted, formatted" width="100%"></p>
+
+<p align="center"><b>A FHIR Shorthand toolchain in Rust: SUSHI-compatible builds, GoFSH, a linter and a formatter in one binary.</b></p>
+
+<p align="center">
+  <a href="https://github.com/octofhir/maki/actions/workflows/ci.yml"><img src="https://github.com/octofhir/maki/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License: MIT OR Apache-2.0"></a>
+</p>
 
 **M**odern **A**nalysis and **K**it for **I**mplementation Guides
-
-[![CI](https://github.com/octofhir/maki/actions/workflows/ci.yml/badge.svg)](https://github.com/octofhir/maki/actions/workflows/ci.yml)
-[![Security Audit](https://github.com/octofhir/maki/actions/workflows/security-audit.yml/badge.svg)](https://github.com/octofhir/maki/actions/workflows/security-audit.yml)
-[![codecov](https://codecov.io/gh/octofhir/maki/branch/main/graph/badge.svg)](https://codecov.io/gh/octofhir/maki)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
 > **⚠️ ACTIVE DEVELOPMENT**: This project is currently in active development. APIs and features may change. Production use is not yet recommended.
 
@@ -78,11 +80,11 @@ cargo build --release --bin maki
 ### Initialize Configuration
 
 ```bash
-# Create a maki.yaml config file in the current directory
+# Create a .makirc.json config file in the current directory
 maki config init
 
-# Initialize with JSON format
-maki config init --format json
+# Initialize with TOML format (.makirc.toml)
+maki config init --format toml
 ```
 
 ### Lint Files
@@ -453,12 +455,14 @@ cargo test -- --nocapture
 
 ## License
 
-Licensed under either of:
+Licensed under either of
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this project by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
 
 ## Acknowledgments
 
