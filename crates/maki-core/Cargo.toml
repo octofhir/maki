@@ -8,39 +8,59 @@ repository.workspace = true
 homepage.workspace = true
 description = "Core MAKI engine for parsing, linting, and analyzing FHIR Shorthand (FSH) projects"
 
+[features]
+default = ["project"]
+# Complete project analysis, package loading, export and filesystem integrations.
+project = [
+    "dep:serde_yaml",
+    "dep:tokio",
+    "dep:async-trait",
+    "dep:futures",
+    "dep:rayon",
+    "dep:tracing-subscriber",
+    "dep:semver",
+    "dep:walkdir",
+    "dep:glob",
+    "dep:notify",
+    "dep:octofhir-canonical-manager",
+    "dep:indexmap",
+    "dep:petgraph",
+    "dep:indicatif",
+]
+
 [dependencies]
-chumsky = { workspace = true }
-ariadne = { workspace = true }
+
 rowan = { workspace = true }
-biome_text_size = { workspace = true }
+
 serde = { workspace = true }
 serde_json = { workspace = true }
-toml = { workspace = true }
-serde_yaml = { workspace = true }
-json5 = "1.3"                                     # JSONC support (comments + trailing commas)
+serde_yaml = { workspace = true, optional = true }
+
 schemars = "1.2"                                  # JSON Schema generation
-tokio = { workspace = true }
-async-trait = { workspace = true }
-futures = { workspace = true }
-rayon = { workspace = true }
+tokio = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
-semver = { workspace = true }
-walkdir = { workspace = true }
-glob = { workspace = true }
-notify = { workspace = true }
+semver = { workspace = true, optional = true }
+walkdir = { workspace = true, optional = true }
+glob = { workspace = true, optional = true }
+notify = { workspace = true, optional = true }
 dashmap = { workspace = true }
-octofhir-canonical-manager = { workspace = true }
+octofhir-canonical-manager = { workspace = true, optional = true }
 regex = "1.13"
-is-terminal = "0.4"
-indexmap = "2.14"                                  # Ordered HashMap for preserving insert order
-petgraph = "0.8"                                  # Graph data structure and algorithms
-indicatif = "0.18"                                # Progress bars and spinners
+
+# Ordered HashMap for preserving insert order
+indexmap = { version = "2.14", optional = true }
+# Graph data structure and algorithms
+petgraph = { version = "0.8", optional = true }
+# Progress bars and spinners
+indicatif = { version = "0.18", optional = true }
 
 # Terminal/console output
-term_size = "0.3"     # Terminal width detection
+terminal_size = "0.4.4"     # Terminal width detection
 unicode-width = "0.2" # Unicode character width calculation
 
 # Diff rendering

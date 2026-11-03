@@ -1,0 +1,3 @@
+# Public CanonicalLoaderError variants embed FcmError and two package strings.
+# Keep their source-compatible field types; the current layout is 136 bytes.
+large-error-threshold = 160

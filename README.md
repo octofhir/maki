@@ -75,6 +75,22 @@ cargo build --release --bin maki
 # Binary will be at: target/release/maki
 ```
 
+## Use as a Rust library
+
+The crates are distributed from Git. Pin a release tag for reproducible builds:
+
+```toml
+[dependencies]
+maki-formatter = { git = "https://github.com/octofhir/maki", tag = "v0.0.6" }
+maki-core = { git = "https://github.com/octofhir/maki", tag = "v0.0.6", default-features = false }
+```
+
+`maki-formatter` and the minimal `maki-core` provide formatting, parsing, CST,
+configuration types, caching and diagnostics without HTTP, SQLite, Tokio or file
+watchers. The default `maki-core` feature `project` retains package loading,
+project analysis, configuration discovery, export and filesystem integrations.
+The CLI continues to include these project capabilities.
+
 ## Usage
 
 ### Initialize Configuration

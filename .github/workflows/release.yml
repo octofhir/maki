@@ -68,9 +68,6 @@ jobs:
           # Update version in workspace Cargo.toml
           sed -i "0,/^version = \".*\"/s//version = \"$NEW_VERSION\"/" Cargo.toml
 
-          # Update version in all crate Cargo.toml files
-          find crates -name "Cargo.toml" -exec sed -i "0,/^version = \".*\"/s//version = \"$NEW_VERSION\"/" {} \;
-
           # Refresh the tracked lockfile so it carries the new member versions
           cargo update --workspace
 

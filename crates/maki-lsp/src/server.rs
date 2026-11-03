@@ -4,7 +4,7 @@
 //! for FHIR Shorthand, enabling IDE features.
 
 use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::*;
+use tower_lsp::ls_types::*;
 use tower_lsp::{Client, LanguageServer};
 
 /// MAKI Language Server
@@ -21,7 +21,6 @@ impl MakiLanguageServer {
     }
 }
 
-#[tower_lsp::async_trait]
 impl LanguageServer for MakiLanguageServer {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
         Ok(InitializeResult {
@@ -36,6 +35,7 @@ impl LanguageServer for MakiLanguageServer {
                 // Additional capabilities will be added in future tasks
                 ..Default::default()
             },
+            ..Default::default()
         })
     }
 

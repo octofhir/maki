@@ -10,7 +10,7 @@
 //! Extensions are StructureDefinitions with:
 //! - `kind`: "complex-type"
 //! - `type`: "Extension"
-//! - `baseDefinition`: "http://hl7.org/fhir/StructureDefinition/Extension"
+//! - `baseDefinition`: "<http://hl7.org/fhir/StructureDefinition/Extension>"
 //! - `derivation`: "constraint"
 //! - `context`: Where the extension can be used
 //! - Special element structure:
@@ -20,7 +20,7 @@
 //! # Simple vs Complex Extensions
 //!
 //! - **Simple Extension**: Has `value[x]` element with a single data type
-//! - **Complex Extension**: Has `extension` element with nested extensions (no value[x])
+//! - **Complex Extension**: Has `extension` element with nested extensions (no value\[x\])
 //!
 //! # Example
 //!

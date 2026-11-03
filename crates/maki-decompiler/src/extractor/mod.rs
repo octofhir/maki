@@ -6,7 +6,7 @@
 //! - BindingExtractor: ValueSet bindings
 //! - CaretValueExtractor: Metadata (^short, ^definition, etc.)
 //! - TypeExtractor: Type constraints (only rules)
-//! - AssignmentExtractor: fixed[x] and pattern[x] values
+//! - AssignmentExtractor: fixed\[x\] and pattern\[x\] values
 //! - ContainsExtractor: Slicing definitions
 //! - ObeysExtractor: Invariants/constraints
 

@@ -1,6 +1,6 @@
-//! Assignment rule extractor for fixed[x] and pattern[x] values
+//! Assignment rule extractor for fixed\[x\] and pattern\[x\] values
 //!
-//! This is the most complex extractor, handling 20+ fixed[x] types and 10+ pattern[x] types.
+//! This is the most complex extractor, handling 20+ fixed\[x\] types and 10+ pattern\[x\] types.
 //! Converts FHIR constraint values into FSH assignment rules.
 
 use super::RuleExtractor;
@@ -14,7 +14,7 @@ use crate::{
     processor::ProcessableElementDefinition,
 };
 
-/// Extractor for assignment rules (fixed[x] and pattern[x] values)
+/// Extractor for assignment rules (fixed\[x\] and pattern\[x\] values)
 pub struct AssignmentExtractor;
 
 impl AssignmentExtractor {

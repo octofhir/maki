@@ -163,3 +163,22 @@ jobs:
         with:
           files: lcov.info
           fail_ci_if_error: false
+
+  minimal-libraries:
+    name: Minimal library dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check standalone libraries
+        run: |
+          cargo check --locked -p maki-core --lib --no-default-features
+          cargo check --locked -p maki-formatter
+      - name: Reject project dependencies in formatter
+        shell: bash
+        run: |
+          cargo tree --locked -p maki-formatter --edges normal,build --prefix none > formatter-deps.txt
+          if grep -E '^(reqwest|hyper|rustls|native-tls|openssl-sys|sqlx|tokio|notify|octofhir-canonical-manager) v' formatter-deps.txt; then
+            echo "Project dependencies leaked into the standalone formatter"
+            exit 1
+          fi

@@ -35,7 +35,7 @@ pub struct FishableMetadata {
     pub id: String,
     /// Resource name (e.g., "PatientProfile")
     pub name: String,
-    /// Canonical URL (e.g., "http://example.org/fhir/StructureDefinition/patient-profile")
+    /// Canonical URL (e.g., "<http://example.org/fhir/StructureDefinition/patient-profile>")
     pub url: String,
     /// FHIR resource type (e.g., "StructureDefinition", "ValueSet")
     pub resource_type: String,

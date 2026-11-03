@@ -1,6 +1,6 @@
 //! Remove implied 0..0 cardinality rules
 //!
-//! Removes value[x]/extension 0..0 rules that SUSHI automatically applies in Extension definitions.
+//! Removes value\[x\]/extension 0..0 rules that SUSHI automatically applies in Extension definitions.
 //! EXACT implementation matching GoFSH's RemoveImpliedZeroZeroCardRulesOptimizer.ts
 
 use crate::{
@@ -13,9 +13,9 @@ use log::debug;
 
 /// Removes 0..0 cardinality rules that SUSHI applies automatically
 ///
-/// This optimizer removes cardinality rules for extension and value[x] paths when:
-/// - An extension path is 0..0 AND there are sibling value[x] paths that aren't 0..0
-/// - A value[x] path is 0..0 AND there are sibling extension paths that aren't 0..0
+/// This optimizer removes cardinality rules for extension and value\[x\] paths when:
+/// - An extension path is 0..0 AND there are sibling value\[x\] paths that aren't 0..0
+/// - A value\[x\] path is 0..0 AND there are sibling extension paths that aren't 0..0
 ///
 /// SUSHI automatically constrains extension to 0..0 when value rules exist, and vice versa.
 ///

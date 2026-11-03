@@ -359,7 +359,7 @@ pub enum FshSyntaxKind {
     ContainsItem = 330,
     /// Cardinality specification (min..max)
     Cardinality = 331,
-    /// Path expression (foo.bar[x].baz)
+    /// Path expression (foo.bar\[x\].baz)
     Path = 332,
     /// Individual path segment
     PathSegment = 340,

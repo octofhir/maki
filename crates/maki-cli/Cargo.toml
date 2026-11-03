@@ -29,7 +29,6 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 colored = "3.1"
 rayon = { workspace = true }
-atty = "0.2"
 glob = "0.3"
 inquire = "0.9"
 reqwest = { version = "0.13", features = ["json"] }

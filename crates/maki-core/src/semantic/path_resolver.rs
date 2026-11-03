@@ -207,7 +207,7 @@ impl ElementDefinition {
             .unwrap_or_default()
     }
 
-    /// Check if this is a choice type element (path ends with [x])
+    /// Check if this is a choice type element (path ends with \[x\])
     pub fn is_choice_type(&self) -> bool {
         self.path().map(|p| p.ends_with("[x]")).unwrap_or(false)
     }
@@ -651,7 +651,7 @@ impl PathResolver {
     ///
     /// # Arguments
     ///
-    /// * `fsh_path` - The FSH path to resolve (e.g., "name.given", "deceased[x]")
+    /// * `fsh_path` - The FSH path to resolve (e.g., "name.given", "deceased\[x\]")
     /// * `context` - The resolution context containing base definition and profile info
     ///
     /// # Returns
@@ -1142,7 +1142,7 @@ impl PathResolver {
         })
     }
 
-    /// Resolve choice type with specific type (e.g., "valueString" from "value[x]")
+    /// Resolve choice type with specific type (e.g., "valueString" from "value\[x\]")
     ///
     /// # Arguments
     ///
@@ -1358,7 +1358,7 @@ impl PathResolver {
         })
     }
 
-    /// Handle extension paths (e.g., "extension[url].valueString")
+    /// Handle extension paths (e.g., "extension\[url\].valueString")
     ///
     /// # Arguments
     ///

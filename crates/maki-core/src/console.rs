@@ -21,7 +21,9 @@ impl Console {
 
     /// Detect terminal width, defaulting to 100 if unavailable
     fn detect_terminal_width() -> usize {
-        term_size::dimensions().map(|(w, _)| w).unwrap_or(100)
+        terminal_size::terminal_size()
+            .map(|(terminal_size::Width(width), _)| usize::from(width))
+            .unwrap_or(100)
     }
 
     /// Check if color output is enabled

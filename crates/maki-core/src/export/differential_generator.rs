@@ -154,7 +154,7 @@ impl DifferentialGenerator {
     /// Set the local extension URL map (call before generate_differential)
     ///
     /// Maps extension names (e.g., "CancerDiseaseStatusEvidenceType") to their
-    /// canonical URLs (e.g., "http://hl7.org/fhir/us/mcode/StructureDefinition/mcode-cancer-disease-status-evidence-type")
+    /// canonical URLs (e.g., "<http://hl7.org/fhir/us/mcode/StructureDefinition/mcode-cancer-disease-status-evidence-type>")
     pub fn set_extension_url_map(&mut self, map: std::collections::HashMap<String, String>) {
         self.extension_url_map = map;
     }
@@ -1426,7 +1426,7 @@ impl RuleProcessor {
     /// Creates or updates ElementDefinition with type constraints.
     /// Restricts the allowed types for an element.
     ///
-    /// Example: `* value[x] only Quantity` constrains value[x] to only Quantity type
+    /// Example: `* value\[x\] only Quantity` constrains value\[x\] to only Quantity type
     pub async fn process_only_rule(
         &self,
         rule: &OnlyRule,

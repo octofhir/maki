@@ -39,7 +39,7 @@ pub enum FormatElement {
     /// - Used for FSH keywords: Profile, ValueSet, Extension, etc.
     /// - Used for FSH operators: *, .., =, ->, only, from, etc.
     /// - Used for FSH modifiers: MS, SU, TU, N, D, ?!
-    /// - Used for punctuation: :, ,, {, }, [, ], (, ), |
+    /// - Used for punctuation: :, ,, {, }, \[, \], (, ), |
     ///
     /// Performance: ~70-85% of text operations use this fast path
     Token(&'static str),

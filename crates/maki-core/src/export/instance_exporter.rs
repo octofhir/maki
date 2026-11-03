@@ -7,8 +7,8 @@
 //! Instances are concrete examples of FHIR resources with specific data values.
 //! This module handles:
 //! - Converting FSH assignment rules (* path = value) to JSON
-//! - Nested path navigation (e.g., address[0].line[+])
-//! - Array indexing ([0], [+], [=])
+//! - Nested path navigation (e.g., address\[0\].line\[+\])
+//! - Array indexing (\[0\], \[+\], \[=\])
 //! - Value type conversion (strings, codes, references, etc.)
 //!
 //! # Algorithm
@@ -67,7 +67,7 @@ use tracing::{debug, trace, warn};
 /// Array index type
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArrayIndex {
-    /// Specific numeric index: [0], [1], [2]
+    /// Specific numeric index: \[0\], \[1\], \[2\]
     Numeric(usize),
     /// Append to array: [+]
     Append,
@@ -84,7 +84,7 @@ pub enum PathSegment {
     ArrayAccess {
         field: String,
         index: ArrayIndex,
-        /// Optional slice name for named slices (e.g., extension[myExtension])
+        /// Optional slice name for named slices (e.g., extension\[myExtension\])
         slice_name: Option<String>,
     },
 }

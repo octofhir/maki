@@ -128,11 +128,11 @@ pub fn parse_package_spec(spec: &str) -> Result<PackageCoordinate> {
 /// # Arguments
 ///
 /// * `fhir_version` - FHIR version string (e.g., "R4", "4.0.1")
-/// * `dependency_specs` - Vector of dependency specs (e.g., ["hl7.fhir.us.core@5.0.1"])
+/// * `dependency_specs` - Vector of dependency specs (e.g., \["hl7.fhir.us.core@5.0.1"\])
 ///
 /// # Returns
 ///
-/// Tuple of (FhirRelease, Vec<PackageCoordinate>)
+/// Tuple of (FhirRelease, Vec`<PackageCoordinate>`)
 pub fn parse_cli_dependencies(
     fhir_version: &str,
     dependency_specs: &[String],

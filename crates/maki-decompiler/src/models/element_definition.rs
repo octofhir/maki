@@ -101,7 +101,7 @@ impl ElementDefinition {
         self.slice_name.is_some()
     }
 
-    /// Get the number of fixed[x] properties that are set
+    /// Get the number of fixed\[x\] properties that are set
     pub fn count_fixed_values(&self) -> usize {
         let mut count = 0;
         if self.fixed_boolean.is_some() {
@@ -137,7 +137,7 @@ impl ElementDefinition {
         count
     }
 
-    /// Get the number of pattern[x] properties that are set
+    /// Get the number of pattern\[x\] properties that are set
     pub fn count_pattern_values(&self) -> usize {
         let mut count = 0;
         if self.pattern_boolean.is_some() {

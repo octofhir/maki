@@ -143,7 +143,7 @@ enum Commands {
         )]
         auto_initialize: bool,
 
-        /// Override configuration values (e.g., -c canonical:http://example.org/fhir)
+        /// Override configuration values (e.g., `-c canonical:http://example.org/fhir`)
         ///
         /// Recognized keys: id, canonical, status, version, releaselabel,
         /// publisher-name, publisher-url, name, title, description.

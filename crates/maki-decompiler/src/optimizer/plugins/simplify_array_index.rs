@@ -1,6 +1,6 @@
 //! Simplify array indexing optimization
 //!
-//! Simplifies array notation by removing [0] indices since they're the default.
+//! Simplifies array notation by removing \[0\] indices since they're the default.
 
 use crate::{
     Result,
@@ -12,10 +12,10 @@ use log::debug;
 use regex::Regex;
 use std::sync::OnceLock;
 
-/// Simplifies array indexing by removing [0] since it's the default
+/// Simplifies array indexing by removing \[0\] since it's the default
 ///
-/// This optimizer simplifies paths that use [0] array indexing since:
-/// - In FHIR and FSH, [0] is the implicit default
+/// This optimizer simplifies paths that use \[0\] array indexing since:
+/// - In FHIR and FSH, \[0\] is the implicit default
 /// - `element[0]` and `element` refer to the same thing
 ///
 /// Example transformation:

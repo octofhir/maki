@@ -66,26 +66,34 @@
 //! }
 //! ```
 
+#[cfg(feature = "project")]
 pub mod auto_dependencies;
 
+#[cfg(feature = "project")]
 mod loader;
 mod maki_config;
+#[cfg(feature = "project")]
 mod sushi_config;
+#[cfg(feature = "project")]
 mod unified_config;
 
 // Re-export main types
+#[cfg(feature = "project")]
 pub use loader::ConfigLoader;
 pub use maki_config::{
     FilesConfiguration, FormatterConfiguration, IndentStyle, LinterConfiguration, RuleConfig,
     RuleSeverity, RulesConfiguration,
 };
+#[cfg(feature = "project")]
 pub use sushi_config::{
     CodeableConcept, Coding, ConfigError, ContactDetail, ContactPoint, DefinitionExtension,
     DependencyVersion, GlobalProfile, IdSetting, InstanceOptions, MenuItem, MetaProfileSetting,
     PageDefinition, Parameter, PublisherInfo, ResourceEntry, ResourceGroup, SushiConfiguration,
     Template, UsageContext, parse_dependency,
 };
+#[cfg(feature = "project")]
 pub use unified_config::{BuildConfiguration, UnifiedConfig};
 
 // Re-export Result type
+#[cfg(feature = "project")]
 pub use loader::Result;

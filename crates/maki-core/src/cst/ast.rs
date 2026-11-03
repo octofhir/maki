@@ -1743,7 +1743,7 @@ impl SourceClause {
     }
 }
 
-/// Target clause: Target: "http://target-system.org"
+/// Target clause: Target: "<http://target-system.org>"
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetClause {
     syntax: FshSyntaxNode,
@@ -3322,7 +3322,7 @@ impl RuleSetDef {
 // Path
 // ============================================================================
 
-/// Path expression: name.given or identifier[0].value
+/// Path expression: name.given or identifier\[0\].value
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Path {
     syntax: FshSyntaxNode,

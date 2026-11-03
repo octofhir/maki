@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-11-04
+
+### Changed
+- Keep project integrations enabled by default while allowing a minimal `maki-core`.
+- Build `maki-formatter` without package downloads, SQLite, Tokio or file watchers.
+- Remove unused direct dependencies from core, formatter, LSP and CLI.
+- Replace deprecated YAML and terminal-width backends with `yaml_serde` and `terminal_size`.
+- Use the maintained `tower-lsp-server` implementation behind the workspace alias.
+
+### Fixed
+- Limit automated release version changes to the inherited workspace version.
+
 ## [0.0.5] - 2026-08-18
 
 

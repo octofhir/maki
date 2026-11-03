@@ -63,7 +63,7 @@ pub enum DependencyType {
     /// Extension reference (* extension contains MyExtension)
     ExtensionReference,
 
-    /// Type reference (* value[x] only MyType)
+    /// Type reference (* value\[x\] only MyType)
     TypeReference,
 
     /// Profile/invariant constraint reference (obeys MyInvariant)

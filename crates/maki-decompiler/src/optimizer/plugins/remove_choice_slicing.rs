@@ -1,6 +1,6 @@
 //! Remove choice slicing rules optimization
 //!
-//! Removes redundant slicing rules for choice types (value[x]) since SUSHI handles these automatically.
+//! Removes redundant slicing rules for choice types (value\[x\]) since SUSHI handles these automatically.
 
 use crate::{
     Result,
@@ -12,9 +12,9 @@ use log::debug;
 
 /// Removes redundant slicing rules for choice types
 ///
-/// This optimizer removes ContainsRule definitions for choice type (value[x]) slices since:
+/// This optimizer removes ContainsRule definitions for choice type (value\[x\]) slices since:
 /// - SUSHI automatically creates slicing for choice types
-/// - When you constrain value[x] to a specific type like valueString, SUSHI handles the slicing
+/// - When you constrain value\[x\] to a specific type like valueString, SUSHI handles the slicing
 /// - Explicit slicing rules for choice types are redundant
 ///
 /// Example transformation:

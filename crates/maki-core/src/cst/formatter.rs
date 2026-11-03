@@ -139,7 +139,7 @@ impl Default for FormatOptions {
 
 /// Format an alias using Token optimization
 ///
-/// Format: "Alias: <name> = <value>"
+/// Format: "Alias: `<name>` = `<value>`"
 pub fn format_alias(alias: &Alias) -> Vec<FormatElement> {
     let mut elements = Vec::new();
 
@@ -168,7 +168,7 @@ pub fn format_alias(alias: &Alias) -> Vec<FormatElement> {
 
 /// Format a profile using Token optimization
 ///
-/// Format: "Profile: <name>" with Parent, Id, Title, Description clauses
+/// Format: "Profile: `<name>`" with Parent, Id, Title, Description clauses
 pub fn format_profile(profile: &Profile) -> Vec<FormatElement> {
     let mut elements = Vec::new();
 
@@ -246,7 +246,7 @@ pub fn format_profile(profile: &Profile) -> Vec<FormatElement> {
 
 /// Format an extension using Token optimization
 ///
-/// Format: "Extension: <name>" with Parent, Id, Title, Description clauses
+/// Format: "Extension: `<name>`" with Parent, Id, Title, Description clauses
 pub fn format_extension(extension: &Extension) -> Vec<FormatElement> {
     let mut elements = Vec::new();
 
@@ -324,7 +324,7 @@ pub fn format_extension(extension: &Extension) -> Vec<FormatElement> {
 
 /// Format a value set using Token optimization
 ///
-/// Format: "ValueSet: <name>" with Id, Title, Description clauses
+/// Format: "ValueSet: `<name>`" with Id, Title, Description clauses
 pub fn format_valueset(valueset: &ValueSet) -> Vec<FormatElement> {
     let mut elements = Vec::new();
 
@@ -389,7 +389,7 @@ pub fn format_valueset(valueset: &ValueSet) -> Vec<FormatElement> {
 
 /// Format a code system using Token optimization
 ///
-/// Format: "CodeSystem: <name>" with Id, Title, Description clauses
+/// Format: "CodeSystem: `<name>`" with Id, Title, Description clauses
 pub fn format_codesystem(codesystem: &CodeSystem) -> Vec<FormatElement> {
     let mut elements = Vec::new();
 
@@ -454,7 +454,7 @@ pub fn format_codesystem(codesystem: &CodeSystem) -> Vec<FormatElement> {
 
 /// Format an instance using Token optimization
 ///
-/// Format: "Instance: <name>" with InstanceOf, Title, Description, Usage clauses
+/// Format: "Instance: `<name>`" with InstanceOf, Title, Description, Usage clauses
 pub fn format_instance(instance: &Instance) -> Vec<FormatElement> {
     let mut elements = Vec::new();
 
@@ -534,7 +534,7 @@ pub fn format_instance(instance: &Instance) -> Vec<FormatElement> {
 
 /// Format an invariant using Token optimization
 ///
-/// Format: "Invariant: <name>" with Description, Severity, Expression, XPath clauses
+/// Format: "Invariant: `<name>`" with Description, Severity, Expression, XPath clauses
 pub fn format_invariant(invariant: &Invariant) -> Vec<FormatElement> {
     let mut elements = Vec::new();
 
@@ -617,7 +617,7 @@ pub fn format_invariant(invariant: &Invariant) -> Vec<FormatElement> {
 
 /// Format a mapping using Token optimization
 ///
-/// Format: "Mapping: <name>" with Id, Source, Target, Title, Description clauses
+/// Format: "Mapping: `<name>`" with Id, Source, Target, Title, Description clauses
 pub fn format_mapping(mapping: &Mapping) -> Vec<FormatElement> {
     let mut elements = Vec::new();
 
@@ -711,7 +711,7 @@ pub fn format_mapping(mapping: &Mapping) -> Vec<FormatElement> {
 
 /// Format a logical model using Token optimization
 ///
-/// Format: "Logical: <name>" with Parent, Id, Title, Description clauses
+/// Format: "Logical: `<name>`" with Parent, Id, Title, Description clauses
 pub fn format_logical(logical: &Logical) -> Vec<FormatElement> {
     let mut elements = Vec::new();
 
@@ -789,7 +789,7 @@ pub fn format_logical(logical: &Logical) -> Vec<FormatElement> {
 
 /// Format a resource using Token optimization
 ///
-/// Format: "Resource: <name>" with Parent, Id, Title, Description clauses
+/// Format: "Resource: `<name>`" with Parent, Id, Title, Description clauses
 pub fn format_resource(resource: &Resource) -> Vec<FormatElement> {
     let mut elements = Vec::new();
 
@@ -865,7 +865,7 @@ pub fn format_resource(resource: &Resource) -> Vec<FormatElement> {
     elements
 }
 
-/// Format a cardinality rule: "* <path> <cardinality> <flags>"
+/// Format a cardinality rule: "* `<path>` `<cardinality>` `<flags>`"
 ///
 /// Example: "* name 1..1 MS"
 pub fn format_card_rule(

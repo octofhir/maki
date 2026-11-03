@@ -18,11 +18,11 @@ use std::collections::HashMap;
 /// Combines related assignment rules into composite values
 ///
 /// This optimizer looks for patterns like:
-/// * code.system = "http://example.org"
+/// * code.system = "<http://example.org>"
 /// * code.code = #active
 ///
 /// And combines them into:
-/// * code = http://example.org#active
+/// * code = <http://example.org#active>
 ///
 /// Based on GoFSH's CombineAssignmentsOptimizer
 pub struct CombineAssignmentsOptimizer;

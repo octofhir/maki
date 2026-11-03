@@ -8,19 +8,7 @@ edition.workspace = true
 description = "Formatter for FHIR Shorthand files"
 
 [dependencies]
-# Internal dependencies
-maki-core = { path = "../maki-core" }
-
-# Serialization
-serde.workspace = true
-serde_json.workspace = true
-
-# Logging
-tracing.workspace = true
-
-# Error handling
-thiserror.workspace = true
-anyhow.workspace = true
+maki-core = { path = "../maki-core", default-features = false }
 
 [dev-dependencies]
 insta.workspace = true
